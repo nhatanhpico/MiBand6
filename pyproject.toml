@@ -1,0 +1,40 @@
+[project]
+name = "miband6-manager"
+version = "1.0.0"
+description = "Ứng dụng web chạy trên máy tính để kết nối, xem thông tin và thay đổi cài đặt cho Xiaomi Mi Smart Band 6 qua Bluetooth LE"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "bleak>=0.22",
+    "cryptography>=42",
+    "aiohttp>=3.9",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+# Bản desktop cũ (Qt): uv run --extra desktop miband6-app
+desktop = ["PySide6-Essentials>=6.6"]
+
+[project.scripts]
+miband6-web = "miband6.web.server:main"
+miband6-app = "miband6.gui.app:main"
+miband6-cli = "miband6.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "PySide6-Essentials>=6.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/miband6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

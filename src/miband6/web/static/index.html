@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="vi" class="i18n-pending">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#121817">
+<meta name="color-scheme" content="dark">
+<title>Mi Band 6</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='9' y='2' width='14' height='28' rx='7' fill='%23222b29'/%3E%3Crect x='11' y='4' width='10' height='24' rx='5' fill='%23000'/%3E%3Ccircle cx='16' cy='18' r='3.2' fill='none' stroke='%23FFB547' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="preload" href="/static/fonts/be-vietnam-pro-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.6M5 4.5 3 6.5M19 4.5l2 2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-band" viewBox="0 0 24 24"><rect x="8" y="5" width="8" height="14" rx="4"/><path d="M10 5V2.5M14 5V2.5M10 19v2.5M14 19v2.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m7 14 5-5 5 5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-bt" viewBox="0 0 24 24"><path d="m7 8 10 8-5 4V4l5 4L7 16"/></symbol>
+  <symbol id="i-vibrate" viewBox="0 0 24 24"><rect x="9" y="5" width="6" height="14" rx="3"/><path d="M5.5 9v6M18.5 9v6M2.5 10.5v3M21.5 10.5v3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5Z"/><path d="m9.5 13.5 2.5-2.5 2.5 2.5M12 11v5"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- ============================================================ thanh bên / đầu trang -->
+  <aside class="rail">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="5"/><circle cx="12" cy="13" r="2.4"/></svg>
+      <span class="brand-name">Mi Band 6</span>
+    </div>
+    <div class="status" id="status" data-state="off">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="status-text" id="statusText">Chưa kết nối</span>
+      <span class="status-bat" id="statusBat"></span>
+    </div>
+    <nav class="nav" id="nav" aria-label="Mục chính">
+      <a href="#overview"><svg class="ic"><use href="#i-pulse"/></svg><span>Tổng quan</span></a>
+      <a href="#settings"><svg class="ic"><use href="#i-sliders"/></svg><span>Cài đặt</span></a>
+      <a href="#alarms"><svg class="ic"><use href="#i-alarm"/></svg><span>Báo thức</span></a>
+      <a href="#tools"><svg class="ic"><use href="#i-bell"/></svg><span>Công cụ</span></a>
+      <a href="#device"><svg class="ic"><use href="#i-band"/></svg><span>Thiết bị</span></a>
+    </nav>
+    <div class="rail-foot">
+      <div class="lang" role="group" aria-label="Ngôn ngữ giao diện">
+        <button type="button" data-lang="vi" aria-pressed="false">VI</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <p class="rail-note">Server chạy trên máy tính này</p>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="offline" class="banner warn" hidden>Mất kết nối tới server trên máy tính. Đang thử lại…</div>
+    <div id="demoBanner" class="banner info" hidden>Chế độ xem thử: đang dùng vòng tay giả lập, không có Bluetooth.</div>
+
+    <!-- ============================================================ Tổng quan -->
+    <section class="page" id="page-overview">
+      <header class="page-head">
+        <div>
+          <p class="date-line" id="dateLine"></p>
+          <h1>Tổng quan</h1>
+        </div>
+        <button id="refreshBtn" class="btn ghost" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đọc lại</span></button>
+      </header>
+
+      <div class="empty" id="overviewEmpty">
+        <svg class="empty-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-band"/></svg>
+        <h2>Chưa kết nối vòng tay</h2>
+        <p>Kết nối để xem pin, bước chân, nhịp tim và chỉnh cài đặt.</p>
+        <a class="btn primary" href="#device">Kết nối vòng tay</a>
+      </div>
+
+      <div id="overviewBody" hidden>
+        <div class="hero">
+          <figure class="hero-band" aria-label="Màn hình vòng tay">
+            <svg id="band" class="band" viewBox="0 0 140 400" role="img" aria-label="Vòng tay đang hiển thị giờ, nhịp tim, bước chân và pin">
+              <defs>
+                <linearGradient id="strapTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2422" stop-opacity="0"/><stop offset="1" stop-color="#26302e"/></linearGradient>
+                <linearGradient id="strapBottom" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26302e"/><stop offset="1" stop-color="#1c2422" stop-opacity="0"/></linearGradient>
+                <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3b4644"/><stop offset=".18" stop-color="#151a19"/><stop offset=".82" stop-color="#151a19"/><stop offset="1" stop-color="#2c3533"/></linearGradient>
+              </defs>
+              <rect x="32" y="-10" width="76" height="110" rx="22" fill="url(#strapTop)"/>
+              <rect x="32" y="300" width="76" height="110" rx="22" fill="url(#strapBottom)"/>
+              <rect x="20" y="60" width="100" height="280" rx="50" fill="url(#bodyGrad)" stroke="#45514e" stroke-width="1"/>
+              <rect x="27" y="67" width="86" height="266" rx="43" fill="#000"/>
+              <text id="bTime" x="70" y="132" class="b-time">--:--</text>
+              <text id="bDate" x="70" y="151" class="b-small"></text>
+              <text id="bHr" x="70" y="190" class="b-hr">♥ --</text>
+              <circle cx="70" cy="236" r="24" class="b-ring-bg"/>
+              <circle id="bRing" cx="70" cy="236" r="24" class="b-ring" transform="rotate(-90 70 236)" stroke-dasharray="0 151"/>
+              <text id="bSteps" x="70" y="240.5" class="b-steps">--</text>
+              <text id="bBatText" x="70" y="285" class="b-small"></text>
+              <rect x="52" y="292" width="34" height="11" rx="3" class="b-bat-frame"/>
+              <rect x="87" y="295.5" width="2" height="4" rx="1" class="b-bat-tip"/>
+              <rect id="bBat" x="54" y="294" width="0" height="7" rx="1.5" class="b-bat"/>
+            </svg>
+          </figure>
+          <div class="hero-stats">
+            <p class="hero-label">Bước chân hôm nay</p>
+            <p class="hero-steps"><span id="steps" class="num">—</span></p>
+            <div class="goal">
+              <div class="goal-bar" role="progressbar" aria-label="Tiến độ mục tiêu bước" aria-valuemin="0" aria-valuemax="100"><span id="goalBar"></span></div>
+              <p class="goal-text"><span id="goalPct">0%</span> mục tiêu <span id="goalLabel">8.000</span> bước</p>
+            </div>
+            <div class="hero-mini">
+              <div class="mini dist"><span class="mini-value"><span id="dist" class="num">—</span> km</span><span class="mini-label">Quãng đường</span></div>
+              <div class="mini cal"><span class="mini-value"><span id="cal" class="num">—</span> kcal</span><span class="mini-label">Năng lượng</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tiles">
+          <article class="tile tile-hr">
+            <header class="tile-head"><svg class="ic"><use href="#i-heart"/></svg><h2>Nhịp tim</h2></header>
+            <p class="tile-value"><span id="hr" class="num">—</span> <span class="unit">nhịp/phút</span></p>
+            <svg class="spark" id="hrSpark" viewBox="0 0 200 48" preserveAspectRatio="none" aria-hidden="true"><polyline id="hrLine" points=""/></svg>
+            <p class="tile-note" id="hrNote">Đeo vòng sát cổ tay rồi bấm Đo ngay.</p>
+            <div class="tile-actions">
+              <button id="hrLiveBtn" class="btn" data-conn aria-pressed="false">Theo dõi liên tục</button>
+              <button id="hrMeasureBtn" class="btn primary" data-conn>Đo ngay</button>
+            </div>
+          </article>
+          <article class="tile tile-bat">
+            <header class="tile-head"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3"/></svg><h2>Pin</h2></header>
+            <div class="bat-ring">
+              <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40" class="ring-bg"/><circle id="batRing" cx="50" cy="50" r="40" class="ring" transform="rotate(-90 50 50)" stroke-dasharray="0 252"/></svg>
+              <span id="bat" class="num">—</span>
+            </div>
+            <p class="tile-note" id="batNote"></p>
+          </article>
+          <article class="tile tile-dev">
+            <header class="tile-head"><svg class="ic"><use href="#i-band"/></svg><h2>Thiết bị</h2></header>
+            <dl class="facts">
+              <dt>Tên</dt><dd id="iName">—</dd>
+              <dt>Firmware</dt><dd id="iFirmware">—</dd>
+              <dt>Phần cứng</dt><dd id="iHardware">—</dd>
+              <dt>Serial</dt><dd id="iSerial">—</dd>
+              <dt>Xác thực</dt><dd id="iProtocol">—</dd>
+              <dt>Giờ trên vòng</dt><dd id="iBandTime">—</dd>
+            </dl>
+            <div class="tile-actions"><button id="syncTimeBtn" class="btn" data-conn><svg class="ic"><use href="#i-clock"/></svg><span>Đồng bộ giờ</span></button></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ Cài đặt -->
+    <section class="page" id="page-settings" hidden>
+      <header class="page-head"><h1>Cài đặt</h1></header>
+      <p class="banner info conn-hint" hidden>Kết nối vòng tay ở mục Thiết bị để lưu thay đổi.</p>
+      <div class="subtabs" role="tablist" aria-label="Nhóm cài đặt">
+        <button role="tab" data-sub="profile">Hồ sơ</button>
+        <button role="tab" data-sub="display">Màn hình</button>
+        <button role="tab" data-sub="apps">Ứng dụng</button>
+        <button role="tab" data-sub="health">Sức khỏe</button>
+      </div>
+
+      <!-- Hồ sơ -->
+      <div class="subpage" id="sub-profile" role="tabpanel">
+        <div class="cloud-card">
+          <span class="cloud-icon"><svg class="ic"><use href="#i-cloud"/></svg></span>
+          <div class="cloud-text">
+            <h2>Lấy từ tài khoản Mi Fitness</h2>
+            <p>Vòng tay không cho đọc lại hồ sơ qua Bluetooth. Lấy tên, ngày sinh, giới tính, chiều cao, cân nặng và mục tiêu bước từ tài khoản Mi Fitness rồi ghi vào vòng tay.</p>
+          </div>
+          <button id="cloudSyncBtn" class="btn primary"><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ</span></button>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Hồ sơ cơ thể</h2><p>Vòng tay dùng các số đo này để tính quãng đường và năng lượng tiêu hao.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Tên</span><input id="pAlias" placeholder="Tên hiển thị" maxlength="32"></label>
+            <label class="row"><span class="row-label">Ngày sinh</span><input id="pBirth" type="date"></label>
+            <div class="row"><span class="row-label">Giới tính</span>
+              <div class="seg" role="radiogroup" aria-label="Giới tính">
+                <input type="radio" name="gender" id="g0" value="0"><label for="g0">Nam</label>
+                <input type="radio" name="gender" id="g1" value="1"><label for="g1">Nữ</label>
+                <input type="radio" name="gender" id="g2" value="2"><label for="g2">Khác</label>
+              </div></div>
+            <label class="row"><span class="row-label">Chiều cao</span><span class="with-unit"><input id="pHeight" type="number" min="100" max="230" step="1" inputmode="numeric"><span>cm</span></span></label>
+            <label class="row"><span class="row-label">Cân nặng</span><span class="with-unit"><input id="pWeight" type="number" min="20" max="250" step="0.1" inputmode="decimal"><span>kg</span></span></label>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="profile" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Mục tiêu hằng ngày</h2></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Bước chân</span><span class="with-unit"><input id="pGoal" type="number" min="1000" max="60000" step="500" inputmode="numeric"><span>bước</span></span></label>
+            <label class="row"><span class="row-label">Rung khi đạt mục tiêu</span><input type="checkbox" class="switch" id="pGoalNotify"></label>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="goal" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Tay đeo</h2><p>Chọn đúng tay giúp vòng nhận diện cử chỉ nâng tay chính xác hơn.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Đeo ở</span>
+              <div class="seg" role="radiogroup" aria-label="Tay đeo">
+                <input type="radio" name="wear" id="wLeft" value="left"><label for="wLeft">Tay trái</label>
+                <input type="radio" name="wear" id="wRight" value="right"><label for="wRight">Tay phải</label>
+              </div></div>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="wear" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+      </div>
+
+      <!-- Màn hình -->
+      <div class="subpage" id="sub-display" role="tabpanel" hidden>
+        <div class="group">
+          <div class="group-head"><h2>Ngôn ngữ và định dạng</h2></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Ngôn ngữ</span><select id="dLang"></select></label>
+            <div class="row"><span class="row-label">Kiểu giờ</span>
+              <div class="seg"><input type="radio" name="h24" id="h24" value="1"><label for="h24">24 giờ</label><input type="radio" name="h24" id="h12" value="0"><label for="h12">12 giờ</label></div></div>
+            <label class="row"><span class="row-label">Kiểu ngày</span><select id="dDate"></select></label>
+            <div class="row"><span class="row-label">Khoảng cách</span>
+              <div class="seg"><input type="radio" name="metric" id="mKm" value="1"><label for="mKm">Kilômét</label><input type="radio" name="metric" id="mMi" value="0"><label for="mMi">Dặm</label></div></div>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="formats" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Nâng tay để sáng màn hình</h2></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Chế độ</span>
+              <div class="seg" data-schedule="liftTimes"><input type="radio" name="lift" id="lOff" value="off"><label for="lOff">Tắt</label><input type="radio" name="lift" id="lOn" value="on"><label for="lOn">Luôn bật</label><input type="radio" name="lift" id="lSch" value="scheduled"><label for="lSch">Theo giờ</label></div></div>
+            <div class="row" id="liftTimes"><span class="row-label">Khung giờ</span><span class="range"><input type="time" id="dLiftFrom" aria-label="Từ"><span>đến</span><input type="time" id="dLiftTo" aria-label="Đến"></span></div>
+            <label class="row"><span class="row-label">Nhạy hơn</span><input type="checkbox" class="switch" id="dLiftSens"></label>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="lift" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Chế độ ban đêm</h2><p>Giảm độ sáng màn hình vào buổi tối.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Chế độ</span>
+              <div class="seg" data-schedule="nightTimes"><input type="radio" name="night" id="nOffN" value="off"><label for="nOffN">Tắt</label><input type="radio" name="night" id="nSun" value="sunset"><label for="nSun">Hoàng hôn</label><input type="radio" name="night" id="nSchN" value="scheduled"><label for="nSchN">Theo giờ</label></div></div>
+            <div class="row" id="nightTimes"><span class="row-label">Khung giờ</span><span class="range"><input type="time" id="dNightFrom" aria-label="Từ"><span>đến</span><input type="time" id="dNightTo" aria-label="Đến"></span></div>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="night" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Khóa bằng mật khẩu</h2><p>Vòng tay hỏi mã 6 số khi bạn đeo lại sau khi tháo ra.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Bật khóa</span><input type="checkbox" class="switch" id="dPwOn"></label>
+            <label class="row"><span class="row-label">Mã 6 số</span><input id="dPw" class="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="••••••"></label>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="password" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+      </div>
+
+      <!-- Ứng dụng -->
+      <div class="subpage" id="sub-apps" role="tabpanel" hidden>
+        <div class="group">
+          <div class="group-head">
+            <h2>Ứng dụng trên vòng tay</h2>
+            <p>Chọn nhóm cho từng ứng dụng, đổi thứ tự bằng mũi tên hoặc kéo thả. Mặt đồng hồ luôn đứng đầu, rồi đến màn hình chính, cuối cùng là mục Thêm. Cài đặt không ẩn được.</p>
+          </div>
+          <div class="sorter">
+            <div class="bucket b-main">
+              <h3>Màn hình chính <span id="mainCount" class="count"></span></h3>
+              <ol id="appsMain" class="apps" data-group="main" data-empty="Kéo ứng dụng vào đây"></ol>
+            </div>
+            <div class="bucket b-more">
+              <h3>Trong mục Thêm</h3>
+              <ol id="appsMore" class="apps" data-group="more" data-empty="Mục Thêm đang trống"></ol>
+            </div>
+            <div class="bucket b-hidden">
+              <h3>Ẩn</h3>
+              <ol id="appsHidden" class="apps" data-group="hidden" data-empty="Không có ứng dụng nào bị ẩn"></ol>
+            </div>
+          </div>
+          <div class="group-foot">
+            <button id="appsResetBtn" class="btn ghost" type="button">Về bố cục gốc</button>
+            <button class="btn primary" data-save="menu-apps" data-conn>Lưu bố cục</button>
+          </div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Phím tắt</h2><p>Các màn hình hiện khi vuốt trái, phải từ mặt đồng hồ. Bật mục muốn dùng và sắp xếp thứ tự.</p></div>
+          <ol id="menuShortcuts" class="apps shortcuts"></ol>
+          <div class="group-foot"><button class="btn primary" data-save="menu-shortcuts" data-conn>Lưu phím tắt</button></div>
+        </div>
+      </div>
+
+      <!-- Sức khỏe -->
+      <div class="subpage" id="sub-health" role="tabpanel" hidden>
+        <div class="group">
+          <div class="group-head"><h2>Đo nhịp tim tự động</h2><p>Đo thường xuyên hơn cho dữ liệu chi tiết hơn nhưng tốn pin hơn.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Chu kỳ đo</span><select id="hInterval"></select></label>
+            <label class="row"><span class="row-label">Đo chính xác hơn khi ngủ</span><input type="checkbox" class="switch" id="hSleep"></label>
+            <label class="row"><span class="row-label">Đo dày hơn khi vận động</span><input type="checkbox" class="switch" id="hActivity"></label>
+            <label class="row"><span class="row-label">Cảnh báo nhịp tim cao</span><input type="checkbox" class="switch" id="hAlert"></label>
+            <label class="row"><span class="row-label">Ngưỡng cảnh báo</span><select id="hThreshold"></select></label>
+            <label class="row"><span class="row-label">Theo dõi căng thẳng</span><input type="checkbox" class="switch" id="hStress"></label>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="hr" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Nhắc vận động</h2><p>Vòng tay rung khi bạn ngồi yên quá lâu trong khung giờ đã chọn.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Bật nhắc</span><input type="checkbox" class="switch" id="iOn"></label>
+            <label class="row"><span class="row-label">Nhắc sau khi ngồi</span><span class="with-unit"><input id="iMinutes" type="number" min="15" max="180" step="5" inputmode="numeric"><span>phút</span></span></label>
+            <div class="row"><span class="row-label">Khung giờ</span><span class="range"><input type="time" id="iFrom" aria-label="Từ"><span>đến</span><input type="time" id="iTo" aria-label="Đến"></span></div>
+            <label class="row"><span class="row-label">Không nhắc giờ nghỉ trưa</span><input type="checkbox" class="switch" id="iLunch"></label>
+            <div class="row"><span class="row-label">Nghỉ trưa</span><span class="range"><input type="time" id="iLunchFrom" aria-label="Từ"><span>đến</span><input type="time" id="iLunchTo" aria-label="Đến"></span></div>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="idle" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Không làm phiền</h2><p>Tắt rung thông báo và cuộc gọi trong khung giờ này.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Chế độ</span>
+              <div class="seg" data-schedule="dndTimes"><input type="radio" name="dnd" id="dOff" value="off"><label for="dOff">Tắt</label><input type="radio" name="dnd" id="dAuto" value="auto"><label for="dAuto">Khi ngủ</label><input type="radio" name="dnd" id="dSch" value="scheduled"><label for="dSch">Theo giờ</label></div></div>
+            <div class="row" id="dndTimes"><span class="row-label">Khung giờ</span><span class="range"><input type="time" id="nFrom" aria-label="Từ"><span>đến</span><input type="time" id="nTo" aria-label="Đến"></span></div>
+            <label class="row"><span class="row-label">Vẫn cho nâng tay sáng màn hình</span><input type="checkbox" class="switch" id="nLift"></label>
+          </div>
+          <div class="group-foot"><button class="btn primary" data-save="dnd" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ Báo thức -->
+    <section class="page" id="page-alarms" hidden>
+      <header class="page-head">
+        <h1>Báo thức</h1>
+        <button id="alarmsReadBtn" class="btn ghost" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đọc từ vòng tay</span></button>
+      </header>
+      <p class="banner info conn-hint" hidden>Kết nối vòng tay ở mục Thiết bị để lưu thay đổi.</p>
+      <div id="alarmList" class="alarm-list"></div>
+      <p class="alarm-empty" id="alarmEmpty">Chưa có báo thức nào.</p>
+      <div class="alarm-actions">
+        <button id="alarmAddBtn" class="btn ghost"><svg class="ic"><use href="#i-plus"/></svg><span>Thêm báo thức</span></button>
+        <button id="alarmsSaveBtn" class="btn primary" data-conn>Lưu vào vòng tay</button>
+      </div>
+      <p class="fine">Mi Band 6 có tối đa 10 báo thức. Không chọn ngày nào nghĩa là chỉ báo một lần.</p>
+    </section>
+
+    <!-- ============================================================ Công cụ -->
+    <section class="page" id="page-tools" hidden>
+      <header class="page-head"><h1>Công cụ</h1></header>
+      <p class="banner info conn-hint" hidden>Kết nối vòng tay ở mục Thiết bị để dùng các công cụ.</p>
+      <div class="tool-grid">
+        <div class="group tool-find">
+          <div class="group-head"><h2>Tìm vòng tay</h2><p>Vòng tay rung tối đa 30 giây, hoặc đến khi bạn bấm Dừng hay từ chối trên vòng.</p></div>
+          <div class="find-actions">
+            <button id="findBtn" class="btn primary big" data-conn><svg class="ic"><use href="#i-vibrate"/></svg><span>Rung vòng tay</span></button>
+            <button id="findStopBtn" class="btn" data-conn>Dừng</button>
+          </div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Cuộc gọi đến</h2><p>Giả lập một cuộc gọi để thử rung và màn hình cuộc gọi.</p></div>
+          <div class="rows"><label class="row"><span class="row-label">Người gọi</span><input id="tCaller" value="Mẹ" data-i18n-value maxlength="64"></label></div>
+          <div class="group-foot"><button id="callStopBtn" class="btn" data-conn>Kết thúc</button><button id="callBtn" class="btn primary" data-conn>Gửi cuộc gọi</button></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-head"><h2>Gửi thông báo</h2><p>Hiện một thông báo trên vòng tay, kèm biểu tượng và tên ứng dụng.</p></div>
+        <div class="rows">
+          <label class="row"><span class="row-label">Biểu tượng</span><select id="tIcon"></select></label>
+          <label class="row"><span class="row-label">Tên ứng dụng</span><input id="tApp" value="Máy tính" data-i18n-value maxlength="32"></label>
+          <label class="row"><span class="row-label">Tiêu đề</span><input id="tTitle" placeholder="Tiêu đề hoặc người gửi" maxlength="32"></label>
+          <label class="row top"><span class="row-label">Nội dung</span><textarea id="tBody" rows="3" placeholder="Nội dung thông báo"></textarea></label>
+        </div>
+        <div class="group-foot"><button id="notifyBtn" class="btn primary" data-conn>Gửi thông báo</button></div>
+      </div>
+      <div class="group">
+        <div class="rows">
+          <label class="row"><span class="row-label">Phát âm thanh khi bấm Tìm điện thoại trên vòng tay</span><input type="checkbox" class="switch" id="tFindSound"></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ Thiết bị -->
+    <section class="page" id="page-device" hidden>
+      <header class="page-head"><h1>Thiết bị</h1></header>
+      <p class="lead">Vòng tay chỉ giữ một kết nối. Tắt Bluetooth trên điện thoại trong Cài đặt (hoặc thoát hẳn Mi Fitness / Zepp Life) trước khi kết nối từ máy tính.</p>
+
+      <div class="group">
+        <div class="group-head split">
+          <h2>Tìm vòng tay</h2>
+          <button id="scanBtn" class="btn primary"><svg class="ic"><use href="#i-bt"/></svg><span id="scanLabel">Quét</span></button>
+        </div>
+        <ul id="deviceList" class="device-list" aria-label="Thiết bị tìm thấy"><li class="placeholder">Bấm Quét để tìm vòng tay ở gần.</li></ul>
+        <div class="rows"><label class="row"><span class="row-label">Hiện mọi thiết bị Bluetooth</span><input type="checkbox" class="switch" id="showAll"></label></div>
+      </div>
+
+      <div class="group">
+        <div class="group-head"><h2>Auth key</h2><p>Mã bí mật 32 ký tự được tạo khi bạn ghép đôi vòng tay bằng Mi Fitness hoặc Zepp Life.</p></div>
+        <p id="envKeyNote" class="banner ok" hidden>Đang dùng auth key trong tệp <code>.env</code> trên máy tính. Để trống ô dưới đây; key không được gửi tới trình duyệt.</p>
+        <div class="key-field">
+          <svg class="ic"><use href="#i-key"/></svg>
+          <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="0x8f2b1c0a77d94e3fa5c1b2e3d4f50617" aria-label="Auth key">
+          <button id="showKey" type="button" class="btn ghost small">Hiện mã</button>
+        </div>
+        <button id="keyHelpBtn" class="link" type="button">Cách lấy auth key</button>
+      </div>
+
+      <div class="group">
+        <div class="group-head"><h2>Kết nối</h2></div>
+        <div class="rows">
+          <div class="row"><span class="row-label">Vòng tay</span><output id="selectedDevice" class="muted">Chưa chọn</output></div>
+          <div class="row"><span class="row-label">Kiểu xác thực</span>
+            <div class="seg"><input type="radio" name="proto" id="pAuto" value="auto"><label for="pAuto">Tự động</label><input type="radio" name="proto" id="pClassic" value="classic"><label for="pClassic">Kiểu cũ</label><input type="radio" name="proto" id="p2021" value="2021"><label for="p2021">Kiểu mới</label></div></div>
+        </div>
+        <p id="connStatus" class="conn-status" role="status"></p>
+        <div class="group-foot">
+          <button id="disconnectBtn" class="btn">Ngắt kết nối</button>
+          <button id="connectBtn" class="btn primary">Kết nối</button>
+        </div>
+      </div>
+
+      <details class="group log-group" id="logGroup">
+        <summary><h2>Nhật ký Bluetooth</h2><span class="muted">Mọi gói tin gửi (→) và nhận (←)</span></summary>
+        <pre id="logView" class="log" tabindex="0" aria-label="Nhật ký Bluetooth"></pre>
+        <div class="group-foot"><button id="logClearBtn" class="btn ghost">Xóa</button><button id="logSaveBtn" class="btn">Tải về</button></div>
+      </details>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<dialog id="keyHelp" class="dialog">
+  <h2>Cách lấy auth key</h2>
+  <p>Auth key là mã 32 ký tự hex được tạo khi bạn ghép đôi vòng tay bằng app của hãng. Các lệnh dưới đây chạy trong thư mục ứng dụng trên máy Mac.</p>
+  <h3>Ghép đôi bằng Mi Fitness</h3>
+  <pre>uv run tools/mifitness_key.py --save-env</pre>
+  <p>Quét mã QR hiện ra bằng camera điện thoại và đăng nhập tài khoản Xiaomi. Script ghi key vào tệp <code>.env</code>; khởi động lại server là dùng được.</p>
+  <h3>iPhone, không cần đăng nhập</h3>
+  <p>Trong app Tệp: Trên iPhone → Mi Fitness → MHWCahe → thư mục số → VirtualDevice_registerList. AirDrop <code>manifest.sqlite</code> và <code>manifest.sqlite-wal</code> sang Mac rồi chạy:</p>
+  <pre>uv run tools/mifitness_key.py --save-env --file ~/Downloads/manifest.sqlite ~/Downloads/manifest.sqlite-wal</pre>
+  <h3>Ghép đôi bằng Zepp Life</h3>
+  <pre>uvx --from git+https://codeberg.org/argrento/huami-token huami-token \
+    --method amazfit --email EMAIL --password PASSWORD --bt_keys</pre>
+  <p>Các cách khác có trong <a href="https://gadgetbridge.org/basics/pairing/huami-xiaomi-server/" target="_blank" rel="noopener">hướng dẫn của Gadgetbridge</a>. Đừng hủy ghép đôi vòng tay trong app của hãng, vì làm vậy mã cũ sẽ mất hiệu lực.</p>
+  <form method="dialog" class="dialog-foot"><button class="btn primary">Đóng</button></form>
+</dialog>
+
+<dialog id="cloudDialog" class="dialog small">
+  <h2>Đồng bộ từ Mi Fitness</h2>
+  <div id="cloudBusy" class="cloud-busy"><span class="spinner" aria-hidden="true"></span><p id="cloudBusyText">Đang kết nối tới máy chủ Xiaomi…</p></div>
+  <div id="cloudLogin" class="cloud-login" hidden>
+    <p>Quét mã bằng camera điện thoại và đăng nhập tài khoản Xiaomi đang dùng trong Mi Fitness.</p>
+    <img id="cloudQr" class="qr" alt="Mã QR đăng nhập Xiaomi" width="220" height="220">
+    <p class="cloud-alt"><a id="cloudLink" href="#" target="_blank" rel="noopener noreferrer">Hoặc đăng nhập trong trình duyệt</a><span id="cloudExpire"></span></p>
+  </div>
+  <p id="cloudError" class="banner warn" hidden></p>
+  <div class="dialog-foot gap">
+    <button id="cloudReloginBtn" class="btn ghost" type="button" hidden>Đăng nhập lại</button>
+    <button id="cloudCancelBtn" class="btn" type="button">Hủy</button>
+    <button id="cloudRetryBtn" class="btn primary" type="button" hidden>Thử lại</button>
+  </div>
+</dialog>
+
+<dialog id="findPhone" class="dialog small">
+  <h2>Vòng tay đang tìm máy tính</h2>
+  <p>Bạn vừa bấm Tìm điện thoại trên vòng tay.</p>
+  <form method="dialog" class="dialog-foot"><button class="btn primary">Đã thấy</button></form>
+</dialog>
+
+<script src="/static/app.js?v={{v}}"></script>
+</body>
+</html>
