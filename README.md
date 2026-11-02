@@ -17,7 +17,7 @@ Chạy được trên macOS (Apple Silicon và Intel), Windows và Linux.
 - Ngôn ngữ (có tiếng Việt), kiểu giờ 12/24, kiểu ngày, đơn vị khoảng cách
 - Nâng tay sáng màn hình (tắt, luôn bật, theo khung giờ) và độ nhạy
 - Chế độ ban đêm, khóa bằng mật khẩu 6 số
-- Sắp xếp ứng dụng trên vòng tay thành ba nhóm: màn hình chính (tối đa 15), trong mục **Thêm**, hoặc ẩn; sắp xếp phím tắt
+- Sắp xếp thứ tự, hiện hoặc ẩn ứng dụng trên vòng tay; sắp xếp phím tắt
 - Đo nhịp tim tự động, cảnh báo nhịp tim cao, theo dõi căng thẳng
 - Nhắc vận động (kèm giờ nghỉ trưa), Không làm phiền
 - 10 báo thức: đọc từ vòng tay, chỉnh sửa, lưu lại
@@ -169,13 +169,12 @@ Server chỉ đọc, không thay đổi gì trong tài khoản. Phiên đăng nh
 
 ## Sắp xếp ứng dụng trên vòng tay
 
-Trang **Cài đặt → Ứng dụng** chia ứng dụng thành ba nhóm:
+Trang **Cài đặt → Ứng dụng** chia ứng dụng thành hai nhóm:
 
-- **Màn hình chính:** hiện ngay khi vuốt lên, xuống, tối đa 15 ứng dụng.
-- **Trong mục Thêm:** gom vào mục "Thêm" ở cuối danh sách.
-- **Ẩn:** không hiện ở đâu.
+- **Hiện trên vòng tay:** hiện khi vuốt lên, xuống từ mặt đồng hồ, theo đúng thứ tự trong danh sách.
+- **Ẩn:** không hiện trên vòng tay.
 
-Chọn nhóm bằng ô chọn bên cạnh mỗi ứng dụng, đổi thứ tự bằng nút mũi tên hoặc kéo thả, rồi bấm **Lưu bố cục**. Ứng dụng Cài đặt không ẩn được. **Về bố cục gốc** đưa giao diện về bố cục gần với mặc định của vòng tay (chưa ghi cho tới khi bấm Lưu).
+Mi Band 6 không có thư mục "Thêm" như Mi Band 5: mọi ứng dụng nằm trong một danh sách. Chọn nhóm bằng ô chọn bên cạnh mỗi ứng dụng, đổi thứ tự bằng nút mũi tên hoặc kéo thả, rồi bấm **Lưu bố cục**. Ứng dụng Cài đặt không ẩn được. **Về bố cục gốc** đưa giao diện về bố cục gần với mặc định của vòng tay (chưa ghi cho tới khi bấm Lưu).
 
 Vòng tay không cho đọc lại bố cục hiện tại, nên ứng dụng chỉ nhớ lần lưu gần nhất của chính nó.
 
@@ -189,7 +188,7 @@ Vòng tay không cho đọc lại bố cục hiện tại, nên ứng dụng ch�
 | Lỗi quyền Bluetooth | Cấp quyền Bluetooth cho Terminal như mục trên. |
 | Đồng bộ Mi Fitness báo không đọc được hồ sơ | Bấm **Đăng nhập lại** và quét mã bằng đúng tài khoản Xiaomi của Mi Fitness. Vẫn lỗi thì chép các dòng "Mi Fitness:" trong Nhật ký Bluetooth gửi kèm khi báo lỗi. |
 | Một cài đặt không có tác dụng | Mở **Nhật ký Bluetooth** cuối trang **Thiết bị**, bấm **Tải về** để xem vòng tay trả lời gì. |
-| Vòng tay mất mục Thêm hoặc mất Cài đặt | Vào **Cài đặt → Ứng dụng**, bấm **Về bố cục gốc** rồi **Lưu bố cục**. |
+| Vòng tay mất ứng dụng Cài đặt | Vào **Cài đặt → Ứng dụng**, bấm **Về bố cục gốc** rồi **Lưu bố cục**. |
 | Trình duyệt báo không mở được localhost:8766 | Server chưa chạy hoặc đã tắt: chạy lại `uv run miband6-web`. Nếu cổng bận, server tự dùng cổng kế tiếp; xem đường dẫn in trong Terminal. |
 | (Bản desktop) uv báo không có bản PySide6 phù hợp | PySide6 mới cần macOS 14 trở lên. Trên macOS cũ hơn, sửa `PySide6-Essentials>=6.6` trong `pyproject.toml` thành `PySide6-Essentials>=6.6,<6.8`, xóa `uv.lock` rồi chạy lại. |
 

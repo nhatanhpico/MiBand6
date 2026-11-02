@@ -455,9 +455,9 @@ class MiBand6:
     async def set_hr_sleep_assist(self, enable: bool) -> None:
         await self._hr_control(P.hr_sleep_assist(enable))
 
-    async def set_display_items(self, main: list[str], more: list[str] | None = None) -> None:
-        """main: màn hình chính; more: trong mục "Thêm"; mục không có ở đâu sẽ bị ẩn."""
-        await self.write_chunked(2, P.display_items(main, more or []))
+    async def set_display_items(self, items: list[str]) -> None:
+        """Các ứng dụng hiện trên vòng tay theo thứ tự; mục không có trong danh sách sẽ bị ẩn."""
+        await self.write_chunked(2, P.display_items(items))
 
     async def set_shortcuts(self, items: list[str]) -> None:
         await self.write_chunked(2, P.menu_items(items, shortcuts=True))

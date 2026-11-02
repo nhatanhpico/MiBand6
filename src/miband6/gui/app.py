@@ -1402,8 +1402,7 @@ class MainWindow(QMainWindow):
             self._run("Lưu phím tắt", lambda: self.band.set_shortcuts(items), "Đã lưu phím tắt vào vòng tay.",
                       lambda _: self._save_settings(shortcuts=items))
         else:
-            main, more = P.arrange_display_items(items, [])
-            self._run("Lưu menu ứng dụng", lambda: self.band.set_display_items(main, more), "Đã lưu menu ứng dụng vào vòng tay.",
+            self._run("Lưu menu ứng dụng", lambda: self.band.set_display_items(items), "Đã lưu menu ứng dụng vào vòng tay.",
                       lambda _: self._save_settings(display_items=items))
 
     def _apply_hr_settings(self) -> None:

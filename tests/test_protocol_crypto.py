@@ -99,20 +99,17 @@ def test_menu_items_starts_with_watchface():
     assert P.menu_items(["music"], shortcuts=True)[3] == 0xFD
 
 
-def test_display_items_with_more_folder():
-    raw = P.display_items(["hr", "weather"], ["music", "settings"])
-    # mặt đồng hồ, 2 mục chính, "Thêm" (0x07), rồi các mục trong "Thêm"
-    assert raw == bytes([0x1E, 0, 0, 0xFF, 0x12, 1, 0, 0xFF, 0x02, 2, 0, 0xFF, 0x04,
-                         3, 0, 0xFF, 0x07, 4, 0, 0xFF, 0x0B, 5, 0, 0xFF, 0x13])
-    # tối đa 15 mục chính, phần dư sang "Thêm"; Cài đặt không bao giờ bị ẩn; bỏ trùng
-    main, more = P.arrange_display_items(P.DISPLAY_ITEMS_ALL, ["hr", "bogus"])
-    assert len(main) == P.MENU_MAIN_MAX and main[0] == "status"
-    assert more[0] == P.DISPLAY_ITEMS_ALL[15] and "hr" not in more and "bogus" not in more
-    main, more = P.arrange_display_items(["hr"], [])
-    assert more == ["settings"]
-    # không có mục nào trong "Thêm" thì không gửi mục "Thêm"
-    assert 0x07 not in P.display_items(["hr", "settings"], [])[1::4][3::4]
-    assert P.display_items(["hr", "settings"], []) == P.menu_items(["hr", "settings"], False)
+def test_display_items_flat_list():
+    raw = P.display_items(["music", "hr", "settings", "weather"])
+    # mặt đồng hồ rồi các mục đúng thứ tự, như Gadgetbridge gửi cho Mi Band 6
+    assert raw == bytes([0x1E, 0, 0, 0xFF, 0x12, 1, 0, 0xFF, 0x0B, 2, 0, 0xFF, 0x02,
+                         3, 0, 0xFF, 0x13, 4, 0, 0xFF, 0x04])
+    # Cài đặt không bao giờ bị ẩn; bỏ mục lạ và mục trùng
+    assert P.arrange_display_items(["hr", "bogus", "hr", "more"]) == ["hr", "settings"]
+    # Mi Band 6 không có thư mục "Thêm": không bao giờ gửi 0x07, kể cả khi hiện mọi ứng dụng
+    raw = P.display_items(P.DISPLAY_ITEMS_ALL)
+    assert 0x07 not in raw[4::4] and len(raw) == 1 + 4 * (len(P.DISPLAY_ITEMS_ALL) + 1)
+    assert "more" not in P.MENU_IDS
 
 
 def test_notification_payload():

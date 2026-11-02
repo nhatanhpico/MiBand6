@@ -298,13 +298,11 @@ input.pin { width: 150px; text-align: center; letter-spacing: .45em; font-varian
 /* ================================================================ sắp xếp ứng dụng */
 .sorter {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas: "main more" "main hidden"; gap: 16px 18px; align-items: start;
+  grid-template-areas: "shown hidden"; gap: 16px 18px; align-items: start;
   padding: 2px 22px 20px;
 }
-.b-main { grid-area: main; } .b-more { grid-area: more; } .b-hidden { grid-area: hidden; }
+.b-shown { grid-area: shown; } .b-hidden { grid-area: hidden; }
 .bucket h3 { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 500; color: var(--muted); margin-bottom: 8px; }
-.count { font-variant-numeric: tabular-nums; }
-.count.full { color: var(--amber); font-weight: 600; }
 ol.apps { list-style: none; margin: 0; padding: 4px; border-radius: 14px; background: var(--bg); border: 1px dashed transparent; min-height: 54px; }
 ol.apps.drop { border-color: var(--amber); }
 ol.apps:empty::before { content: attr(data-empty); display: block; padding: 14px; color: var(--faint); font-size: 13.5px; text-align: center; }
@@ -312,7 +310,6 @@ ol.apps:empty::before { content: attr(data-empty); display: block; padding: 14px
   display: flex; align-items: center; gap: 6px; margin: 4px 0;
   padding: 5px 5px 5px 6px; border-radius: 10px; background: var(--surface-2);
 }
-.b-more .apps li { background: #1d2624; }
 .b-hidden .apps li { background: transparent; border: 1px solid var(--line); }
 .apps li.dragging { opacity: .4; }
 .apps li.over { box-shadow: 0 -2px 0 var(--amber); }
@@ -331,7 +328,9 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
 .alarm { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); transition: opacity .2s; }
 .alarm.off { opacity: .55; }
 .alarm-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.alarm-time { font: 700 36px var(--font); letter-spacing: -.03em; height: 48px; width: 150px; padding: 0 6px; background: transparent; border-color: transparent; }
+/* Chiếm hết chỗ trống trong hàng: chiều rộng cố định cắt mất giờ (nhất là khi trình duyệt hiện thêm SA/CH, AM/PM). */
+.alarm-time { font: 700 36px var(--font); letter-spacing: -.03em; height: 48px; flex: 1 1 auto; width: auto; padding: 0 6px; background: transparent; border-color: transparent; }
+.alarm-time::-webkit-calendar-picker-indicator { width: 20px; height: 20px; padding: 0; margin-left: 6px; }
 .alarm-time:hover { border-color: var(--line-strong); }
 .days { display: flex; gap: 6px; flex-wrap: wrap; }
 .day { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); font: 500 12.5px var(--font); cursor: pointer; transition: background .15s, color .15s; }
@@ -486,7 +485,7 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .with-unit input, .range input { flex: 1; width: auto; }
   .group-foot { padding: 12px 16px; }
   .group-foot .btn { flex: 1; }
-  .sorter { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "more" "hidden"; padding: 0 12px 16px; }
+  .sorter { grid-template-columns: minmax(0, 1fr); grid-template-areas: "shown" "hidden"; padding: 0 12px 16px; }
   ol.apps.shortcuts { margin: 0 12px 14px; }
   .key-field { margin: 0 16px 4px; }
   .link { padding: 4px 16px 16px; }

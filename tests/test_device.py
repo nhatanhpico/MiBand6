@@ -57,7 +57,7 @@ async def test_2021_auth_and_encrypted_config():
     await dev.set_display_items(["hr", "weather"])
     await asyncio.sleep(0.05)
     assert band.chunked_payloads[0] == (0, P.notification_payload("Xin chào", "Tin nhắn thử từ máy Mac", "Test", 11))
-    assert band.chunked_payloads[1] == (2, P.display_items(["hr", "weather"], []))
+    assert band.chunked_payloads[1] == (2, P.display_items(["hr", "weather"]))
 
 
 async def test_2021_wrong_key():

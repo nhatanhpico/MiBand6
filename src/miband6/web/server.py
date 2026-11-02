@@ -365,10 +365,9 @@ class BandService:
                 st["shortcuts"] = items
                 msg = tr('Đã lưu phím tắt vào vòng tay.')
             else:
-                main, more = P.arrange_display_items([str(x) for x in b.get("main") or []],
-                                                     [str(x) for x in b.get("more") or []])
-                await band.set_display_items(main, more)
-                st.update(display_main=main, display_more=more)
+                items = P.arrange_display_items([str(x) for x in b.get("items") or []])
+                await band.set_display_items(items)
+                st["display_items"] = items
                 msg = tr('Đã lưu bố cục ứng dụng vào vòng tay.')
         elif section == "hr":
             iv = int(b.get("interval", 0))
@@ -485,8 +484,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     async def meta(_):
         return ok(
             languages=P.LANGUAGES, date_formats=P.DATE_FORMATS, icons=P.NOTIFICATION_ICONS,
-            menu_labels=P.MENU_LABELS, display_all=P.DISPLAY_ITEMS_ALL, display_main_default=P.DISPLAY_MAIN_DEFAULT,
-            display_more_default=P.DISPLAY_MORE_DEFAULT, menu_main_max=P.MENU_MAIN_MAX,
+            menu_labels=P.MENU_LABELS, display_all=P.DISPLAY_ITEMS_ALL, display_default=P.DISPLAY_ITEMS_DEFAULT,
             menu_always_visible=P.MENU_ALWAYS_VISIBLE,
             shortcuts_all=P.SHORTCUTS_ALL, shortcuts_default=P.SHORTCUTS_DEFAULT, hr_intervals=P.HR_INTERVALS,
             hr_thresholds=P.HR_ALERT_THRESHOLDS, max_alarms=P.MAX_ALARMS, platform=sys.platform,

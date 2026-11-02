@@ -551,7 +551,8 @@ MENU_IDS = {
     "workout": 0x03,
     "weather": 0x04,
     "notifications": 0x06,
-    "more": 0x07,
+    # 0x07 là mục "Thêm" của Mi Band 3/5. Mi Band 6 không có thư mục này (Gadgetbridge cũng
+    # không gửi), nên không đưa vào đây để không bao giờ gửi nhầm cho vòng tay.
     "dnd": 0x08,
     "alarm": 0x09,
     "takephoto": 0x0A,
@@ -613,18 +614,14 @@ DISPLAY_ITEMS_ALL = [
     "activity", "eventreminder", "pai", "sleep", "worldclock", "stress", "period",
     "spo2", "breathing", "flashlight", "alipay", "nfc",
 ]
-# Bố cục gần với mặc định của vòng tay: ứng dụng hay dùng ở màn hình chính, phần còn lại trong "Thêm".
-DISPLAY_MAIN_DEFAULT = [
+# Bố cục gần với mặc định của vòng tay. Mi Band 6 xếp mọi ứng dụng trong một danh sách
+# (không có thư mục "Thêm"); mục không có trong danh sách sẽ bị ẩn.
+DISPLAY_ITEMS_DEFAULT = [
     "status", "hr", "pai", "notifications", "spo2", "stress", "workout", "weather",
-    "breathing", "sleep", "alarm", "eventreminder",
+    "breathing", "sleep", "alarm", "eventreminder", "music", "takephoto", "stopwatch",
+    "timer", "findphone", "mutephone", "worldclock", "flashlight", "pomodoro", "period",
+    "activity", "settings",
 ]
-DISPLAY_MORE_DEFAULT = [
-    "music", "takephoto", "stopwatch", "timer", "findphone", "mutephone", "worldclock",
-    "flashlight", "pomodoro", "period", "activity", "settings",
-]
-DISPLAY_ITEMS_DEFAULT = DISPLAY_MAIN_DEFAULT + DISPLAY_MORE_DEFAULT
-# Gadgetbridge giới hạn 16 mục trước "Thêm" (tính cả mặt đồng hồ), nếu không vòng tay có thể cắt bớt.
-MENU_MAIN_MAX = 15
 MENU_ALWAYS_VISIBLE = "settings"
 
 SHORTCUTS_ALL = [
@@ -636,31 +633,20 @@ SHORTCUTS_ALL = [
 SHORTCUTS_DEFAULT = ["notifications", "weather", "music"]
 
 
-def arrange_display_items(main: list[str], more: list[str]) -> tuple[list[str], list[str]]:
-    """Chuẩn hóa bố cục: bỏ mục lạ/trùng, tối đa MENU_MAIN_MAX mục chính, luôn giữ Cài đặt."""
-    seen: set[str] = set()
-
-    def clean(items):
-        out = []
-        for k in items:
-            if k in DISPLAY_ITEMS_ALL and k not in seen:
-                seen.add(k)
-                out.append(k)
-        return out
-
-    main, more = clean(main), clean(more)
-    main, overflow = main[:MENU_MAIN_MAX], main[MENU_MAIN_MAX:]
-    more = overflow + more
-    if MENU_ALWAYS_VISIBLE not in main and MENU_ALWAYS_VISIBLE not in more:
-        more.append(MENU_ALWAYS_VISIBLE)
-    return main, more
+def arrange_display_items(items: list[str]) -> list[str]:
+    """Chuẩn hóa bố cục: bỏ mục lạ/trùng, luôn giữ Cài đặt."""
+    out: list[str] = []
+    for k in items:
+        if k in DISPLAY_ITEMS_ALL and k not in out:
+            out.append(k)
+    if MENU_ALWAYS_VISIBLE not in out:
+        out.append(MENU_ALWAYS_VISIBLE)
+    return out
 
 
-def display_items(main: list[str], more: list[str]) -> bytes:
-    """Menu ứng dụng: mặt đồng hồ, các mục chính, rồi mục "Thêm" chứa các mục còn lại.
-    Mục không có trong main/more sẽ bị ẩn khỏi vòng tay."""
-    main, more = arrange_display_items(main, more)
-    return menu_items(main + (["more"] + more if more else []), shortcuts=False)
+def display_items(items: list[str]) -> bytes:
+    """Menu ứng dụng: mặt đồng hồ rồi các mục theo thứ tự. Mục không có trong danh sách sẽ bị ẩn."""
+    return menu_items(arrange_display_items(items), shortcuts=False)
 
 
 def menu_items(items: list[str], shortcuts: bool) -> bytes:

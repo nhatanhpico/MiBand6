@@ -64,3 +64,13 @@ async def test_server_requires_key_without_env(tmp_path):
     async with TestClient(TestServer(build_app(service), host="127.0.0.1")) as c:
         r = await c.post("/api/connect", data=json.dumps({"address": "x", "key": ""}), headers=JSON)
         assert r.status == 400 and ".env" in (await r.json())["error"]
+
+
+def test_store_migrates_main_more_layout(tmp_path):
+    """Bố cục cũ (màn hình chính + "Thêm") được gộp thành một danh sách theo đúng thứ tự."""
+    path = tmp_path / "cfg.json"
+    path.write_text(json.dumps({"settings": {
+        "display_items": ["status"], "display_main": ["hr", "pai"], "display_more": ["music", "settings"]}}))
+    s = Store(path).data["settings"]
+    assert s["display_items"] == ["hr", "pai", "music", "settings"]
+    assert "display_main" not in s and "display_more" not in s

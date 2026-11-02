@@ -524,7 +524,7 @@ function fillForms() {
   $("#dNightTo").value = s.night_to || "07:00";
   $("#dPwOn").checked = !!s.pw_on;
   $("#dPw").value = s.pw || "";
-  buildAppSorter(s.display_main || META.display_main_default, s.display_more || META.display_more_default);
+  buildAppSorter(s.display_items || META.display_default);
   buildShortcuts(s.shortcuts || META.shortcuts_default);
 
   fillSelect($("#hInterval"), META.hr_intervals.map((m) => [m, m === 0 ? t("Tắt") : m === 1 ? t("Mỗi phút") : t("Mỗi {m} phút", { m })]), b(s.hr_interval, 0));
@@ -576,7 +576,7 @@ const collectors = {
   lift: () => ({ mode: radio("lift"), from: $("#dLiftFrom").value, to: $("#dLiftTo").value, sensitive: $("#dLiftSens").checked }),
   night: () => ({ mode: radio("night"), from: $("#dNightFrom").value, to: $("#dNightTo").value }),
   password: () => ({ on: $("#dPwOn").checked, pin: $("#dPw").value.trim() }),
-  "menu-apps": () => ({ kind: "apps", main: appKeys("main"), more: appKeys("more") }),
+  "menu-apps": () => ({ kind: "apps", items: appKeys("shown") }),
   "menu-shortcuts": () => ({ kind: "shortcuts", items: $$("#menuShortcuts li").filter((li) => $(".switch", li).checked).map((li) => li.dataset.key) }),
   hr: () => ({
     interval: Number($("#hInterval").value), sleep: $("#hSleep").checked, activity: $("#hActivity").checked,
@@ -600,18 +600,13 @@ $$("[data-save]").forEach((btn) => btn.addEventListener("click", async () => {
   } catch { /* đã báo */ }
 }));
 
-/* ============================================================ sắp xếp ứng dụng (chính / Thêm / ẩn) */
+/* ============================================================ sắp xếp ứng dụng (hiện / ẩn) */
 
-const BUCKET = { main: "#appsMain", more: "#appsMore", hidden: "#appsHidden" };
+// Mi Band 6 không có thư mục "Thêm": mọi ứng dụng hiện nằm trong một danh sách theo thứ tự.
+const BUCKET = { shown: "#appsShown", hidden: "#appsHidden" };
 let dragged = null;
 const appKeys = (group) => $$("li", $(BUCKET[group])).map((li) => li.dataset.key);
 const appLabel = (key) => t(META.menu_labels[key] || key);
-
-function updateAppCounts() {
-  const n = $$("li", $("#appsMain")).length;
-  $("#mainCount").textContent = `${n}/${META.menu_main_max}`;
-  $("#mainCount").classList.toggle("full", n >= META.menu_main_max);
-}
 
 function moveApp(li, group, before = null) {
   const target = $(BUCKET[group]);
@@ -622,14 +617,8 @@ function moveApp(li, group, before = null) {
     sel.value = from;
     return;
   }
-  if (group === "main" && from !== "main" && $$("li", target).length >= META.menu_main_max) {
-    toast(t("Màn hình chính tối đa {n} ứng dụng. Chuyển bớt một ứng dụng sang mục Thêm trước.", { n: META.menu_main_max }), true);
-    sel.value = from;
-    return;
-  }
   target.insertBefore(li, before && before.parentElement === target ? before : null);
   sel.value = group;
-  updateAppCounts();
 }
 
 function dragHandlers(li, onDrop) {
@@ -664,19 +653,19 @@ function appRow(key) {
   const li = document.createElement("li");
   li.dataset.key = key;
   li.innerHTML = `<svg class="ic grip" aria-hidden="true"><use href="#i-grip"/></svg><span class="name"></span>`
-    + `<select><option value="main">${t("Chính")}</option><option value="more">${t("Thêm")}</option><option value="hidden">${t("Ẩn")}</option></select>`
+    + `<select><option value="shown">${t("Hiện")}</option><option value="hidden">${t("Ẩn")}</option></select>`
     + moveButtons(li);
   $(".name", li).textContent = appLabel(key);
   const sel = $("select", li);
   sel.setAttribute("aria-label", t("Nhóm của {app}", { app: appLabel(key) }));
-  if (key === META.menu_always_visible) sel.options[2].disabled = true;
+  if (key === META.menu_always_visible) sel.options[1].disabled = true;
   sel.onchange = () => moveApp(li, sel.value);
   bindMoveButtons(li);
   dragHandlers(li, (src, dst) => { if (src.parentElement?.closest(".sorter")) moveApp(src, dst.parentElement.dataset.group, dst); });
   return li;
 }
 
-function buildAppSorter(main, more) {
+function buildAppSorter(shown) {
   Object.values(BUCKET).forEach((s) => ($(s).textContent = ""));
   const used = new Set();
   const add = (group, keys) => keys.filter((k) => META.display_all.includes(k) && !used.has(k)).forEach((k) => {
@@ -685,11 +674,8 @@ function buildAppSorter(main, more) {
     $(BUCKET[group]).append(li);
     $("select", li).value = group;
   });
-  add("main", main.slice(0, META.menu_main_max));
-  add("more", [...main.slice(META.menu_main_max), ...more]);
-  if (!used.has(META.menu_always_visible)) add("more", [META.menu_always_visible]);
+  add("shown", [...shown, META.menu_always_visible]);
   add("hidden", META.display_all);
-  updateAppCounts();
 }
 
 Object.values(BUCKET).forEach((s) => {
@@ -704,7 +690,7 @@ Object.values(BUCKET).forEach((s) => {
 });
 
 $("#appsResetBtn").onclick = () => {
-  buildAppSorter(META.display_main_default, META.display_more_default);
+  buildAppSorter(META.display_default);
   toast(t("Đã đưa về bố cục gốc. Bấm Lưu bố cục để ghi vào vòng tay."));
 };
 

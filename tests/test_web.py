@@ -63,11 +63,11 @@ async def test_connect_flow_and_settings(client):
     r = await post(client, "/api/settings/dnd", {"mode": "scheduled", "from": "22:30", "to": "06:45", "lift": False})
     assert r.status == 200 and band.config_commands[-1] == P.do_not_disturb(P.DND_SCHEDULED, *map(
         lambda s: __import__("datetime").time(*map(int, s.split(":"))), ("22:30", "06:45")))
-    r = await post(client, "/api/settings/menu", {"kind": "apps", "main": ["hr", "bogus", "weather"], "more": ["music"]})
+    r = await post(client, "/api/settings/menu", {"kind": "apps", "items": ["hr", "bogus", "weather", "music"]})
     assert r.status == 200
-    assert band.chunked_payloads[-1] == (2, P.menu_items(["hr", "weather", "more", "music", "settings"], False))
+    assert band.chunked_payloads[-1] == (2, P.menu_items(["hr", "weather", "music", "settings"], False))
     saved = (await r.json())["state"]["settings"]
-    assert saved["display_main"] == ["hr", "weather"] and saved["display_more"] == ["music", "settings"]
+    assert saved["display_items"] == ["hr", "weather", "music", "settings"]
     r = await post(client, "/api/settings/goal", {"goal": 9000, "notify": True})
     assert (await r.json())["state"]["profile"]["goal"] == 9000
 

@@ -28,6 +28,10 @@ class Store:
             self.data.update(json.loads(self.path.read_text("utf-8")))
         except (OSError, ValueError):
             pass
+        # Bản cũ chia bố cục thành "màn hình chính" và "Thêm"; Mi Band 6 chỉ có một danh sách.
+        s = self.data.setdefault("settings", {})
+        if "display_main" in s or "display_more" in s:
+            s["display_items"] = list(s.pop("display_main", None) or []) + list(s.pop("display_more", None) or [])
 
     def save(self) -> None:
         tmp = self.path.with_suffix(".tmp")
