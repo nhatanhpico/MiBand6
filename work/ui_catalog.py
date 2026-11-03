@@ -1,0 +1,45 @@
+from pathlib import Path
+import json,sys
+sys.path.insert(0,'tests');import i18n_strings
+p=Path('src/miband6/web/static/i18n/en.json'); c=json.loads(p.read_text())
+c.update({
+'/ {n} bước':'/ {n} steps',
+'Bước chân 7 ngày đã ghi gần nhất':'Steps on the last 7 recorded days',
+'Chuỗi ngày đạt mục tiêu':'Goal streak',
+'Chưa có trường dữ liệu được xác minh':'No verified data field available',
+'Chỉ số gần nhất':'Latest vitals',
+'Các giá trị ở đây là tùy chọn ứng dụng đã lưu, không xác nhận cài đặt hiện tại trên vòng tay. Đồng bộ không đọc lại mọi cài đặt qua Bluetooth; báo thức có hỗ trợ đọc lại. Mục “Chưa đồng bộ” chưa từng được ứng dụng này ghi. Chỉ bấm Lưu khi bạn muốn thay đổi cài đặt trên vòng tay.':'These are preferences saved by this app, not confirmed current band settings. Sync cannot read back every Bluetooth setting; alarms support readback. “Not synced” means this app has never written that field. Save only when you intend to change the band setting.',
+'Dữ liệu vận động từ vòng tay':'Activity recorded by your band',
+'Dữ liệu đã đồng bộ':'Synced readings',
+'Giấc ngủ & hồi phục':'Sleep & recovery',
+'Giấc ngủ kết thúc hôm nay':'Sleep ending today',
+'Giờ đứng':'Standing hours',
+'MI BAND 6 · HÔM NAY':'MI BAND 6 · TODAY',
+'Mỗi ngày, hiểu cơ thể hơn.':'A little more in tune, every day.',
+'Mục tiêu bước':'Step goal',
+'Mục tiêu bước: {p}':'Step goal: {p}',
+'Mục tiêu hôm nay':"Today’s goals",
+'REM chỉ hiện khi có dữ liệu; REM do ứng dụng suy ra được ghi là ước tính. Chưa có dữ liệu chất lượng hô hấp.':'REM appears when available; app-inferred REM is labeled estimated. Breathing quality data is not available.',
+'Sẵn sàng · ước tính':'Readiness · estimated',
+'Số đo đã đồng bộ, không phải theo dõi trực tiếp':'Last synced readings, not live monitoring',
+'Thao tác nhanh':'Quick actions',
+'Thiết bị & đo trực tiếp':'Device & live measurements',
+'Thành phần & xu hướng':'Factors & trends',
+'Tóm tắt hôm nay':"Today’s summary",
+'Xem biểu đồ trong ngày':'View daily chart',
+'Xem chi tiết chỉ số':'Explore vitals',
+'Xem giấc ngủ':'Explore sleep',
+'Xem phân tích':'View analysis',
+'Xem sức khỏe':'Explore health',
+'Xem từng lần đo':'View individual readings',
+'Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.':'App-estimated score; not clinically validated.',
+'Điểm ngủ · ước tính':'Sleep score · estimated',
+'Đo nhịp tim':'Measure heart rate',
+'Đo từng lần':'Spot readings',
+'Đồng bộ vòng tay':'Sync band',
+'Ước tính của vòng tay':'Band estimate',
+'Ước tính từ nhịp tim khi ngủ':'Estimated from sleeping heart rate',
+'Cần kiểm tra tín hiệu':'Check signal quality',
+})
+used=set().union(*i18n_strings.all_strings().values())
+p.write_text(json.dumps({k:v for k,v in c.items() if k in used},ensure_ascii=False,indent=2)+'\n')

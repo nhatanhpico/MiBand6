@@ -210,9 +210,9 @@ class XiaomiLogin:
             except OSError:
                 pass
 
-    def load(self) -> bool:
-        """Phiên đã lưu (tệp cache, nếu không có thì từ biến môi trường / .env). Không giới hạn tuổi: token
-        bị từ chối thì request() tự đổi passToken lấy token mới, không được thì mới phải đăng nhập lại."""
+    @staticmethod
+    def _saved() -> dict | None:
+        """Phiên đã lưu: tệp cache, nếu không có thì biến môi trường / .env."""
         d = None
         try:
             d = json.loads(cache_path().read_text())
@@ -224,6 +224,22 @@ class XiaomiLogin:
                 except (ValueError, TypeError):
                     d = None
         if not isinstance(d, dict) or not d.get("service_token") or not d.get("ssecurity"):
+            return None
+        return d
+
+    @staticmethod
+    def session_info() -> dict | None:
+        """{saved: thời điểm lưu phiên, can_renew: có passToken để tự gia hạn} hoặc None nếu chưa đăng nhập."""
+        d = XiaomiLogin._saved()
+        if d is None:
+            return None
+        return {"saved": float(d.get("saved") or 0), "can_renew": bool(d.get("pass_token") and d.get("user_id"))}
+
+    def load(self) -> bool:
+        """Phiên đã lưu (tệp cache, nếu không có thì từ biến môi trường / .env). Không giới hạn tuổi: token
+        bị từ chối thì request() tự đổi passToken lấy token mới, không được thì mới phải đăng nhập lại."""
+        d = self._saved()
+        if d is None:
             return False
         self.ssecurity, self.service_token = d["ssecurity"], d["service_token"]
         self.user_id, self.c_user_id = d.get("user_id"), d.get("c_user_id")
@@ -703,62 +719,6 @@ def fetch_sport_records(login: XiaomiLogin, start_s: int, end_s: int, regions: l
             next_key = body["next_key"]
         if answered:
             trail.append(f"{host} {SPORT_RECORDS_PATH}: {len(records)}")
-        if records:
-            return records, trail
-    return [], trail
-
-
-FITNESS_DATA_PATH = "/app/v1/data/get_fitness_data_by_time"
-SLEEP_STAGE_NAMES = {2: "deep", 3: "light", 4: "rem", 5: "awake"}   # mã giai đoạn ngủ của Mi Fitness (theo mifit)
-
-
-def fetch_sleep_records(login: XiaomiLogin, start_s: int, end_s: int, regions: list[str] | None = None,
-                        max_pages: int = 40) -> tuple[list[dict], list[str]]:
-    """Các giấc ngủ Mi Fitness đã phân tích (kèm dòng thời gian giai đoạn: sâu, nông, REM, thức) trong khoảng
-    [start_s, end_s]. Đây là số liệu ứng dụng Mi Fitness hiển thị, gồm cả REM do Xiaomi tính từ nhịp tim.
-
-    Theo mô tả của dự án mifit: GET ký get_fitness_data_by_time với key "sleep", phân trang bằng next_key; mỗi
-    bản ghi có trường "value" (chuỗi JSON) chứa bedtime, wake_up_time và items [{start_time, end_time, state}]."""
-    trail: list[str] = []
-    for n, region in enumerate(regions or REGIONS):
-        host = f"{region}.hlth.io.mi.com" if region else "hlth.io.mi.com"
-        records: list[dict] = []
-        next_key = None
-        answered = False
-        for page in range(max_pages):
-            req = {"key": "sleep", "start_time": start_s, "end_time": end_s, "reverse": True, "limit": 50}
-            if next_key:
-                req["next_key"] = next_key
-            try:
-                status, res = login.request(host, FITNESS_DATA_PATH, {"data": json.dumps(req, separators=(",", ":"))},
-                                            method="GET", region=region)
-            except login.requests.exceptions.RequestException as e:
-                trail.append(f"{host} {FITNESS_DATA_PATH}: {type(e).__name__}")
-                break
-            if status == 401 and n == 0 and page == 0:
-                raise SessionExpired(tr('Phiên đăng nhập Xiaomi đã hết hạn.'))
-            if not isinstance(res, dict) or res.get("code", 0) != 0:
-                detail = f"HTTP {status}" if res is None else f"code {res.get('code')} {str(res.get('message') or '')[:50]}"
-                trail.append(f"{host} {FITNESS_DATA_PATH}: {detail}")
-                break
-            answered = True
-            body = res["result"] if isinstance(res.get("result"), dict) else res
-            for entry in body.get("data_list") or []:
-                if not isinstance(entry, dict) or entry.get("deleted"):
-                    continue
-                value = entry.get("value")
-                if isinstance(value, str):
-                    try:
-                        value = json.loads(value)
-                    except ValueError:
-                        continue
-                if isinstance(value, dict) and value.get("bedtime") and value.get("wake_up_time"):
-                    records.append(value)
-            if not body.get("has_more") or not body.get("next_key") or body.get("next_key") == next_key:
-                break
-            next_key = body["next_key"]
-        if answered:
-            trail.append(f"{host} {FITNESS_DATA_PATH} sleep: {len(records)}")
         if records:
             return records, trail
     return [], trail

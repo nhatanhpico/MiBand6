@@ -79,8 +79,163 @@ final class NativeMapController: NSObject, WKScriptMessageHandler, MKMapViewDele
             if body["fit"] as? Bool ?? false { fitAll(animated: true) }
         case "fit":
             fitAll(animated: true)
+        case "export":
+            exportImage(body)
         default:
             hide()
+        }
+    }
+
+    // MARK: xuất ảnh để chia sẻ
+
+    /// Chụp bản đồ đang xem (MKMapSnapshotter), vẽ lộ trình, thêm phần chân (tiêu đề, ngày, số liệu), lưu PNG vào
+    /// thư mục Tải về rồi mở bảng chia sẻ của macOS. body: {title, subtitle, stats: [[nhãn, giá trị, đơn vị]],
+    /// legend: [[tên, loại]], anchor: {x, y, width, height}}
+    private func exportImage(_ body: [String: Any]) {
+        guard !mapView.isHidden, mapView.bounds.width > 10, let webView else { return }
+        let options = MKMapSnapshotter.Options()
+        options.region = mapView.region
+        options.size = mapView.bounds.size
+        options.appearance = NSAppearance(named: .darkAqua)
+        if #available(macOS 14.0, *) {
+            options.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
+        }
+        let lines = routes
+        let mode = self.mode
+        MKMapSnapshotter(options: options).start { [weak self] snapshot, error in
+            guard let self else { return }
+            guard let snapshot else {
+                self.reportExport(nil, error: error?.localizedDescription ?? "snapshot")
+                return
+            }
+            let image = Self.compose(snapshot, routes: lines, mode: mode, body: body)
+            guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+                  let png = rep.representation(using: .png, properties: [:]) else {
+                self.reportExport(nil, error: "png")
+                return
+            }
+            let url = Self.exportURL(title: body["title"] as? String ?? "Mi Band 6")
+            do {
+                try png.write(to: url)
+            } catch {
+                self.reportExport(nil, error: error.localizedDescription)
+                return
+            }
+            self.reportExport(url, error: nil)
+            var anchor = CGRect(x: webView.bounds.midX, y: 40, width: 1, height: 1)
+            if let a = body["anchor"] as? [String: Any], let x = (a["x"] as? NSNumber)?.doubleValue,
+               let y = (a["y"] as? NSNumber)?.doubleValue, let w = (a["width"] as? NSNumber)?.doubleValue,
+               let h = (a["height"] as? NSNumber)?.doubleValue {
+                let zoom = webView.pageZoom * webView.magnification
+                anchor = CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
+                if !webView.isFlipped { anchor.origin.y = webView.bounds.height - anchor.origin.y - anchor.height }
+            }
+            NSSharingServicePicker(items: [url]).show(relativeTo: anchor, of: webView, preferredEdge: .minY)
+        }
+    }
+
+    private func reportExport(_ url: URL?, error: String?) {
+        let payload: [String: Any] = url.map { ["name": $0.lastPathComponent, "path": $0.path] } ?? ["error": error ?? ""]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.nativeMapExported && window.nativeMapExported(\(json))")
+    }
+
+    private static func exportURL(title: String) -> URL {
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd HH.mm"
+        let clean = title.components(separatedBy: CharacterSet(charactersIn: "/:\\?%*|\"<>")).joined(separator: "-")
+        var url = folder.appendingPathComponent("Mi Band 6 - \(clean) - \(stamp.string(from: Date())).png")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("Mi Band 6 - \(clean) - \(stamp.string(from: Date())) (\(n)).png")
+            n += 1
+        }
+        return url
+    }
+
+    /// Ảnh xuất: bản đồ + lộ trình ở trên, phần chân tối ở dưới (tiêu đề, ngày, số liệu, chú giải, nguồn bản đồ).
+    static func compose(_ snapshot: MKMapSnapshotter.Snapshot, routes: [RoutePolyline], mode: String,
+                                body: [String: Any]) -> NSImage {
+        let mapSize = snapshot.image.size
+        let stats = (body["stats"] as? [[String]] ?? []).filter { $0.count >= 2 }
+        let legend = (body["legend"] as? [[String]] ?? []).filter { $0.count >= 2 }
+        let footer: CGFloat = 92 + (stats.isEmpty ? 0 : 58) + (legend.isEmpty ? 0 : 26)
+        let size = NSSize(width: mapSize.width, height: mapSize.height + footer)
+        // snapshot.point(for:) tính từ góc dưới trái của ảnh (hệ tọa độ AppKit); vẽ ở đây tính từ góc trên trái
+        func at(_ coord: CLLocationCoordinate2D) -> NSPoint {
+            let p = snapshot.point(for: coord)
+            return NSPoint(x: p.x, y: mapSize.height - p.y)
+        }
+        return NSImage(size: size, flipped: true) { _ in
+            snapshot.image.draw(in: NSRect(origin: .zero, size: mapSize), from: .zero, operation: .copy,
+                                fraction: 1, respectFlipped: true, hints: nil)
+            for line in routes {   // lộ trình vẽ đè lên ảnh bản đồ, cùng màu với bản đồ trong ứng dụng
+                let pts = line.points()
+                let path = NSBezierPath()
+                for i in 0..<line.pointCount {
+                    let p = at(pts[i].coordinate)
+                    if i == 0 { path.move(to: p) } else { path.line(to: p) }
+                }
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+                path.lineWidth = mode == "one" ? 7 : 5.5
+                NSColor(srgbRed: 0.04, green: 0.06, blue: 0.055, alpha: 0.55).setStroke()
+                path.stroke()
+                path.lineWidth = mode == "one" ? 4.5 : 3.5
+                (mode == "one" ? colors["run"]! : colors[line.kind] ?? colors["run"]!).setStroke()
+                path.stroke()
+                if mode == "one", line.pointCount > 1 {
+                    for (coord, color) in [(pts[line.pointCount - 1].coordinate, NSColor(srgbRed: 1.0, green: 0.42, blue: 0.48, alpha: 1)),
+                                           (pts[0].coordinate, colors["walk"]!)] {
+                        let c = at(coord)
+                        let dotRect = NSRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14)
+                        let dot = NSBezierPath(ovalIn: dotRect)
+                        color.setFill()
+                        dot.fill()
+                        NSColor(srgbRed: 0.04, green: 0.06, blue: 0.055, alpha: 1).setStroke()
+                        dot.lineWidth = 3
+                        dot.stroke()
+                    }
+                }
+            }
+            let bg = NSColor(srgbRed: 0x10 / 255, green: 0x16 / 255, blue: 0x15 / 255, alpha: 1)
+            bg.setFill()
+            NSRect(x: 0, y: mapSize.height, width: size.width, height: footer).fill()
+            let text = NSColor(srgbRed: 0.92, green: 0.95, blue: 0.94, alpha: 1)
+            let muted = NSColor(srgbRed: 0.58, green: 0.65, blue: 0.63, alpha: 1)
+            var y = mapSize.height + 22
+            (body["title"] as? String ?? "").draw(at: NSPoint(x: 24, y: y), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 24, weight: .bold), .foregroundColor: text])
+            y += 34
+            (body["subtitle"] as? String ?? "").draw(at: NSPoint(x: 24, y: y), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 14), .foregroundColor: muted])
+            y += 30
+            var x: CGFloat = 24
+            for item in stats {
+                let value = item.count > 2 && !item[2].isEmpty ? "\(item[1]) \(item[2])" : item[1]
+                let vAttr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 20, weight: .bold), .foregroundColor: text]
+                let lAttr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: muted]
+                value.draw(at: NSPoint(x: x, y: y), withAttributes: vAttr)
+                item[0].draw(at: NSPoint(x: x, y: y + 28), withAttributes: lAttr)
+                x += max((value as NSString).size(withAttributes: vAttr).width, (item[0] as NSString).size(withAttributes: lAttr).width) + 32
+            }
+            if !stats.isEmpty { y += 58 }
+            x = 24
+            for item in legend {
+                (colors[item[1]] ?? colors["run"]!).setFill()
+                NSBezierPath(roundedRect: NSRect(x: x, y: y + 6, width: 18, height: 5), xRadius: 2.5, yRadius: 2.5).fill()
+                let attr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: muted]
+                item[0].draw(at: NSPoint(x: x + 26, y: y), withAttributes: attr)
+                x += 26 + (item[0] as NSString).size(withAttributes: attr).width + 22
+            }
+            let credit = "Mi Band 6 · " + t("Bản đồ: Apple Maps")
+            let cAttr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: muted]
+            let cw = (credit as NSString).size(withAttributes: cAttr).width
+            credit.draw(at: NSPoint(x: size.width - cw - 20, y: size.height - 24), withAttributes: cAttr)
+            return true
         }
     }
 

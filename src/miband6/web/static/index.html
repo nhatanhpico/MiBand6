@@ -13,6 +13,7 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
   <symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.6M5 4.5 3 6.5M19 4.5l2 2"/></symbol>
   <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
@@ -36,6 +37,7 @@
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-4.5 3.5 3 3-2.5L20 17"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 11H6a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 18 11h-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/></symbol>
 </svg>
 
@@ -54,16 +56,13 @@
     <nav class="nav" id="nav" aria-label="Mục chính">
       <a href="#overview"><svg class="ic"><use href="#i-pulse"/></svg><span>Tổng quan</span></a>
       <a href="#health"><svg class="ic"><use href="#i-heart"/></svg><span>Sức khỏe</span></a>
-      <a href="#settings"><svg class="ic"><use href="#i-sliders"/></svg><span>Cài đặt</span></a>
+      <a href="#settings"><svg class="ic"><use href="#i-sliders"/></svg><span>Cài đặt vòng tay</span></a>
       <a href="#alarms"><svg class="ic"><use href="#i-alarm"/></svg><span>Báo thức</span></a>
       <a href="#tools"><svg class="ic"><use href="#i-bell"/></svg><span>Công cụ</span></a>
       <a href="#device"><svg class="ic"><use href="#i-band"/></svg><span>Thiết bị</span></a>
+      <a href="#app" class="nav-sep"><svg class="ic"><use href="#i-gear"/></svg><span>Cài đặt ứng dụng</span></a>
     </nav>
     <div class="rail-foot">
-      <div class="lang" role="group" aria-label="Ngôn ngữ giao diện">
-        <button type="button" data-lang="vi" aria-pressed="false">VI</button>
-        <button type="button" data-lang="en" aria-pressed="false">EN</button>
-      </div>
       <p class="rail-note">Server chạy trên máy tính này</p>
     </div>
   </aside>
@@ -90,6 +89,43 @@
       </div>
 
       <div id="overviewBody" hidden>
+        <section class="daily-summary" aria-label="Tóm tắt hôm nay">
+          <div class="summary-heading"><p class="eyebrow">MI BAND 6 · HÔM NAY</p><h2>Mỗi ngày, hiểu cơ thể hơn.</h2><p id="ovSync" class="muted">Chưa đồng bộ dữ liệu sức khỏe.</p></div>
+          <div class="summary-metrics">
+            <a href="#health/steps"><b id="ovGoal">—</b><span>Mục tiêu bước</span></a>
+            <a href="#health/readiness"><b id="ovReady">—</b><span>Sẵn sàng · ước tính</span></a>
+            <a href="#health/steps"><b id="ovStreak">—</b><span>Chuỗi ngày đạt mục tiêu</span></a>
+          </div>
+        </section>
+        <div class="quick-actions" aria-label="Thao tác nhanh">
+          <button id="ovSyncBtn" class="btn primary" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ vòng tay</span></button>
+          <button id="ovMeasureBtn" class="btn" data-conn><svg class="ic"><use href="#i-heart"/></svg><span>Đo nhịp tim</span></button>
+          <button id="ovFindBtn" class="btn" data-conn><svg class="ic"><use href="#i-band"/></svg><span>Tìm vòng tay</span></button>
+          <a class="btn" href="#health">Xem sức khỏe</a>
+        </div>
+        <div class="glance-grid">
+          <article class="card goal-glance">
+            <header class="card-head"><h2>Mục tiêu hôm nay</h2><p class="card-sub">Dữ liệu vận động từ vòng tay</p></header>
+            <div class="goal-glance-body"><div class="goal-orbit" id="ovGoalRing" role="img" aria-label="Tiến độ mục tiêu bước"><div><b id="ovSteps">—</b><span id="ovGoalTarget">—</span></div></div>
+              <dl class="glance-facts"><div><dt>Năng lượng</dt><dd id="ovCalories">—</dd><small>Ước tính của vòng tay</small></div><div><dt>Giờ đứng</dt><dd>—</dd><small>Chưa có trường dữ liệu được xác minh</small></div></dl>
+            </div>
+            <div class="chart" id="ovStepsTrend"></div>
+            <a class="hero-link" href="#health/steps">Xem lịch sử bước chân</a>
+          </article>
+          <article class="card vitals-glance">
+            <header class="card-head"><h2>Chỉ số gần nhất</h2><p class="card-sub">Số đo đã đồng bộ, không phải theo dõi trực tiếp</p></header>
+            <dl class="glance-vitals"><div><dt>Nhịp tim</dt><dd id="ovHr">—</dd><small id="ovHrTime">—</small></div><div><dt>Căng thẳng</dt><dd id="ovStress">—</dd><small id="ovStressTime">—</small></div><div><dt>Nhịp tim nghỉ</dt><dd id="ovRhr">—</dd><small>Ước tính từ nhịp tim khi ngủ</small></div></dl>
+            <a class="hero-link" href="#health/hr">Xem chi tiết chỉ số</a>
+          </article>
+          <article class="card sleep-glance">
+            <header class="card-head"><h2>Giấc ngủ &amp; hồi phục</h2><p class="card-sub" id="ovSleepRange">Giấc ngủ kết thúc hôm nay</p></header>
+            <div class="sleep-glance-top"><p class="card-value" id="ovSleep">—</p><p class="sleep-score"><b id="ovSleepScore">—</b><span>Điểm ngủ · ước tính</span></p></div>
+            <div class="sleep-segments" id="ovSleepStages" role="img" aria-label="Các giai đoạn giấc ngủ"></div><ul class="legend" id="ovSleepLegend"></ul>
+            <p class="card-sub">REM chỉ hiện khi có dữ liệu; REM do ứng dụng suy ra được ghi là ước tính. Chưa có dữ liệu chất lượng hô hấp.</p>
+            <a class="hero-link" href="#health/sleep">Xem giấc ngủ</a>
+          </article>
+        </div>
+        <details class="device-details"><summary>Thiết bị &amp; đo trực tiếp</summary>
         <div class="hero">
           <figure class="hero-band" aria-label="Mặt đồng hồ">
             <div class="band-wrap">
@@ -169,6 +205,7 @@
             <div class="tile-actions"><button id="syncTimeBtn" class="btn" data-conn><svg class="ic"><use href="#i-clock"/></svg><span>Đồng bộ giờ</span></button></div>
           </article>
         </div>
+        </details>
       </div>
     </section>
 
@@ -207,10 +244,32 @@
       <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
 
       <div class="hgrid">
-        <article class="card wide analysis" id="health-analysis">
-          <header class="card-head"><h2>Phân tích sức khỏe</h2><p class="card-sub" id="anSub"></p></header>
-          <div class="insights" id="anList"></div>
-          <p class="card-sub disclaimer">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
+        <article class="card" id="health-hr">
+          <header class="card-head"><h2>Nhịp tim</h2><span class="metric-badge" id="hrBadge">Chưa có dữ liệu</span><p class="card-sub" id="hrSub"></p></header>
+          <dl class="stats" id="hrStats"></dl>
+          <details class="metric-details"><summary>Xem biểu đồ trong ngày</summary><div class="chart" id="hrChart"></div></details>
+        </article>
+        <article class="card" id="health-spo2">
+          <header class="card-head"><h2>SpO2</h2><span class="metric-badge" id="spBadge">Đo từng lần</span><p class="card-sub">Nồng độ oxy trong máu ở các lần đo.</p></header>
+          <dl class="stats" id="spStats"></dl>
+          <details class="metric-details"><summary>Xem từng lần đo</summary><div class="table-scroll"><table class="data-table"><thead><tr><th>Lúc đo</th><th>SpO2</th><th>Cách đo</th></tr></thead><tbody id="spTable"></tbody></table></div></details>
+        </article>
+        <article class="card wide readiness" id="health-readiness">
+          <header class="card-head"><h2>Điểm sẵn sàng hôm nay</h2><p class="card-sub" id="rdSub"></p></header>
+          <div class="rd-body">
+            <div class="rd-hero">
+              <svg class="rd-ring" id="rdRing" viewBox="0 0 120 120" aria-hidden="true"></svg>
+              <div class="rd-center"><b id="rdScore">—</b><span>/100</span></div>
+              <span class="rd-level" id="rdLevel"></span>
+            </div>
+            <div class="rd-main">
+              <p class="rd-plan" id="rdPlan"></p>
+              <p class="rd-advice" id="rdAdvice"></p>
+              <p class="rd-recovery" id="rdRecovery" hidden></p>
+            </div>
+          </div>
+          <p class="card-sub estimate-note">Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.</p><details class="metric-details"><summary>Thành phần &amp; xu hướng</summary><ul class="rd-parts" id="rdParts"></ul>
+          <div class="chart" id="rdTrend"></div></details>
         </article>
         <article class="card wide" id="health-sleep">
           <header class="card-head"><h2>Giấc ngủ</h2><p class="card-sub" id="slRange"></p></header>
@@ -220,7 +279,6 @@
           <h3 class="card-h3">14 ngày gần đây</h3>
           <div class="chart" id="slHistory"></div>
         </article>
-
         <article class="card wide" id="health-steps">
           <header class="card-head"><h2>Bước chân</h2><p class="card-sub" id="stSub"></p></header>
           <p class="card-value"><span id="stTotal" class="num">—</span> <span class="unit">bước</span></p>
@@ -232,31 +290,23 @@
             <table class="data-table"><thead><tr><th>Ngày</th><th>Bước chân</th></tr></thead><tbody id="stTable"></tbody></table>
           </details>
         </article>
-
-        <article class="card" id="health-hr">
-          <header class="card-head"><h2>Nhịp tim</h2><p class="card-sub" id="hrSub"></p></header>
-          <dl class="stats" id="hrStats"></dl>
-          <div class="chart" id="hrChart"></div>
-        </article>
-
         <article class="card" id="health-stress">
           <header class="card-head"><h2>Căng thẳng</h2><p class="card-sub" id="ssSub"></p></header>
           <dl class="stats" id="ssStats"></dl>
           <div class="chart" id="ssChart"></div>
         </article>
-
         <article class="card" id="health-pai">
           <header class="card-head"><h2>PAI</h2><p class="card-sub">Điểm hoạt động cá nhân trong 7 ngày; giữ trên 100 để tốt cho tim mạch.</p></header>
           <dl class="stats" id="paiStats"></dl>
           <div class="chart" id="paiChart"></div>
         </article>
-
-        <article class="card" id="health-spo2">
-          <header class="card-head"><h2>SpO2</h2><p class="card-sub">Nồng độ oxy trong máu ở các lần đo.</p></header>
-          <dl class="stats" id="spStats"></dl>
-          <table class="data-table"><thead><tr><th>Lúc đo</th><th>SpO2</th><th>Cách đo</th></tr></thead><tbody id="spTable"></tbody></table>
+        <article class="card" id="health-intensity">
+          <header class="card-head"><h2>Cường độ vận động</h2><p class="card-sub" id="aiSub"></p></header>
+          <div class="hero-num"><b id="aiRatio">—</b><span id="aiRatioLabel"></span></div>
+          <div class="chart" id="aiChart"></div>
+          <ul class="legend" id="aiLegend"></ul>
+          <p class="ins-detail" id="aiDetail"></p>
         </article>
-
         <article class="card wide" id="health-workouts">
           <header class="card-head split-head">
             <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
@@ -266,9 +316,27 @@
             </div>
           </header>
           <p class="card-sub wo-note">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
-          <table class="data-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table>
+          <div class="table-scroll"><table class="data-table wo-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th class="wo-map-col"><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table></div>
         </article>
-
+        <article class="card wide analysis" id="health-analysis">
+          <header class="card-head"><h2>Phân tích sức khỏe</h2><p class="card-sub" id="anSub"></p></header><details class="metric-details"><summary>Xem phân tích</summary>
+          <div class="insights" id="anList"></div>
+          <p class="card-sub disclaimer">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
+        </details></article>
+        <article class="card" id="health-mind">
+          <header class="card-head"><h2>Trạng thái tinh thần</h2><p class="card-sub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header><details class="metric-details"><summary>Xem phân tích</summary>
+          <div class="md-state" id="mdState"></div>
+          <div class="md-meters" id="mdMeters"></div>
+          <ul class="md-factors" id="mdFactors"></ul>
+          <p class="md-note">Nếu buồn chán, lo âu hoặc mất ngủ kéo dài trên hai tuần, hãy trò chuyện với người thân hoặc chuyên gia sức khỏe tâm thần.</p>
+        </details></article>
+        <article class="card wide" id="health-circadian">
+          <header class="card-head"><h2>Nhịp sinh học</h2><p class="card-sub" id="ciSub"></p></header><details class="metric-details"><summary>Xem phân tích</summary>
+          <dl class="stats" id="ciStats"></dl>
+          <div class="chart" id="ciChart"></div>
+          <ul class="legend" id="ciLegend"></ul>
+          <ul class="ci-notes" id="ciNotes"></ul>
+        </details></article>
         <article class="card wide" id="health-measure">
           <header class="card-head"><h2>Đo tự động</h2></header>
           <dl class="facts" id="measureFacts"></dl>
@@ -280,9 +348,10 @@
 
     <!-- ============================================================ Cài đặt -->
     <section class="page" id="page-settings" hidden>
-      <header class="page-head"><h1>Cài đặt</h1></header>
+      <header class="page-head"><h1>Cài đặt vòng tay</h1></header>
+      <p class="lead">Các cài đặt ở đây được ghi vào Mi Band 6. Cài đặt của ứng dụng trên máy tính này (ngôn ngữ, lịch đồng bộ, tài khoản Mi Fitness, thời tiết…) nằm ở <a href="#app">Cài đặt ứng dụng</a>.</p>
       <p class="banner info conn-hint" hidden>Kết nối vòng tay ở mục Thiết bị để lưu thay đổi.</p>
-      <p class="banner info" id="unsyncedNote" hidden>Mi Band 6 chỉ nhận cài đặt, không cho đọc lại qua Bluetooth, và Mi Fitness cũng không lưu chúng trên máy chủ. Mục có nhãn “Chưa đồng bộ” chưa từng được ứng dụng này ghi nên chưa biết giá trị trên vòng tay: chọn đúng giá trị (ví dụ giá trị đang dùng trên vòng tay) rồi bấm Lưu một lần, từ đó ứng dụng luôn hiện đúng.</p>
+      <p class="banner info" id="unsyncedNote" hidden>Các giá trị ở đây là tùy chọn ứng dụng đã lưu, không xác nhận cài đặt hiện tại trên vòng tay. Đồng bộ không đọc lại mọi cài đặt qua Bluetooth; báo thức có hỗ trợ đọc lại. Mục “Chưa đồng bộ” chưa từng được ứng dụng này ghi. Chỉ bấm Lưu khi bạn muốn thay đổi cài đặt trên vòng tay.</p>
       <div class="subtabs" role="tablist" aria-label="Nhóm cài đặt">
         <button role="tab" data-sub="profile">Hồ sơ</button>
         <button role="tab" data-sub="display">Màn hình</button>
@@ -485,20 +554,6 @@
           <ol id="menuShortcuts" class="apps shortcuts"></ol>
           <div class="group-foot"><button class="btn primary" data-save="menu-shortcuts" data-conn>Lưu phím tắt</button></div>
         </div>
-        <div class="group" id="weatherGroup">
-          <div class="group-head"><h2>Thời tiết</h2><p>Mỗi lần kết nối và mỗi giờ, ứng dụng gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm và giờ mặt trời mọc, lặn. Dữ liệu từ Open-Meteo.</p></div>
-          <div class="rows">
-            <label class="row"><span class="row-label">Tự đồng bộ thời tiết</span><input type="checkbox" class="switch" id="wxOn"></label>
-            <div class="row"><span class="row-label">Vị trí</span>
-              <div class="seg"><input type="radio" name="wxMode" id="wxAuto" value="auto"><label for="wxAuto">Tự động</label><input type="radio" name="wxMode" id="wxCity" value="city"><label for="wxCity">Chọn thành phố</label></div></div>
-          </div>
-          <div class="wx-search" id="wxSearch" hidden>
-            <input type="search" id="wxQuery" placeholder="Tên thành phố, ví dụ Hà Nội" aria-label="Tìm thành phố" autocomplete="off">
-            <ul id="wxResults" class="wx-results" aria-live="polite"></ul>
-          </div>
-          <div class="wx-now" id="wxNow" aria-live="polite"></div>
-          <div class="group-foot"><button id="wxSyncBtn" class="btn" type="button" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Gửi thời tiết ngay</span></button></div>
-        </div>
       </div>
 
       <!-- Sức khỏe -->
@@ -507,7 +562,7 @@
           <div class="group-head"><h2>Đo nhịp tim tự động</h2><p>Đo thường xuyên hơn cho dữ liệu chi tiết hơn nhưng tốn pin hơn.</p></div>
           <div class="rows">
             <label class="row"><span class="row-label">Chu kỳ đo</span><select id="hInterval"></select></label>
-            <label class="row"><span class="row-label">Đo chính xác hơn khi ngủ</span><input type="checkbox" class="switch" id="hSleep"></label>
+            <label class="row"><span class="row-label">Hỗ trợ giấc ngủ: đo nhịp tim mỗi phút khi ngủ (cần cho REM)</span><input type="checkbox" class="switch" id="hSleep"></label>
             <label class="row"><span class="row-label">Đo dày hơn khi vận động</span><input type="checkbox" class="switch" id="hActivity"></label>
             <label class="row"><span class="row-label">Cảnh báo nhịp tim cao</span><input type="checkbox" class="switch" id="hAlert"></label>
             <label class="row"><span class="row-label">Ngưỡng cảnh báo</span><select id="hThreshold"></select></label>
@@ -591,6 +646,73 @@
     </section>
 
     <!-- ============================================================ Thiết bị -->
+    <section class="page" id="page-app" hidden>
+      <header class="page-head"><h1>Cài đặt ứng dụng</h1></header>
+      <p class="lead">Cài đặt của ứng dụng trên máy tính này, không ghi vào vòng tay. Cài đặt của vòng tay nằm ở <a href="#settings">Cài đặt vòng tay</a>.</p>
+      <div class="app-settings">
+        <div class="group">
+          <div class="group-head"><h2>Ngôn ngữ</h2><p>Ngôn ngữ của ứng dụng. Ngôn ngữ trên vòng tay đổi ở thẻ Màn hình.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Ngôn ngữ giao diện</span>
+              <div class="lang" role="group" aria-label="Ngôn ngữ giao diện">
+                <button type="button" data-lang="vi" aria-pressed="false">Tiếng Việt</button>
+                <button type="button" data-lang="en" aria-pressed="false">English</button>
+              </div></div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Tự đồng bộ</h2><p>Ứng dụng tự lấy dữ liệu mới theo lịch này. Dữ liệu vẫn còn trên vòng tay để Mi Fitness đồng bộ bình thường.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Dữ liệu từ vòng tay</span><select id="syncBand"></select></label>
+            <label class="row"><span class="row-label">Lịch sử từ Mi Fitness</span><select id="syncCloud"></select></label>
+          </div>
+          <p class="group-note" id="syncLast"></p>
+          <div class="group-foot"><button id="syncNowBtn" class="btn" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ ngay</span></button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Tài khoản Mi Fitness</h2><p>Dùng để lấy hồ sơ, lịch sử buổi tập và lộ trình GPS. Phiên đăng nhập lưu trên máy này và tự gia hạn khi hết hạn.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Trạng thái</span><output id="acctStatus" class="muted"></output></div>
+            <label class="row"><span class="row-label">Gia hạn phiên đăng nhập</span><select id="syncRenew"></select></label>
+          </div>
+          <div class="group-foot">
+            <button id="acctLogoutBtn" class="btn ghost" type="button">Đăng xuất</button>
+            <button id="acctRenewBtn" class="btn" type="button">Gia hạn ngay</button>
+            <button id="acctLoginBtn" class="btn primary" type="button">Đăng nhập lại</button>
+          </div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Kết nối</h2><p>Khi mất kết nối, ứng dụng thử lại sau 2, 5, 10… giây, lâu dần tới mức tối đa dưới đây.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Giữ kết nối và tự kết nối lại</span><input type="checkbox" class="switch" id="keepConn2"></label>
+            <label class="row"><span class="row-label">Chờ tối đa giữa hai lần thử</span><select id="syncRetry"></select></label>
+          </div>
+          <div class="group-foot"><button id="reconnectNowBtn" class="btn" type="button">Kết nối lại ngay</button></div>
+        </div>
+        <div class="group" id="weatherGroup">
+          <div class="group-head"><h2>Thời tiết</h2><p>Mỗi lần kết nối và mỗi giờ, ứng dụng gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm và giờ mặt trời mọc, lặn. Dữ liệu từ Open-Meteo.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Tự đồng bộ thời tiết</span><input type="checkbox" class="switch" id="wxOn"></label>
+            <div class="row"><span class="row-label">Vị trí</span>
+              <div class="seg"><input type="radio" name="wxMode" id="wxAuto" value="auto"><label for="wxAuto">Tự động</label><input type="radio" name="wxMode" id="wxCity" value="city"><label for="wxCity">Chọn thành phố</label></div></div>
+          </div>
+          <div class="wx-search" id="wxSearch" hidden>
+            <input type="search" id="wxQuery" placeholder="Tên thành phố, ví dụ Hà Nội" aria-label="Tìm thành phố" autocomplete="off">
+            <ul id="wxResults" class="wx-results" aria-live="polite"></ul>
+          </div>
+          <div class="wx-now" id="wxNow" aria-live="polite"></div>
+          <div class="group-foot"><button id="wxSyncBtn" class="btn" type="button" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Gửi thời tiết ngay</span></button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Giấc ngủ REM</h2><p>Mi Band 6 không ghi giai đoạn REM, và Mi Fitness cũng không tính REM cho vòng tay này. Ứng dụng ước tính REM từ nhịp tim khi ngủ; bật "Hỗ trợ giấc ngủ" ở Cài đặt vòng tay → Sức khỏe để vòng tay đo nhịp tim mỗi phút.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Giai đoạn REM</span>
+              <div class="seg"><input type="radio" name="remMode" id="remEst" value="estimate"><label for="remEst">Ước tính từ nhịp tim</label><input type="radio" name="remMode" id="remOff" value="off"><label for="remOff">Tắt</label></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="page" id="page-device" hidden>
       <header class="page-head"><h1>Thiết bị</h1></header>
       <p class="lead">Vòng tay chỉ giữ một kết nối. Tắt Bluetooth trên điện thoại trong Cài đặt (hoặc thoát hẳn Mi Fitness / Zepp Life) trước khi kết nối từ máy tính.</p>
@@ -663,7 +785,10 @@
       <button id="mapBack" class="link-btn map-back" type="button" hidden><svg class="ic"><use href="#i-chev-left"/></svg><span>Tất cả lộ trình</span></button>
       <h2 id="mapTitle">Lộ trình</h2><p class="card-sub" id="mapSub"></p>
     </div>
-    <button id="mapClose" class="btn ghost small" type="button">Đóng</button>
+    <div class="map-actions">
+      <button id="mapShare" class="btn small" type="button" hidden><svg class="ic"><use href="#i-share"/></svg><span>Chia sẻ ảnh</span></button>
+      <button id="mapClose" class="btn ghost small" type="button">Đóng</button>
+    </div>
   </header>
   <div class="map" id="map" aria-label="Bản đồ lộ trình">
     <div class="map-need-app" id="mapNeedApp" hidden>
@@ -675,7 +800,10 @@
     </div>
     <p class="map-msg" id="mapMsg" hidden></p>
   </div>
-  <div class="map-legend" id="mapLegend"><span><i class="dot start"></i>Bắt đầu</span><span><i class="dot end"></i>Kết thúc</span></div>
+  <div class="map-tools">
+    <select id="mapPlace" class="map-place" aria-label="Lọc theo nơi" hidden></select>
+    <div class="map-legend" id="mapLegend"><span><i class="dot start"></i>Bắt đầu</span><span><i class="dot end"></i>Kết thúc</span></div>
+  </div>
   <dl class="stats" id="mapStats"></dl>
 </dialog>
 

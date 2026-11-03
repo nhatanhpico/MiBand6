@@ -291,6 +291,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     @objc private func reloadPage() { window.reload() }
 
+    /// Cài đặt của ứng dụng (ngôn ngữ, đồng bộ, tài khoản…) và cài đặt ghi vào vòng tay là hai trang riêng.
+    @objc private func openAppSettings() {
+        showWindow()
+        window.open(page: "app")
+    }
+
+    @objc private func openBandSettings() {
+        showWindow()
+        window.open(page: "settings")
+    }
+
     private func reportError(_ result: Result<[String: Any], Error>) {
         if case .failure(let error) = result { showError(error.localizedDescription) }
     }
@@ -338,6 +349,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: t("Giới thiệu Mi Band 6"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(item(t("Cài đặt ứng dụng…"), #selector(openAppSettings), key: ","))
+        let band = item(t("Cài đặt vòng tay…"), #selector(openBandSettings), key: ",")
+        band.keyEquivalentModifierMask = [.command, .shift]
+        appMenu.addItem(band)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: t("Ẩn Mi Band 6"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())

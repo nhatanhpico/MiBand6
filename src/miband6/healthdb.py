@@ -7,12 +7,14 @@ trên máy tính; mỗi lần đồng bộ chỉ lấy phần mới hơn mốc �
 from __future__ import annotations
 
 import datetime as dt
+import time
 import json
 import re
 import sqlite3
 from pathlib import Path
 
 from . import health as H
+from . import telemetry as T
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS activity (ts INTEGER PRIMARY KEY, kind INTEGER, intensity INTEGER, steps INTEGER,
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS spo2 (ts INTEGER PRIMARY KEY, value INTEGER, auto INT
 CREATE TABLE IF NOT EXISTS workouts (start INTEGER PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS sync (name TEXT PRIMARY KEY, value INTEGER);
 CREATE TABLE IF NOT EXISTS tracks (start INTEGER PRIMARY KEY, data TEXT);
+CREATE TABLE IF NOT EXISTS places (key TEXT PRIMARY KEY, data TEXT);
 """
 
 
@@ -57,22 +60,22 @@ class HealthDB:
 
     # ------------------------------------------------------------ ghi
     def add_activity(self, rows: list[tuple]) -> None:
-        self.db.executemany("INSERT OR REPLACE INTO activity VALUES (?,?,?,?,?,?,?,?)", rows)
-        self.db.commit()
+        with self.db:
+            self.db.executemany("INSERT OR REPLACE INTO activity VALUES (?,?,?,?,?,?,?,?)", rows)
 
     def add_pai(self, rows: list[dict]) -> None:
-        self.db.executemany(
-            "INSERT OR REPLACE INTO pai VALUES (:ts,:utc_offset,:low,:moderate,:high,"
-            ":time_low,:time_moderate,:time_high,:today,:total)", rows)
-        self.db.commit()
+        with self.db:
+            self.db.executemany(
+                "INSERT OR REPLACE INTO pai VALUES (:ts,:utc_offset,:low,:moderate,:high,"
+                ":time_low,:time_moderate,:time_high,:today,:total)", rows)
 
     def add_stress(self, rows: list[tuple[int, int]], auto: bool) -> None:
-        self.db.executemany("INSERT OR REPLACE INTO stress VALUES (?,?,?)", [(ts, int(auto), v) for ts, v in rows])
-        self.db.commit()
+        with self.db:
+            self.db.executemany("INSERT OR REPLACE INTO stress VALUES (?,?,?)", [(ts, int(auto), v) for ts, v in rows])
 
     def add_spo2(self, rows: list[tuple[int, int, bool]]) -> None:
-        self.db.executemany("INSERT OR REPLACE INTO spo2 VALUES (?,?,?)", [(ts, v, int(a)) for ts, v, a in rows])
-        self.db.commit()
+        with self.db:
+            self.db.executemany("INSERT OR REPLACE INTO spo2 VALUES (?,?,?)", [(ts, v, int(a)) for ts, v, a in rows])
 
     def add_workout(self, w: dict) -> None:
         """Buổi tập lấy từ vòng tay; nếu đã có bản từ Mi Fitness cùng lúc bắt đầu thì thay bằng bản này."""
@@ -118,6 +121,20 @@ class HealthDB:
         """Mọi lộ trình đã lưu trên máy: {giờ bắt đầu buổi tập: điểm}."""
         return {start: json.loads(data) for start, data in self.db.execute("SELECT start, data FROM tracks")}
 
+    def places(self, keys: list[str]) -> dict[str, dict | None]:
+        """Tên nơi đã tra (geo.area_key -> {city, country, cc} hoặc None nếu vùng đó không thuộc quốc gia nào)."""
+        out: dict[str, dict | None] = {}
+        for i in range(0, len(keys), 500):
+            chunk = keys[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            for key, data in self.db.execute(f"SELECT key, data FROM places WHERE key IN ({marks})", chunk):
+                out[key] = json.loads(data)
+        return out
+
+    def set_place(self, key: str, place: dict | None) -> None:
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO places VALUES (?, ?)", (key, json.dumps(place)))
+
     def track(self, start: int) -> list | None:
         row = self.db.execute("SELECT data FROM tracks WHERE start = ?", (start,)).fetchone()
         return json.loads(row[0]) if row else None
@@ -152,7 +169,7 @@ class HealthDB:
         ).fetchall()
         return [{"date": d, "steps": s or 0, "minutes": n} for d, s, n in rows]
 
-    def analysis(self, goal: int = 8000, today: str | None = None) -> dict:
+    def analysis(self, goal: int = 8000, today: str | None = None, rem: bool = False) -> dict:
         """Nhận xét tình trạng hiện tại từ 14 ngày gần nhất (xem health.analyze)."""
         today = today or dt.date.today().isoformat()
         d0 = dt.date.fromisoformat(today)
@@ -160,7 +177,7 @@ class HealthDB:
         w0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
         _, t1 = H.day_bounds(today)
         samples = self.samples(w0, t1)
-        sessions = H.sleep_sessions(samples, self.kind_before(w0))
+        sessions = H.sleep_sessions(samples, self.kind_before(w0), rem=rem)
         by_ts = {s[0]: s for s in samples}
         nights: dict[str, dict] = {}
         hrs: dict[str, list[int]] = {}
@@ -184,11 +201,167 @@ class HealthDB:
         pai = self.db.execute("SELECT total FROM pai ORDER BY ts DESC LIMIT 1").fetchone()
         spo2 = self.db.execute("SELECT ts, value FROM spo2 WHERE ts >= ? ORDER BY ts", (t1 - 30 * 86400,)).fetchall()
         stress = [r[0] for r in self.db.execute("SELECT value FROM stress WHERE ts >= ? AND auto = 1", (week0,))]
+        spo2 = [r for r in spo2 if T.assess("spo2", r[1])["usable"]]
+        stress = [v for v in stress if T.assess("stress", v)["usable"]]
         last = self.db.execute("SELECT MAX(ts) FROM activity").fetchone()[0]
         return H.analyze(sorted(nights.values(), key=lambda n: n["date"]), steps, goal,
                          {"total": pai[0]} if pai else None, spo2, stress, len(active), len(workouts), last)
 
-    def summary(self, date: str, sleep_days: int = 14) -> dict:
+    INSIGHT_DAYS = 60   # ngày dữ liệu dùng cho mức sẵn sàng, nhịp sinh học… (mức nền nhiều tuần)
+
+    def insights(self, date: str | None = None, profile: dict | None = None, rem: bool = True) -> dict:
+        """Mức sẵn sàng, trạng thái tinh thần, cường độ vận động và nhịp sinh học tính tới ngày `date` (insights.py).
+
+        Dựng từ dữ liệu từng phút: mỗi đêm (giấc dài nhất theo ngày thức dậy) và mỗi ngày (bước, phút vận động theo
+        cường độ, TRIMP, căng thẳng)."""
+        from . import insights as I
+
+        date = date or dt.date.today().isoformat()
+        d0 = dt.date.fromisoformat(date)
+        first = d0 - dt.timedelta(days=self.INSIGHT_DAYS - 1)
+        t0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
+        _, t1 = H.day_bounds(date)
+        samples = self.samples(t0, t1)
+        by_ts = {s[0]: s for s in samples}
+        sessions = H.sleep_sessions(samples, self.kind_before(t0), rem=rem)
+
+        # ---- mỗi đêm: giấc dài nhất kết thúc trong ngày
+        mains: dict[str, dict] = {}
+        for sess in sessions:
+            day = H.local_date(sess["end"])
+            if first.isoformat() <= day <= date and (day not in mains or sess["minutes"] > mains[day]["minutes"]):
+                mains[day] = sess
+        nights = [self._night(mains[day], by_ts, day) for day in sorted(mains)]
+
+        # ---- mỗi ngày
+        age = None
+        birth = (profile or {}).get("birth")
+        if birth:
+            try:
+                b = dt.date.fromisoformat(str(birth))
+                age = (d0 - b).days / 365.25
+            except ValueError:
+                age = None
+        hrmax = I.hr_max(age)
+        rests = [n["hr"] for n in nights[-14:] if n.get("hr")]
+        rest = sorted(rests)[len(rests) // 2] if rests else 60
+        workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts WHERE start >= ? AND start < ?", (t0, t1))]
+        in_workout: set[int] = set()
+        for w in workouts:
+            in_workout.update(range(w["start"] - w["start"] % 60, int(w.get("end") or w["start"]), 60))
+        days: dict[str, dict] = {}
+        hourly: dict[int, float] = {}   # TRIMP theo từng giờ: cho thời gian hồi phục
+        hr_points = [(s[0], s[4]) for s in samples if H.valid_hr(s[4])]
+        # Lịch sử không có cấu hình tần suất theo thời điểm: chỉ cộng phút thật sự có HR.
+        # Không coi một mẫu là bằng chứng cho 5–10 phút trống sau đó.
+        for ts, bpm in hr_points:
+            day = H.local_date(ts)
+            d = days.setdefault(day, self._blank_day(day))
+            load = I.edwards_trimp(bpm, hrmax)
+            d["trimp"] += load
+            if load:
+                hourly[ts - ts % 3600 + 1800] = hourly.get(ts - ts % 3600 + 1800, 0) + load
+        for s in samples:
+            ts, steps = s[0], s[3]
+            day = H.local_date(ts)
+            d = days.setdefault(day, self._blank_day(day))
+            d["steps"] += steps
+            d["wear"] += 1
+            level = 0   # 0 nghỉ, 1 nhẹ, 2 vừa, 3 mạnh
+            if steps >= 130:
+                level = 3
+            elif steps >= 100:
+                level = 2
+            elif steps >= 20:
+                level = 1
+            if ts in in_workout and H.valid_hr(s[4]):
+                reserve = (s[4] - rest) / max(1, hrmax - rest)
+                level = max(level, 3 if reserve >= 0.6 else 2 if reserve >= 0.4 else 1 if reserve >= 0.2 else 0)
+            if level:
+                d[("light", "moderate", "vigorous")[level - 1]] += 1
+        for ts, value in self.db.execute("SELECT ts, value FROM stress WHERE auto = 1 AND ts >= ? AND ts < ?", (t0, t1)):
+            if not T.assess("stress", value)["usable"]:
+                continue
+            day = H.local_date(ts)
+            d = days.setdefault(day, self._blank_day(day))
+            d["stress_sum"] += value
+            d["stress_n"] += 1
+            d["stress_high"] += value >= 80
+        day_list = []
+        for i in range(self.INSIGHT_DAYS):
+            day = (first + dt.timedelta(days=i)).isoformat()
+            d = days.get(day, self._blank_day(day))
+            d["stress"] = d["stress_sum"] / d["stress_n"] if d["stress_n"] else None
+            day_list.append(d)
+
+        # ---- chỉ số đều đặn giấc ngủ: 14 ngày gần nhất
+        s0 = H.day_bounds((d0 - dt.timedelta(days=13)).isoformat())[0]
+        asleep = {t for sess in sessions for a, b, k in sess["stages"] if k != "awake" for t in range(a, b, 60) if t >= s0}
+        sri = I.sleep_regularity(asleep, {ts for ts in by_ts if ts >= s0}, s0, t1)
+
+        circ = I.circadian(nights, sri)
+        chronotype = circ["chronotype"] if circ else None
+        hours = sorted(hourly.items())
+        today = dt.date.today().isoformat()
+
+        def ready_on(k: int) -> dict | None:
+            """Điểm sẵn sàng của đêm thứ k: hôm nay tính tới lúc này (buổi tập trong ngày làm điểm giảm), ngày trước
+            tính lúc 8 giờ sáng."""
+            day = nights[k]["date"]
+            now = time.time() if day == today else H.day_bounds(day)[0] + 8 * 3600
+            return I.readiness(nights[:k + 1], [d for d in day_list if d["date"] < day], chronotype,
+                               fatigue={"hours": hours, "now": now}, hrmax=hrmax)
+
+        ready = ready_on(len(nights) - 1) if nights and nights[-1]["date"] == date else None
+        history = []
+        for k in range(max(0, len(nights) - 14), len(nights)):
+            r = ready_on(k)
+            if r:
+                history.append({"date": nights[k]["date"], "score": r["score"], "verdict": r["verdict"]})
+        return {
+            "readiness": ready, "readiness_history": history,
+            "readiness_progress": None if ready else I.readiness_progress(nights),
+            "readiness_night": bool(nights and nights[-1]["date"] == date),
+            "mental": I.mental_state(nights, day_list, circ),
+            "intensity": I.activity_intensity([d for d in day_list if d["date"] <= date]),
+            "circadian": circ,
+            "rem_estimated": any(s.get("rem_estimated") for s in mains.values()),
+            "sampling": {"load_method": "observed_minutes_only", "expected_hr_interval_seconds": None,
+                         "load_limitation": "Sparse HR undercounts load; compare days with similar coverage.",
+                         "recovery_window_seconds": 300},
+        }
+
+    @staticmethod
+    def _blank_day(day: str) -> dict:
+        return {"date": day, "steps": 0, "wear": 0, "light": 0, "moderate": 0, "vigorous": 0, "trimp": 0,
+                "stress_sum": 0, "stress_n": 0, "stress_high": 0}
+
+    @staticmethod
+    def _night(sess: dict, by_ts: dict, day: str) -> dict:
+        """Tóm tắt một đêm: thời lượng, các giai đoạn, nhịp tim khi ngủ, lúc nhịp tim thấp nhất, giờ giữa giấc."""
+        asleep = [t for a, b, k in sess["stages"] if k != "awake" for t in range(a, b, 60)]
+        hrs = [by_ts[t][4] for t in asleep if t in by_ts and H.valid_hr(by_ts[t][4])]
+        night = {"date": day, "minutes": sess["minutes"], "deep": sess["deep"], "rem": sess["rem"],
+                 "awake": sess["awake"], "start": sess["start"], "end": sess["end"],
+                 "hr": sorted(hrs)[len(hrs) // 2] if hrs else None, "hr_low_at": None,
+                 "mid": ((sess["start"] + sess["end"]) / 2 - H.day_bounds(day)[0]) / 60}
+        if len(hrs) >= 0.5 * len(asleep) and len(hrs) >= 30:
+            # chỉ số hồi phục (như Oura): lúc trung bình 5 phút của nhịp tim xuống thấp nhất, tính theo phần đêm đã qua
+            pts = [(t, by_ts[t][4]) for t in asleep if t in by_ts and H.valid_hr(by_ts[t][4])]
+            best = None
+            for i in range(len(pts) - 4):
+                window = pts[i:i + 5]
+                if any(b[0] - a[0] != 60 for a, b in zip(window, window[1:])):
+                    continue   # năm số đo rời rạc không phải cửa sổ năm phút
+                avg = sum(v for _t, v in window) / 5
+                if best is None or avg < best[0]:
+                    best = (avg, pts[i + 2][0])
+            if best:
+                night["hr_low_at"] = (best[1] - sess["start"]) / max(60, sess["end"] - sess["start"])
+        return night
+
+    def summary(self, date: str, sleep_days: int = 14, rem: bool = False,
+                hr_interval_minutes: int | None = None) -> dict:
         """Mọi số liệu trang Sức khỏe cần cho ngày `date` (YYYY-MM-DD) và các ngày gần đó."""
         t0, t1 = H.day_bounds(date)
         day = self.samples(t0, t1)
@@ -200,7 +373,7 @@ class HealthDB:
         # giấc ngủ: tính trên khoảng rộng rồi gán mỗi giấc cho ngày thức dậy (như Mi Fitness)
         first = dt.date.fromisoformat(date) - dt.timedelta(days=sleep_days - 1)
         w0, _ = H.day_bounds((first - dt.timedelta(days=1)).isoformat())
-        sessions = H.sleep_sessions(self.samples(w0 + 12 * 3600, t1), self.kind_before(w0 + 12 * 3600))
+        sessions = H.sleep_sessions(self.samples(w0 + 12 * 3600, t1), self.kind_before(w0 + 12 * 3600), rem=rem)
         by_day: dict[str, list[dict]] = {}
         for sess in sessions:
             by_day.setdefault(H.local_date(sess["end"]), []).append(sess)
@@ -217,6 +390,19 @@ class HealthDB:
         spo2_day = self.db.execute("SELECT ts, value, auto FROM spo2 WHERE ts >= ? AND ts < ? ORDER BY ts",
                                    (t0, t1)).fetchall()
         spo2_recent = self.db.execute("SELECT ts, value, auto FROM spo2 ORDER BY ts DESC LIMIT 30").fetchall()
+        # Unknown cadence stays unknown; historical settings changes cannot be inferred.
+        end = max(t0, min(t1, int(time.time())))
+        cadence = hr_interval_minutes * 60 if hr_interval_minutes and hr_interval_minutes > 0 else None
+        quality = {
+            "activity": {"source": "band_processed_motion", "sampling": T.sampling(
+                [s[0] for s in day], t0, end, expected_interval_seconds=60)},
+            "hr": T.series_quality("hr", [(s[0], s[4]) for s in day], t0, end, cadence),
+            "stress": T.series_quality("stress", stress, t0, end),
+            "spo2": T.series_quality("spo2", spo2_day, t0, end),
+        }
+        stress = [r for r in stress if T.assess("stress", r[1])["usable"]]
+        spo2_day = [r for r in spo2_day if T.assess("spo2", r[1])["usable"]]
+        spo2_recent = [r for r in spo2_recent if T.assess("spo2", r[1])["usable"]]
         pai_rows = self.db.execute("SELECT ts, today, total, time_low, time_moderate, time_high FROM pai "
                                    "WHERE ts < ? ORDER BY ts DESC LIMIT 60", (t1,)).fetchall()
         pai_by_day: dict[str, dict] = {}
@@ -228,14 +414,17 @@ class HealthDB:
         workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts ORDER BY start DESC").fetchall()]
         # loại bài tập của Mi Fitness dùng mã khác vòng tay: học cách đổi mã từ các buổi có cả hai
         mf_to_band = {w["mf_type"]: w["type"] for w in workouts if w.get("type") is not None and w.get("mf_type") is not None}
+        empty_tracks = {r[0] for r in self.db.execute("SELECT start FROM tracks WHERE json_array_length(data) < 2")}
         for w in workouts:
             if w.get("type") is None and w.get("mf_type") in mf_to_band:
                 w["type"] = mf_to_band[w["mf_type"]]
-            w["gps"] = H.has_gps(w)
+            # có nút Bản đồ khi buổi tập có lộ trình trong Mi Fitness và tệp lộ trình (nếu đã tải) không trống
+            w["gps"] = H.has_gps(w) and w["start"] not in empty_tracks
             for k in ("mf_sid", "mf_region", "mf_time", "mf_tz"):   # chỉ dùng phía server để tải lộ trình
                 w.pop(k, None)
         return {
             "date": date,
+            "quality": quality,
             "has_data": bool(self.db.execute("SELECT 1 FROM activity LIMIT 1").fetchone()),
             "steps_days": self.daily_steps(),
             "day": {

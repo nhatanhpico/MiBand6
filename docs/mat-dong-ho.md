@@ -1,6 +1,6 @@
 # Mặt đồng hồ và ảnh nền
 
-Thẻ **Cài đặt → Mặt đồng hồ** cài mặt đồng hồ lên Mi Band 6: dùng ảnh của bạn làm ảnh nền, hoặc cài một tệp mặt đồng hồ `.bin`. Có trong cả bản web và ứng dụng macOS.
+Thẻ **Cài đặt vòng tay → Mặt đồng hồ** cài mặt đồng hồ lên Mi Band 6: dùng ảnh của bạn làm ảnh nền, hoặc cài một tệp mặt đồng hồ `.bin`. Có trong cả bản web và ứng dụng macOS.
 
 ## Khung mô phỏng
 

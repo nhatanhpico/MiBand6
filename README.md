@@ -26,19 +26,24 @@
 
 **Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
 - **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
-- Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
+- **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Thêm **trạng thái tinh thần** ước tính, **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
+- Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức và **REM ước tính từ nhịp tim** (Mi Band 6 và Mi Fitness đều không có REM cho vòng này; tắt được) theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
-- Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Nếu đã đăng nhập Xiaomi, mỗi lần kết nối ứng dụng cũng tự lấy buổi tập mới (và hồ sơ) từ Mi Fitness ở chế độ nền.
-- **Bản đồ** của từng buổi chạy, đi bộ, đạp xe ngoài trời và bản đồ **Những nơi đã đến** gom mọi lộ trình (tô màu theo loại), mở ngay trong ứng dụng (ứng dụng macOS dùng **Apple Maps** gắn sẵn, trình duyệt dùng OpenStreetMap); lộ trình được tải sẵn ở nền.
+- Tự đồng bộ khi kết nối và theo lịch ở **Cài đặt ứng dụng** (vòng tay: 15 phút–2 giờ; Mi Fitness: 1 giờ–1 ngày; hoặc chỉ khi bấm); bấm **Đồng bộ** để lấy ngay. Cùng trang đó có ngôn ngữ giao diện, trạng thái tài khoản Mi Fitness (gia hạn, đăng nhập lại, đăng xuất) và cách tự kết nối lại.
+- **Bản đồ** của từng buổi chạy, đi bộ, đạp xe ngoài trời và bản đồ **Những nơi đã đến** gom mọi lộ trình (tô màu theo loại, **lọc theo quốc gia, thành phố**), mở ngay trong hộp thoại bằng **Apple Maps** gắn sẵn của ứng dụng macOS; **Chia sẻ ảnh** lưu ảnh bản đồ kèm số liệu rồi mở bảng chia sẻ. Trình duyệt hiện nút **Mở trong ứng dụng** thay cho bản đồ. Lộ trình được tải sẵn ở nền, mỗi lộ trình khoảng 1 giây.
 - Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
-- Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
+- Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt vòng tay → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
 
-**Thời tiết** (**Cài đặt → Ứng dụng → Thời tiết**; chi tiết: [docs/thoi-tiet.md](docs/thoi-tiet.md))
+**Hai trang cài đặt**
+- **Cài đặt vòng tay**: những gì được ghi vào vòng tay (hồ sơ, màn hình, mặt đồng hồ, ứng dụng trên vòng tay, đo sức khỏe)
+- **Cài đặt ứng dụng** (trong ứng dụng macOS: ⌘,): những gì chỉ thuộc ứng dụng trên máy tính (ngôn ngữ, lịch tự đồng bộ, tài khoản Mi Fitness, kết nối, thời tiết, ước tính REM)
+
+**Thời tiết** (**Cài đặt ứng dụng → Thời tiết**; chi tiết: [docs/thoi-tiet.md](docs/thoi-tiet.md))
 - Mỗi lần kết nối và mỗi giờ, gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm, giờ mặt trời mọc và lặn (dữ liệu Open-Meteo, không cần tài khoản)
 - Vị trí tự động theo mạng đang dùng, hoặc chọn một thành phố
 
-**Mặt đồng hồ và ảnh nền** (**Cài đặt → Mặt đồng hồ**; hướng dẫn chi tiết: [docs/mat-dong-ho.md](docs/mat-dong-ho.md))
+**Mặt đồng hồ và ảnh nền** (**Cài đặt vòng tay → Mặt đồng hồ**; hướng dẫn chi tiết: [docs/mat-dong-ho.md](docs/mat-dong-ho.md))
 - Khung **mô phỏng Mi Band 6** (màn hình 152 × 486, bo góc như thật) hiện đúng thứ sẽ lên vòng tay trước khi cài
 - **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Chọn vị trí và màu giờ rồi **Cài lên vòng tay**: ứng dụng dựng một mặt đồng hồ Mi Band 6 từ ảnh đó (nếu vòng tay gặp sự cố, xem [cách khôi phục](docs/mat-dong-ho.md#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ))
 - **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); ảnh xem trước có trong tệp được đọc ra và hiện ở khung mô phỏng
@@ -223,7 +228,7 @@ Mi Band 6 có hai kiểu xác thực:
 
 ## Lấy hồ sơ từ Mi Fitness
 
-Vòng tay chỉ cho ghi hồ sơ, không cho đọc lại qua Bluetooth, nên lần đầu các ô ở **Cài đặt → Hồ sơ** là giá trị mặc định. Bấm **Đồng bộ** ở đầu trang đó để lấy tên, ngày sinh, giới tính, chiều cao, cân nặng và mục tiêu bước từ tài khoản Mi Fitness:
+Vòng tay chỉ cho ghi hồ sơ, không cho đọc lại qua Bluetooth, nên lần đầu các ô ở **Cài đặt vòng tay → Hồ sơ** là giá trị mặc định. Bấm **Đồng bộ** ở đầu trang đó để lấy tên, ngày sinh, giới tính, chiều cao, cân nặng và mục tiêu bước từ tài khoản Mi Fitness:
 
 1. Giao diện hiện mã QR đăng nhập Xiaomi. Quét bằng camera điện thoại và đăng nhập đúng tài khoản dùng trong Mi Fitness (hoặc bấm "Hoặc đăng nhập trong trình duyệt").
 2. Server đọc hồ sơ từ máy chủ Mi Fitness, điền vào các ô và ghi ngay vào vòng tay nếu đang kết nối. Nếu chưa kết nối, hồ sơ được ghi tự động ở lần kết nối tới.
@@ -232,7 +237,7 @@ Server chỉ đọc, không thay đổi gì trong tài khoản. Phiên đăng nh
 
 ## Sắp xếp ứng dụng trên vòng tay
 
-Trang **Cài đặt → Ứng dụng** chia ứng dụng thành hai nhóm:
+Trang **Cài đặt vòng tay → Ứng dụng** chia ứng dụng thành hai nhóm:
 
 - **Hiện trên vòng tay:** hiện khi vuốt lên, xuống từ mặt đồng hồ, theo đúng thứ tự trong danh sách.
 - **Ẩn:** không hiện trên vòng tay.
@@ -254,7 +259,7 @@ Vòng tay không cho đọc lại bố cục hiện tại, nên ứng dụng ch�
 | Trang Sức khỏe trống | Kết nối vòng tay rồi bấm **Đồng bộ**. Lần đầu lấy tối đa 30 ngày nên có thể mất một lúc; tiến độ hiện dưới tiêu đề trang. |
 | Mặt đồng hồ / ảnh nền cài không được | Sạc vòng tay (vòng tay từ chối khi pin yếu) và xóa bớt mặt đồng hồ trên vòng tay nếu báo hết chỗ. Chi tiết từng bước có trong **Nhật ký Bluetooth**. |
 | Một cài đặt không có tác dụng | Mở **Nhật ký Bluetooth** cuối trang **Thiết bị**, bấm **Tải về** để xem vòng tay trả lời gì. |
-| Vòng tay mất ứng dụng Cài đặt | Vào **Cài đặt → Ứng dụng**, bấm **Về bố cục gốc** rồi **Lưu bố cục**. |
+| Vòng tay mất ứng dụng Cài đặt | Vào **Cài đặt vòng tay → Ứng dụng**, bấm **Về bố cục gốc** rồi **Lưu bố cục**. |
 | Trình duyệt báo không mở được localhost:8766 | Server chưa chạy hoặc đã tắt: chạy lại `uv run miband6-web`. Nếu cổng bận, server tự dùng cổng kế tiếp; xem đường dẫn in trong Terminal. |
 | Vòng tay cứ tự kết nối lại khi đang muốn dùng với điện thoại | Bấm **Ngắt kết nối** (ứng dụng thôi tự nối lại), hoặc tắt **Giữ kết nối** ở trang **Thiết bị** / trên menu của ứng dụng macOS. |
 | Nhật ký ghi "Ngừng tự kết nối lại: vòng tay từ chối xác thực…" | Auth key đã hết hiệu lực (vòng tay vừa được ghép đôi lại với app của hãng): lấy key mới rồi bấm **Kết nối**. |

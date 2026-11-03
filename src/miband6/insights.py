@@ -35,8 +35,8 @@ MIN_BASELINE = 7          # cần ít nhất chừng này đêm / ngày để so
 FREE_WEEKDAYS = (5, 6)    # thức dậy thứ Bảy, Chủ nhật: đêm trước ngày nghỉ (đêm thứ Sáu, thứ Bảy)
 
 # trọng số các thành phần của mức sẵn sàng (chuẩn hóa lại theo thành phần có dữ liệu)
-READINESS_WEIGHTS = {"rhr": 0.20, "recovery": 0.10, "sleep": 0.20, "sleep_balance": 0.15,
-                     "previous_day": 0.10, "activity_balance": 0.10, "stress_balance": 0.15}
+READINESS_WEIGHTS = {"rhr": 0.18, "recovery": 0.08, "sleep": 0.20, "sleep_balance": 0.14,
+                     "recovery_time": 0.15, "activity_balance": 0.10, "stress_balance": 0.15}
 
 
 def _interp(x: float, points: list[tuple[float, float]]) -> float:
@@ -159,27 +159,46 @@ def _sleep_balance_part(nights: list[dict]) -> dict | None:
     return _part("sleep_balance", tr('Cân bằng giấc ngủ'), score, tr('{p}% nhu cầu', p=int(round(ratio * 100))), detail)
 
 
-def _load_parts(days: list[dict]) -> list[dict]:
-    """Vận động hôm trước và cân bằng vận động (tải cấp / tải mạn) từ TRIMP mỗi ngày."""
+FATIGUE_TAU = 36.0        # giờ: hằng số suy giảm của mệt mỏi do tập (mô hình thể lực - mệt mỏi kiểu Banister)
+MIN_DAILY_LOAD = 30.0     # TRIMP: sàn của tải thường ngày, để vài phút đi bộ không thành "quá tải" với người ít tập
+
+
+def recovery_hours(hourly: list[tuple[int, float]], now: float, daily_load: float) -> float:
+    """Số giờ còn lại để hồi phục sau các buổi tập gần đây.
+
+    Mỗi giờ có tải (TRIMP) cộng vào "mệt mỏi" A, mờ dần theo e^(-t/FATIGUE_TAU). Với tải đều đặn C mỗi ngày, A ổn
+    định quanh C x FATIGUE_TAU / 24; đã hồi phục khi A về tới mức đó. Còn lại: FATIGUE_TAU x ln(A / mức ổn định).
+    Tải trong hôm nay cũng được tính, nên điểm giảm ngay sau một buổi tập (như Apple Watch)."""
+    fatigue = sum(load * math.exp(-(now - ts) / 3600 / FATIGUE_TAU) for ts, load in hourly if ts <= now)
+    steady = max(daily_load, MIN_DAILY_LOAD) * FATIGUE_TAU / 24
+    return 0.0 if fatigue <= steady else min(96.0, FATIGUE_TAU * math.log(fatigue / steady))
+
+
+def _load_parts(days: list[dict], fatigue: dict | None = None) -> list[dict]:
+    """Thời gian hồi phục (mệt mỏi từ tải gần đây) và cân bằng vận động (tải cấp / tải mạn) từ TRIMP."""
     out = []
-    loads = [d["trimp"] for d in days if d.get("wear", 0) >= 600]
-    if len(loads) < MIN_BASELINE:
+    worn = lambda span: [d["trimp"] for d in days[-span:] if d.get("wear", 0) >= 600]   # noqa: E731 - chỉ ngày có đeo vòng
+    month, week = worn(28), worn(7)
+    if len(month) < MIN_BASELINE:
         return out
-    chronic = _mean([d["trimp"] for d in days[-28:]]) or 0
-    acute = _mean([d["trimp"] for d in days[-7:]]) or 0
-    y = days[-1]
-    if chronic >= 5:
-        r = y["trimp"] / chronic
-        score = _interp(r, [(1.3, 100), (2.0, 75), (3.0, 50), (4.0, 40)])
-        if y.get("steps", 0) < 3000 and r < 0.5:
-            score = 85
-        detail = tr('Tải vận động hôm qua (TRIMP {t}) so với trung bình 28 ngày ({c}).', t=int(round(y["trimp"])),
-                    c=int(round(chronic)))
-        if r > 2:
-            detail += " " + tr('Hôm qua vận động nặng hơn hẳn thường lệ: nên để cơ thể hồi phục.')
-        elif score < 100:
-            detail += " " + tr('Hôm qua ít vận động; đi lại nhẹ nhàng giúp cơ thể sẵn sàng hơn.')
-        out.append(_part("previous_day", tr('Vận động hôm qua'), score, f"{r:.1f}×", detail))
+    chronic = _mean(month) or 0
+    acute = _mean(week) or 0
+    if fatigue is not None:
+        hours = recovery_hours(fatigue["hours"], fatigue["now"], chronic)
+        score = _interp(hours, [(0, 100), (6, 92), (12, 80), (24, 60), (36, 45), (48, 35), (72, 15)])
+        if hours >= 1:
+            detail = tr('Từ tải vận động các ngày gần đây (TRIMP), cơ thể cần thêm khoảng {h} giờ để hồi phục.',
+                        h=int(round(hours)))
+        else:
+            detail = tr('Đã hồi phục sau các buổi tập gần đây.')
+        y = days[-1] if days and days[-1].get("wear", 0) >= 600 else None
+        if y and chronic >= 5 and y["trimp"] > 2 * chronic:
+            detail += " " + tr('Hôm qua tải gấp {r} lần thường lệ.', r=f"{y['trimp'] / chronic:.1f}")
+        value = tr('{h} giờ', h=int(round(hours))) if hours >= 1 else tr('Đã hồi phục')
+        part = _part("recovery_time", tr('Thời gian hồi phục'), score, value, detail)
+        part["hours"] = round(hours, 1)
+        out.append(part)
+    if chronic >= 5 and len(month) >= 14 and len(week) >= 4:
         acwr = acute / chronic
         score = _interp(acwr, [(0.3, 70), (0.5, 80), (0.8, 100), (1.3, 100), (1.5, 75), (2.0, 45), (2.5, 35)])
         detail = tr('Tải 7 ngày so với 28 ngày (ACWR); khoảng 0,8-1,3 là cân bằng, trên 1,5 dễ quá sức.')
@@ -205,14 +224,27 @@ def _stress_part(days: list[dict]) -> dict | None:
     return _part("stress_balance", tr('Cân bằng căng thẳng (HRV)'), score, f"{cur:.0f}", detail)
 
 
-def readiness(nights: list[dict], days: list[dict], chronotype: float | None = None) -> dict | None:
-    """Mức sẵn sàng (0-100) cho ngày của đêm cuối trong `nights`; days: các ngày trước đó (ngày cuối là hôm qua)."""
+VERDICTS = (   # (điểm từ, khóa, trạng thái màu) - như các mức của Apple Watch Readiness / Garmin Training Readiness
+    (80, "train_hard", "good"), (60, "train", "ok"), (40, "easy", "watch"), (0, "rest", "alert"))
+
+
+def _zones(hrmax: float) -> dict:
+    """Vùng nhịp tim theo % nhịp tim tối đa: vùng 1 50-60%, 2 60-70%, 3 70-80%, 4 80-90%, 5 90-100%."""
+    return {k: int(round(hrmax * k / 100)) for k in (50, 60, 70, 80, 90, 100)}
+
+
+def readiness(nights: list[dict], days: list[dict], chronotype: float | None = None, fatigue: dict | None = None,
+              hrmax: float | None = None) -> dict | None:
+    """Điểm sẵn sàng hằng ngày (0-100) và lời khuyên tập hay nghỉ, cho ngày của đêm cuối trong `nights`.
+
+    days: các ngày trước đó (ngày cuối là hôm qua); fatigue: {"hours": [(giờ, TRIMP)], "now": thời điểm tính} cho
+    thời gian hồi phục; hrmax: nhịp tim tối đa để gợi ý vùng nhịp tim."""
     if not nights:
         return None
     night = nights[-1]
     parts = [p for p in (_rhr_part(nights, night), _recovery_part(night), _sleep_part(night, chronotype),
                          _sleep_balance_part(nights), _stress_part(days)) if p]
-    parts += _load_parts(days)
+    parts += _load_parts(days, fatigue)
     have = {p["key"] for p in parts}
     if len(parts) < 3 or not ({"rhr", "sleep"} & have):
         return None
@@ -221,22 +253,52 @@ def readiness(nights: list[dict], days: list[dict], chronotype: float | None = N
     score = sum(p["score"] * READINESS_WEIGHTS[p["key"]] for p in parts) / sum(READINESS_WEIGHTS[p["key"]] for p in parts)
     low = [p for p in parts if p["score"] < 40]
     if low:
-        score = min(score, 69)   # như Oura: một thành phần rất thấp thì điểm không vượt mức "Khá"
+        score = min(score, 59)   # như Oura: một thành phần rất thấp kéo điểm xuống, không để "sẵn sàng tập"
     score = int(round(score))
-    level = "optimal" if score >= 85 else "good" if score >= 70 else "fair" if score >= 60 else "low"
-    labels = {"optimal": tr('Tối ưu'), "good": tr('Tốt'), "fair": tr('Khá'), "low": tr('Cần chú ý')}
+    verdict = next(v for v in VERDICTS if score >= v[0])
+    rec = next((p for p in parts if p["key"] == "recovery_time"), None)
+    rhr = next((p for p in parts if p["key"] == "rhr"), None)
+    caps = []   # giới hạn lời khuyên dù điểm cao: còn đang hồi phục, nhịp tim nghỉ tăng mạnh
+    if rec and rec["hours"] >= 24 or rhr and rhr["score"] < 40:
+        caps.append("easy")
+    elif rec and rec["hours"] >= 12:
+        caps.append("train")
+    rank = [v[1] for v in VERDICTS]
+    if caps and rank.index(caps[0]) > rank.index(verdict[1]):
+        verdict = next(v for v in VERDICTS if v[1] == caps[0])
+        score = min(score, {"train": 79, "easy": 59}[caps[0]])   # điểm khớp lời khuyên (như Garmin: còn hồi phục thì điểm thấp)
+    key, status = verdict[1], verdict[2]
+    z = _zones(hrmax or hr_max(None))
+    labels = {"train_hard": tr('Sẵn sàng tập nặng'), "train": tr('Sẵn sàng tập luyện'), "easy": tr('Nên tập nhẹ'),
+              "rest": tr('Nên nghỉ ngơi')}
+    plans = {
+        "train_hard": tr('Ngày tốt để tập cường độ cao: chạy nhanh, interval, tập sức mạnh nặng. Nhịp tim có thể lên vùng 4-5 ({lo}-{hi} nhịp/phút).',
+                         lo=z[80], hi=z[100]),
+        "train": tr('Tập như kế hoạch ở cường độ vừa (vùng 2-3, khoảng {lo}-{hi} nhịp/phút); hạn chế bài rất nặng.',
+                    lo=z[60], hi=z[80]),
+        "easy": tr('Chỉ nên vận động nhẹ: đi bộ, đạp xe chậm, yoga, giãn cơ (dưới {hi} nhịp/phút).', hi=z[70]),
+        "rest": tr('Hôm nay nên nghỉ: ngủ sớm, đi lại nhẹ nhàng, uống đủ nước. Tập nặng lúc này dễ quá sức.'),
+    }
     weakest = min(parts, key=lambda p: p["score"])
     advice = {
         "rhr": tr('Nhịp tim nghỉ cao hơn thường lệ: ưu tiên nghỉ ngơi, uống đủ nước, tránh tập nặng hôm nay.'),
         "recovery": tr('Cơ thể hồi phục chậm trong đêm: tránh ăn khuya, rượu bia và tập nặng sát giờ ngủ.'),
         "sleep": tr('Giấc ngủ đêm qua chưa tốt: cân nhắc ngủ sớm hơn tối nay hoặc chợp mắt ngắn buổi chiều.'),
         "sleep_balance": tr('Đang thiếu ngủ nhiều đêm: ngủ đủ 7-9 giờ trong vài đêm tới để trả nợ ngủ.'),
-        "previous_day": tr('Hôm qua vận động nặng: hôm nay nên tập nhẹ hoặc nghỉ để hồi phục.'),
+        "recovery_time": tr('Cơ thể còn đang hồi phục sau các buổi tập gần đây: để thêm thời gian trước buổi nặng tiếp theo.'),
         "activity_balance": tr('Tải vận động tuần này lệch nhiều so với thường lệ: tăng hoặc giảm từ từ.'),
         "stress_balance": tr('Căng thẳng cao hơn thường lệ: dành thời gian thư giãn, hít thở chậm, đi bộ nhẹ.'),
     }
-    tip = advice[weakest["key"]] if weakest["score"] < 80 else tr('Các chỉ số đều ổn: hôm nay phù hợp để vận động như kế hoạch.')
-    return {"score": score, "level": level, "label": labels[level], "date": night["date"], "parts": parts, "advice": tip}
+    why = advice[weakest["key"]] if weakest["score"] < 80 else tr('Các chỉ số đều ổn: hôm nay phù hợp để vận động như kế hoạch.')
+    return {"score": score, "verdict": key, "status": status, "label": labels[key], "plan": plans[key], "advice": why,
+            "recovery_hours": rec["hours"] if rec else None, "date": night["date"], "parts": parts,
+            "zones": z}
+
+
+def readiness_progress(nights: list[dict]) -> dict:
+    """Khi chưa đủ dữ liệu: đã có bao nhiêu đêm có nhịp tim khi ngủ trong 30 đêm gần đây (cần MIN_BASELINE + 1)."""
+    have = sum(1 for n in nights[-BASELINE_NIGHTS - 1:] if n.get("hr"))
+    return {"nights": have, "need": MIN_BASELINE + 1}
 
 
 # ---------------------------------------------------------------- cường độ vận động
@@ -375,13 +437,14 @@ def mental_state(nights: list[dict], days: list[dict], circ: dict | None) -> dic
     if len(base) >= MIN_BASELINE and nights and nights[-1].get("hr"):
         z = (nights[-1]["hr"] - _mean(base)) / max(_sd(base) or 0, 1.5)
         factors.append(("rhr", min(1.0, max(0.0, z / 2.5)), 0.15, "tension",
-                        tr('nhịp tim nghỉ {d:+.0f} nhịp/phút so với thường lệ', d=nights[-1]["hr"] - _mean(base))))
+                        tr('nhịp tim nghỉ {d} nhịp/phút so với thường lệ', d=f"{nights[-1]['hr'] - _mean(base):+.0f}")))
     week = days[-7:]
     if week:
         mvpa = sum(d.get("moderate", 0) + 2 * d.get("vigorous", 0) for d in week)
         factors.append(("activity", min(1.0, max(0.0, (150 - mvpa) / 150)), 0.10, "fatigue",
                         tr('{n} phút vận động vừa/mạnh 7 ngày qua (vận động giúp cải thiện tâm trạng)', n=mvpa)))
-    if len(factors) < 3 or not any(k == "stress" for k, *_ in factors) and not any(k == "sleep" for k, *_ in factors):
+    keys = {f[0] for f in factors}
+    if len(factors) < 3 or not ({"stress", "sleep"} & keys):
         return None
     strain = int(round(100 * sum(r * w for _k, r, w, _g, _d in factors) / sum(w for _k, _r, w, _g, _d in factors)))
 

@@ -62,3 +62,15 @@ def test_race_timeout_and_failures(monkeypatch):
         assert time.monotonic() - t < 2, e
     else:
         raise AssertionError("phải lỗi")
+
+
+def test_nominatim_place_parsing():
+    from miband6 import geo
+
+    hcm = {"address": {"city": "Thành phố Hồ Chí Minh", "country": "Việt Nam", "country_code": "vn"}}
+    assert geo.place_from_nominatim(hcm) == {"city": "Thành phố Hồ Chí Minh", "country": "Việt Nam", "cc": "VN"}
+    town = {"address": {"county": "Hsinchu County", "state": "Taiwan", "country": "Taiwan", "country_code": "tw"}}
+    assert geo.place_from_nominatim(town)["city"] == "Hsinchu County"
+    assert geo.place_from_nominatim({"error": "Unable to geocode"}) is None   # giữa biển
+    key = geo.area_key(10.776543, 106.695512, "vi")
+    assert key == "vi:10.78,106.70" and geo.parse_key(key) == (10.78, 106.7, "vi")

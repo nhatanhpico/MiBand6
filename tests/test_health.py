@@ -508,9 +508,11 @@ async def test_all_tracks_prefetched_in_background(client):
     for _ in range(200):
         await asyncio.sleep(0.05)
         body = await (await client.get("/api/tracks")).json()
-        if body["routes"] and not body["pending"]:
+        if body["routes"] and not body["pending"] and not body["places_pending"]:
             break
-    assert len(body["routes"]) == 3 and body["pending"] == 0
+    assert len(body["routes"]) == 3 and body["pending"] == 0 and body["places_pending"] == 0
+    # tên nơi (giả lập ở chế độ xem thử) để lọc theo thành phố / quốc gia
+    assert all(r["place"] and r["place"]["cc"] == "VN" and r["place"]["city"] for r in body["routes"])
     kinds = sorted(r["kind"] for r in body["routes"])
     assert set(kinds) <= {"run", "ride"} and "ride" in kinds
     assert all(2 <= len(r["points"]) <= 601 and len(r["points"][0]) == 2 for r in body["routes"])
@@ -584,3 +586,45 @@ async def test_weather_sent_on_connect_and_settings(client):
     await post(client, "/api/weather", {"enabled": False, "place": None})
     st = (await (await client.get("/api/state")).json())["state"]["weather"]
     assert st["enabled"] is False and st["place"] is None
+
+
+async def test_health_insights_and_settings(client):
+    await connected(client)
+    await wait_sync(client.service)
+    today = dt.date.today().isoformat()
+    h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
+    ins = h["insights"]
+    assert set(ins) >= {"readiness", "readiness_history", "mental", "intensity", "circadian", "rem_estimated"}
+    assert ins["intensity"] and 0 <= ins["intensity"]["ratio"] <= 100 and len(ins["intensity"]["days"]) == 7
+    assert ins["circadian"] and ins["circadian"]["chronotype_clock"].count(":") == 1
+    assert h["rem_mode"] == "estimate"
+    # tắt REM: giấc ngủ không còn phút REM
+    r = await post(client, "/api/prefs", {"rem_mode": "off"})
+    assert (await r.json())["state"]["settings"]["rem_mode"] == "off"
+    h2 = (await (await client.get(f"/api/health?date={today}")).json())["health"]
+    assert all(d["rem"] == 0 for d in h2["sleep_days"]) and h2["rem_mode"] == "off"
+    # lịch đồng bộ: chỉ nhận các lựa chọn có sẵn
+    r = await post(client, "/api/prefs", {"sync": {"band_minutes": 15, "cloud_hours": 0, "retry_max": 300}})
+    sync = (await r.json())["state"]["sync"]
+    assert (sync["band_minutes"], sync["cloud_hours"], sync["retry_max"], sync["renew_hours"]) == (15, 0, 300, 0)
+    assert (await post(client, "/api/prefs", {"sync": {"band_minutes": 7}})).status == 400
+    acct = (await (await client.get("/api/cloud/account")).json())["account"]
+    assert acct == {"logged_in": False, "saved": None, "can_renew": False}
+    assert (await post(client, "/api/cloud/renew", {})).status == 409
+
+
+async def test_workout_without_route_has_no_map_button(client):
+    """Tệp lộ trình tải về trống (đi bộ không bật GPS điện thoại…): bảng hiện "Không có GPS" thay cho nút Bản đồ."""
+    await connected(client)
+    await wait_sync(client.service)
+    await post(client, "/api/cloud/sync", {"job": "workouts"})
+    for _ in range(100):
+        if client.service.cloud.status["state"] == "done":
+            break
+        await asyncio.sleep(0.05)
+    url = f"/api/health?date={dt.date.today().isoformat()}"
+    with_gps = [w for w in (await (await client.get(url)).json())["health"]["workouts"] if w["gps"]]
+    assert len(with_gps) == 3
+    client.service.health_db().set_track(with_gps[0]["start"], [])   # lộ trình không có điểm nào
+    after = {w["start"]: w["gps"] for w in (await (await client.get(url)).json())["health"]["workouts"]}
+    assert after[with_gps[0]["start"]] is False and sum(after.values()) == 2

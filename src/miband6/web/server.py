@@ -32,6 +32,7 @@ from aiohttp import WSMsgType, web
 from .. import health as H
 from .. import protocol as P
 from .. import watchface as WF
+from .. import geo
 from .. import weather as W
 from ..config import Store
 from ..envfile import env_settings, load_env
@@ -48,14 +49,17 @@ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 SERVER_ID = "miband6-manager"          # /api/meta trả về, để nhận ra server này đang chạy sẵn trên cổng
 READY_PREFIX = "MIBAND6_READY"         # dòng stdout báo địa chỉ cho ứng dụng macOS (chế độ --app)
 RECONNECT_DELAYS = (2, 5, 10, 20, 30, 60)   # giây chờ trước mỗi lần tự kết nối lại; lần sau cùng lặp mãi
+# lịch tự đồng bộ (Cài đặt ứng dụng): giá trị mặc định và các lựa chọn hợp lệ; 0 = chỉ khi người dùng bấm
+SYNC_DEFAULTS = {"band_minutes": 30, "cloud_hours": 1, "renew_hours": 0, "retry_max": 60}
+SYNC_CHOICES = {"band_minutes": (0, 15, 30, 60, 120), "cloud_hours": (0, 1, 3, 6, 12, 24),
+                "renew_hours": (0, 12, 24, 168), "retry_max": (10, 30, 60, 300)}
+CLOUD_TICK = 60                        # giây giữa hai lần kiểm tra lịch đồng bộ Mi Fitness / gia hạn phiên
 MAX_AUTH_FAILURES = 3                  # vòng tay từ chối xác thực ngần này lần liền thì thôi tự kết nối lại
-HEALTH_SYNC_EVERY = 30 * 60            # giây giữa hai lần tự đồng bộ dữ liệu sức khỏe khi đang kết nối
 FIRST_SYNC_DAYS = 30                   # lần đồng bộ đầu tiên lấy tối đa chừng này ngày (vòng tay giữ cỡ đó)
 BACKFILL_DAYS = 3 * 365                # một lần duy nhất: hỏi vòng tay mọi dữ liệu cũ hơn lần đầu, tới chừng này ngày
 CLOUD_PROFILE_EVERY = 12 * 3600        # tự lấy lại hồ sơ Mi Fitness (nếu còn phiên đăng nhập) sau chừng này giây
 WEATHER_EVERY = 3600                   # giây giữa hai lần gửi thời tiết khi đang kết nối
 IP_PLACE_TTL = 6 * 3600                # dùng lại vị trí theo IP trong chừng này giây
-CLOUD_WORKOUTS_EVERY = 3600            # tự lấy buổi tập mới từ Mi Fitness khi kết nối, nhiều nhất mỗi chừng này giây
 CLOUD_WORKOUTS_OVERLAP = 2 * 86400     # lấy lùi lại chừng này giây so với lần trước (buổi tập đồng bộ lên trễ)
 MAX_UPLOAD = 12 * 1024 * 1024          # cỡ tối đa của yêu cầu (tệp mặt đồng hồ + ảnh, dạng base64)
 IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif"}
@@ -146,6 +150,8 @@ class BandService:
         self._track_jobs: dict[int, asyncio.Future] = {}   # lộ trình đang tải, theo giờ bắt đầu buổi tập
         self._track_failed: set[int] = set()               # tải hỏng trong lần chạy này: không tự thử lại
         self._prefetch_task: asyncio.Task | None = None
+        self._insight_cache: dict = {}
+        self._geo_task: asyncio.Task | None = None
         self.health_status: dict = {"state": "idle"}
         self.weather_status: dict = {"state": "idle"}
         self._ip_place: tuple[float, W.Place] | None = None
@@ -211,6 +217,10 @@ class BandService:
             "device": self.device_meta if self.connected else None,
             "live": self.live if self.connected else {},
             "settings": self.settings,
+            "settings_provenance": {
+                "source": "local_requested", "readback_supported": False,
+                "device_readback": ["alarms"], "known_fields": sorted(self.settings),
+            },
             "profile": self.profile,
             "saved_devices": devices,
             "last_device": self.store.data.get("last_device") or self.env_address,
@@ -218,6 +228,8 @@ class BandService:
             "reconnect": None if self.connected else self.reconnect,
             "health": self.health_status,
             "weather": {**self.weather_status, **self.weather_settings()},
+            "sync": {**self.sync_settings(), "cloud_last": self._cloud_last()},
+            "account": self.cloud_account(),
             "watchface": self.settings.get("watchface"),
             "cloud": self.cloud.status,
         }
@@ -364,26 +376,87 @@ class BandService:
             self.start_health_sync()
             self._spawn(self._periodic_health(band))
 
-    async def _cloud_background(self) -> None:
-        """Sau khi kết nối: nếu đã đăng nhập Xiaomi (phiên đã lưu), tự lấy hồ sơ và các buổi tập mới từ Mi Fitness.
+    async def _cloud_background(self, on_connect: bool = True) -> None:
+        """Nếu đã đăng nhập Xiaomi (phiên đã lưu), tự lấy hồ sơ và các buổi tập mới từ Mi Fitness theo lịch ở
+        Cài đặt ứng dụng: sau mỗi lần kết nối vòng tay, và định kỳ khi server chạy (_periodic_cloud).
 
-        Chạy nền, không hiện mã QR; chưa đăng nhập thì không làm gì. Lịch sử buổi tập chỉ lấy phần từ lần trước
-        (lùi lại CLOUD_WORKOUTS_OVERLAP), lần đầu thì lấy cả lịch sử."""
+        Chạy nền, không hiện mã QR; chưa đăng nhập hoặc lịch là "chỉ khi bấm" thì không làm gì. Lịch sử buổi tập chỉ
+        lấy phần từ lần trước (lùi lại CLOUD_WORKOUTS_OVERLAP), lần đầu thì lấy cả lịch sử."""
+        hours = self.sync_settings()["cloud_hours"]
+        if not hours:
+            return
         now = time.time()
         jobs: list[tuple[str, int | None]] = []
         if now - float(self.profile.get("cloud_at") or 0) > CLOUD_PROFILE_EVERY:
             jobs.append(("profile", None))
         db = self.health_db()
         last = db.last("cloud_workouts") if db else None
-        if db and now - (last or 0) > CLOUD_WORKOUTS_EVERY:
+        if db and now - (last or 0) > hours * 3600:
             jobs.append(("workouts", last - CLOUD_WORKOUTS_OVERLAP if last else None))
         for job, since in jobs:
             while self.cloud.running:   # người dùng đang đồng bộ tay: chờ xong
                 await asyncio.sleep(2)
-            if not self.connected:
+            if on_connect and not self.connected:
                 return
             self.cloud.start(write=True, interactive=False, job=job, since=since)
             await self.cloud.wait()
+
+    async def _periodic_cloud(self) -> None:
+        """Suốt khi server chạy: lấy dữ liệu Mi Fitness và gia hạn phiên đăng nhập theo lịch (Cài đặt ứng dụng)."""
+        while True:
+            await asyncio.sleep(CLOUD_TICK)
+            try:
+                await self._cloud_background(on_connect=False)
+                hours = self.sync_settings()["renew_hours"]
+                info = XC.XiaomiLogin.session_info()
+                if hours and info and info["can_renew"] and time.time() - info["saved"] >= hours * 3600:
+                    await self.renew_session()
+            except ApiError:
+                pass
+            except Exception as e:  # noqa: BLE001 - lỗi mạng…: thử lại lần sau
+                self.log(tr('Không tự đồng bộ được với Mi Fitness: {e}', e=str(e) or type(e).__name__))
+
+    # ------------------------------------------------------------ lịch đồng bộ, tài khoản Mi Fitness
+    def sync_settings(self) -> dict:
+        cur = self.settings.get("sync") or {}
+        return {k: cur[k] if cur.get(k) in SYNC_CHOICES[k] else v for k, v in SYNC_DEFAULTS.items()}
+
+    def set_sync_settings(self, values: dict) -> None:
+        cur = self.sync_settings()
+        for k, v in values.items():
+            if k not in SYNC_CHOICES:
+                continue
+            try:
+                v = int(v)
+            except (TypeError, ValueError):
+                v = None
+            if v not in SYNC_CHOICES[k]:
+                raise ApiError(tr('Lựa chọn không hợp lệ.'))
+            cur[k] = v
+        self.settings["sync"] = cur
+        self.store.save()
+
+    def _cloud_last(self) -> int | None:
+        db = self.health_db()
+        return db.last("cloud_workouts") if db else None
+
+    def cloud_account(self) -> dict:
+        """Trạng thái phiên đăng nhập Xiaomi đã lưu (không gọi mạng)."""
+        if self.demo:
+            return {"logged_in": False, "saved": None, "can_renew": False}
+        info = XC.XiaomiLogin.session_info()
+        return {"logged_in": bool(info), "saved": info and info["saved"], "can_renew": bool(info and info["can_renew"])}
+
+    async def renew_session(self) -> dict:
+        """Đổi passToken lấy token mới ngay (như Mi Fitness làm khi token hết hạn), không cần quét QR."""
+        login = XC.XiaomiLogin()
+        if self.demo or not await asyncio.to_thread(login.load):
+            raise ApiError(tr('Chưa đăng nhập Mi Fitness.'), 409)
+        if not await asyncio.to_thread(login.renew):
+            raise ApiError(tr('Không gia hạn được phiên này; hãy đăng nhập lại.'), 409)
+        self.log(tr('Đã gia hạn phiên đăng nhập Mi Fitness.'))
+        self.push_state()
+        return self.cloud_account()
 
     # ------------------------------------------------------------ thời tiết
     def weather_settings(self) -> dict:
@@ -500,11 +573,17 @@ class BandService:
             self.health_status = {**self.health_status, "state": "idle"}
 
     async def _periodic_health(self, band: MiBand6) -> None:
+        """Lấy dữ liệu mới từ vòng tay theo lịch ở Cài đặt ứng dụng (0: chỉ khi bấm Đồng bộ)."""
+        waited = 0
         while True:
-            await asyncio.sleep(HEALTH_SYNC_EVERY)
+            await asyncio.sleep(60)
             if self.band is not band or not self.connected:
                 return
-            self.start_health_sync()
+            waited += 60
+            every = self.sync_settings()["band_minutes"]
+            if every and waited >= every * 60:
+                waited = 0
+                self.start_health_sync()
 
     HEALTH_JOBS = (
         ("activity", P.FETCH_ACTIVITY),
@@ -540,16 +619,18 @@ class BandService:
                 self.log(tr('Không lấy được {label}: {e}', label=label, e=e or type(e).__name__))
                 if not self.connected:
                     break
-        if self.connected:
+        if self.connected and not errors:
             db.set_last("last_sync", int(time.time()))
-        self._set_health(state="error" if errors and len(errors) == len(self.HEALTH_JOBS) else "done",
+        self._set_health(state="error" if errors else "done",
                          errors=sorted(set(errors)))
+        self._insight_cache.clear()  # partial syncs may still have committed useful new samples
         self.push({"type": "health_data"})
 
     async def _backfill_one(self, band: MiBand6, db: HealthDB, name: str, kind: int) -> None:
         """Một lần duy nhất: lấy phần vòng tay còn giữ nhưng cũ hơn dữ liệu đã có (lần đầu chỉ lấy 30 ngày)."""
-        stop = db.first(name) or db.last(name) or time.time()
-        since_ts = time.time() - BACKFILL_DAYS * 86400
+        stop = db.last(f"{name}_backfill_stop") or db.first(name) or db.last(name) or time.time()
+        db.set_last(f"{name}_backfill_stop", int(stop))
+        since_ts = db.last(f"{name}_backfill_cursor") or time.time() - BACKFILL_DAYS * 86400
         for _ in range(200):
             if since_ts >= stop:
                 break
@@ -560,12 +641,18 @@ class BandService:
             if nxt is None or nxt <= since_ts:
                 break
             since_ts = nxt
+            db.set_last(f"{name}_backfill_cursor", int(nxt))
+        else:
+            raise RuntimeError("History page limit reached; backfill will resume on the next sync")
         db.set_last(f"{name}_backfill", int(time.time()))
 
     async def _sync_one(self, band: MiBand6, db: HealthDB, name: str, kind: int) -> None:
         now = time.time()
         last = db.last(name)
-        since_ts = last if last is not None else now - FIRST_SYNC_DAYS * 86400
+        # The wire request has minute precision. Replay two minutes to recover
+        # late spot readings and the band's still-changing latest activity minute.
+        # Primary keys make replay idempotent; never move a checkpoint backwards.
+        since_ts = last - 120 if last is not None else now - FIRST_SYNC_DAYS * 86400
         if name == "pai" and last is not None:
             since_ts = last - 86400   # bản ghi PAI của hôm nay được vòng tay cập nhật suốt ngày
         for _ in range(80):   # mỗi lượt vòng tay chỉ gửi một phần; lặp tới khi hết dữ liệu mới
@@ -575,10 +662,11 @@ class BandService:
             nxt = self._store_health(db, name, start, data)
             if nxt is None or nxt <= since_ts:
                 return
-            db.set_last(name, nxt)
+            db.set_last(name, max(db.last(name) or nxt, nxt))
             since_ts = nxt
             if since_ts >= now:
                 return
+        raise RuntimeError("History page limit reached; remaining data will resume on the next sync")
 
     @staticmethod
     def _store_health(db: HealthDB, name: str, start: dt.datetime, data: bytes) -> int | None:
@@ -605,7 +693,9 @@ class BandService:
             rows = [(r["ts"],) for r in rows]
         else:
             return None
-        return max(r[0] for r in rows) + 60 if rows else None
+        # Spot readings carry seconds, but fetch requests do not. Advance to the
+        # next minute, then overlap on the next sync rather than skipping 60 seconds.
+        return (max(r[0] for r in rows) // 60 + 1) * 60 if rows else None
 
     def import_cloud_workouts(self, records: list[dict]) -> str:
         """Lưu buổi tập lấy từ tài khoản Mi Fitness (gộp với buổi vòng tay đã ghi)."""
@@ -709,23 +799,62 @@ class BandService:
             return {"routes": [], "pending": 0}
         stored = db.tracks()
         routes, pending = [], 0
+        lang = get_lang()
         for w in db.gps_workouts():
             points = stored.get(w["start"])
             if points is None:
                 pending += w["start"] not in self._track_failed
                 continue
             if len(points) >= 2:
-                routes.append({"start": w["start"], "kind": H.route_kind(w), "points": H.simplify_track(points)})
+                routes.append({"start": w["start"], "kind": H.route_kind(w), "points": H.simplify_track(points),
+                               "area": geo.area_key(points[0][1], points[0][2], lang)})
+        known = db.places([r["area"] for r in routes])
+        missing = sorted({r["area"] for r in routes} - set(known))
+        for r in routes:
+            r["place"] = known.get(r.pop("area"))
         if pending:
             self.prefetch_tracks()
-        return {"routes": routes, "pending": pending}
+        if missing:
+            self.geocode_places(missing)
+        return {"routes": routes, "pending": pending, "places_pending": len(missing)}
+
+    def geocode_places(self, keys: list[str]) -> None:
+        """Tra tên thành phố, quốc gia cho các vùng lộ trình chưa có (chạy nền, 1 yêu cầu/giây, lưu lại)."""
+        if self._geo_task and not self._geo_task.done():
+            return
+        self._geo_task = asyncio.ensure_future(self._geocode(keys))
+
+    async def _geocode(self, keys: list[str]) -> None:
+        db = self.health_db()
+        if db is None:
+            return
+        for n, key in enumerate(keys, 1):
+            lat, lon, lang = geo.parse_key(key)
+            try:
+                place = geo.demo_place(lat, lon, lang) if self.demo else await asyncio.to_thread(geo.reverse, lat, lon, lang)
+            except Exception as e:  # noqa: BLE001 - mất mạng…: thử lại lần sau mở bản đồ
+                self.log(tr('Không tra được tên nơi của lộ trình: {e}', e=str(e) or type(e).__name__))
+                break
+            db.set_place(key, place)
+            if n % 5 == 0 or n == len(keys):
+                self.push({"type": "tracks"})
+
+    def rem_estimate(self) -> bool:
+        """REM ước tính từ nhịp tim (Cài đặt ứng dụng → Giấc ngủ REM); mặc định bật."""
+        return self.settings.get("rem_mode", "estimate") == "estimate"
 
     def health_summary(self, date: str) -> dict | None:
         db = self.health_db()
         if not db:
             return None
-        summary = db.summary(date)
-        summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000))
+        rem = self.rem_estimate()
+        summary = db.summary(date, rem=rem)
+        summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000), rem=rem)
+        key = (date, db.last("last_sync"), db.last("cloud_workouts"), rem, get_lang(), self.profile.get("birth"))
+        if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, đổi ngôn ngữ…
+            self._insight_cache = {"key": key, "value": db.insights(date, self.profile, rem=rem)}
+        summary["insights"] = self._insight_cache["value"]
+        summary["rem_mode"] = self.settings.get("rem_mode", "estimate")
         return summary
 
     # ------------------------------------------------------------ mặt đồng hồ
@@ -795,6 +924,7 @@ class BandService:
         """Gọi khi server vừa chạy: tự kết nối với vòng tay đã nhớ nếu đang bật Giữ kết nối, và tải sẵn lộ trình."""
         if not self.demo:
             self.prefetch_tracks()
+            self._spawn(self._periodic_cloud())
         if self.keep_connected and self._reconnect_target():
             self.want_connected = True
             self._start_reconnect(first_delay=False)
@@ -843,6 +973,9 @@ class BandService:
                 if target is None:
                     return
                 delays = self.reconnect_delays
+                if delays is RECONNECT_DELAYS:   # lịch mặc định: giới hạn thời gian chờ theo Cài đặt ứng dụng
+                    cap = self.sync_settings()["retry_max"]
+                    delays = tuple(d for d in delays if d < cap) + (cap,)
                 delay = delays[min(attempt, len(delays) - 1)] if (attempt or first_delay) else 0
                 attempt += 1
                 self.reconnect = {"attempt": attempt, "at": time.time() + delay}
@@ -1298,6 +1431,12 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             S.settings["find_sound"] = bool(b["find_sound"])
         if b.get("lang") in ("vi", "en"):
             S.settings["ui_lang"] = set_lang(b["lang"])
+        if isinstance(b.get("sync"), dict):
+            S.set_sync_settings(b["sync"])
+        if b.get("rem_mode") in ("estimate", "off"):
+            S.settings["rem_mode"] = b["rem_mode"]
+            S._insight_cache = {}
+            S.push({"type": "health_data"})
         S.store.save()
         if "keep_connected" in b:
             S.set_keep_connected(bool(b["keep_connected"]))
@@ -1316,7 +1455,14 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
 
     async def cloud_forget(_):
         S.cloud.forget()
-        return ok(cloud=S.cloud.status)
+        S.push_state()
+        return ok(cloud=S.cloud.status, account=S.cloud_account())
+
+    async def cloud_account_get(_):
+        return ok(account=S.cloud_account())
+
+    async def cloud_renew(_):
+        return ok(account=await S.renew_session())
 
     async def forget_h(req):
         S.store.forget_device(str((await body(req)).get("address") or ""))
@@ -1384,6 +1530,8 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/cloud/sync", cloud_sync)
     r.add_post("/api/cloud/cancel", cloud_cancel)
     r.add_post("/api/cloud/forget", cloud_forget)
+    r.add_get("/api/cloud/account", cloud_account_get)
+    r.add_post("/api/cloud/renew", cloud_renew)
 
     async def on_shutdown(_app):
         S.want_connected = False
