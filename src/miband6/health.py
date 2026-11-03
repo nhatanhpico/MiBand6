@@ -287,10 +287,11 @@ def sleep_stage(sample: tuple, kind: int | None) -> str | None:
     return "deep" if kind == KIND_DEEP_SLEEP else "light"
 
 
-def sleep_sessions(samples: list[tuple], previous: int | None = None) -> list[dict]:
+def sleep_sessions(samples: list[tuple], previous: int | None = None, rem: bool = False) -> list[dict]:
     """Gom các phút ngủ thành từng giấc; khoảng thức ngắn ở giữa tính là 'thức'.
 
-    samples liền nhau theo phút (ts tăng dần); previous: loại hoạt động trước mẫu đầu tiên."""
+    samples liền nhau theo phút (ts tăng dần); previous: loại hoạt động trước mẫu đầu tiên.
+    rem: ước tính REM từ nhịp tim (estimate_rem) cho giấc vòng tay không ghi REM."""
     kinds = effective_kinds(samples, previous)
     stages = [sleep_stage(s, k) for s, k in zip(samples, kinds)]
 
@@ -345,11 +346,128 @@ def sleep_sessions(samples: list[tuple], previous: int | None = None) -> list[di
             st.append([ts, ts + 60, stage])
         last_ts = ts
     out = []
+    by_ts = {s[0]: s for s in samples} if rem else {}
     for sess in sessions:
         sess["minutes"] = sess["deep"] + sess["light"] + sess["rem"]
         if sess["minutes"] >= MIN_SLEEP_MINUTES:
+            if rem and not sess["rem"]:
+                estimate_rem(sess, by_ts)
             out.append(sess)
     return out
+
+
+# ---------------------------------------------------------------- ước tính REM từ nhịp tim
+# Mi Band 6 không ghi REM (byte REM luôn 0) và Mi Fitness cũng không tính REM cho vòng này (REM = 0 mọi đêm).
+# Vòng tay chỉ phân biệt ngủ sâu / ngủ nông theo cử động; REM nằm lẫn trong "ngủ nông". Khi ngủ REM, cơ thể gần
+# như bất động nhưng nhịp tim tăng so với nền NREM và dao động nhiều hơn (Somers 1993; Walch 2019). Thuật toán:
+#   1. chỉ xét giấc >= 3 giờ có nhịp tim ở >= 80% số phút (bật "Hỗ trợ giấc ngủ" để vòng tay đo mỗi phút);
+#   2. nền NREM = phân vị 30% của nhịp tim (trung vị 3 phút) trong cửa sổ 61 phút quanh mỗi phút;
+#   3. phút "ngủ nông" ít cử động, sau ít nhất REM_LATENCY phút từ lúc ngủ, có nhịp tim cao hơn nền REM_ELEVATION nhịp
+#      (hoặc dao động trong 9 phút >= REM_VOLATILITY lần trung vị của đêm và cao hơn nền nửa mức đó) là ứng viên REM;
+#   4. nối các đoạn cách nhau <= REM_MERGE phút (khoảng giữa toàn ngủ nông), bỏ đoạn < REM_MIN phút;
+#   5. REM quá REM_MAX_SHARE thời gian ngủ thì tăng dần ngưỡng (người lớn khỏe thường 20-25% REM).
+REM_MIN_SLEEP = 180
+REM_MIN_COVERAGE = 0.8
+REM_LATENCY = 60
+REM_ELEVATION = 4.0
+REM_VOLATILITY = 1.6
+REM_MAX_INTENSITY = 25
+REM_MERGE = 10
+REM_MIN = 6
+REM_MAX_SHARE = 0.30
+
+
+def _rolling(values: list, half: int, fn) -> list:
+    out = []
+    for i in range(len(values)):
+        w = [v for v in values[max(0, i - half):i + half + 1] if v is not None]
+        out.append(fn(w) if w else None)
+    return out
+
+
+def _median(w: list) -> float:
+    w = sorted(w)
+    n = len(w)
+    return w[n // 2] if n % 2 else (w[n // 2 - 1] + w[n // 2]) / 2
+
+
+def _pstdev(w: list) -> float:
+    if len(w) < 3:
+        return 0.0
+    m = sum(w) / len(w)
+    return (sum((v - m) ** 2 for v in w) / len(w)) ** 0.5
+
+
+def estimate_rem(sess: dict, by_ts: dict) -> bool:
+    """Tách REM khỏi "ngủ nông" của một giấc theo nhịp tim (xem chú thích ở trên). Sửa sess tại chỗ:
+    stages, light, rem, và đặt sess["rem_estimated"] = True. Trả False nếu không đủ dữ liệu."""
+    if sess["minutes"] < REM_MIN_SLEEP:
+        return False
+    mins = list(range(sess["start"], sess["end"], 60))
+    label = {}
+    for a, b, k in sess["stages"]:
+        for t in range(a, b, 60):
+            label[t] = k
+    raw = [by_ts[t][4] if t in by_ts and valid_hr(by_ts[t][4]) else None for t in mins]
+    if sum(v is not None for v in raw) < REM_MIN_COVERAGE * len(raw):
+        return False
+    hr = raw[:]   # nối chỗ trống ngắn (<= 5 phút) bằng nội suy tuyến tính
+    i = 0
+    while i < len(hr):
+        if hr[i] is not None:
+            i += 1
+            continue
+        j = i
+        while j < len(hr) and hr[j] is None:
+            j += 1
+        if i > 0 and j < len(hr) and j - i <= 5:
+            for k in range(i, j):
+                hr[k] = hr[i - 1] + (hr[j] - hr[i - 1]) * (k - i + 1) / (j - i + 1)
+        i = j
+    smooth = _rolling(hr, 1, _median)
+    floor = _rolling(smooth, 30, lambda w: sorted(w)[int((len(w) - 1) * 0.3)])
+    vol = _rolling(raw, 4, _pstdev)
+    vmed = _median([v for v in vol if v]) if any(vol) else 1.0
+    still = [(by_ts[t][2] if t in by_ts else 0) <= REM_MAX_INTENSITY for t in mins]
+    elev = [None if smooth[i] is None or floor[i] is None else smooth[i] - floor[i] for i in range(len(mins))]
+
+    def pick(threshold: float) -> list[list[int]]:
+        ok = [label.get(t) == "light" and t - sess["start"] >= REM_LATENCY * 60 and still[i] and elev[i] is not None
+              and (elev[i] >= threshold or ((vol[i] or 0) >= REM_VOLATILITY * vmed and elev[i] >= threshold / 2))
+              for i, t in enumerate(mins)]
+        runs: list[list[int]] = []
+        for i, flag in enumerate(ok):
+            if not flag:
+                continue
+            if runs and i - runs[-1][1] <= REM_MERGE and all(label.get(mins[k]) == "light" for k in range(runs[-1][1], i)):
+                runs[-1][1] = i + 1
+            else:
+                runs.append([i, i + 1])
+        return [r for r in runs if r[1] - r[0] >= REM_MIN]
+
+    threshold = REM_ELEVATION
+    runs = pick(threshold)
+    while sum(b - a for a, b in runs) > REM_MAX_SHARE * sess["minutes"] and threshold < 15:
+        threshold += 1
+        runs = pick(threshold)
+    for a, b in runs:
+        for k in range(a, b):
+            label[mins[k]] = "rem"
+    stages: list[list] = []
+    for t in mins:
+        k = label.get(t)
+        if k is None:
+            continue
+        if stages and stages[-1][2] == k and stages[-1][1] == t:
+            stages[-1][1] = t + 60
+        else:
+            stages.append([t, t + 60, k])
+    rem = sum(b - a for a, b in runs)
+    sess["stages"] = stages
+    sess["rem"] = rem
+    sess["light"] -= rem
+    sess["rem_estimated"] = True
+    return True
 
 
 def local_date(ts: int) -> str:

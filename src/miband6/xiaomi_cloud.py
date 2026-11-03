@@ -708,6 +708,62 @@ def fetch_sport_records(login: XiaomiLogin, start_s: int, end_s: int, regions: l
     return [], trail
 
 
+FITNESS_DATA_PATH = "/app/v1/data/get_fitness_data_by_time"
+SLEEP_STAGE_NAMES = {2: "deep", 3: "light", 4: "rem", 5: "awake"}   # mã giai đoạn ngủ của Mi Fitness (theo mifit)
+
+
+def fetch_sleep_records(login: XiaomiLogin, start_s: int, end_s: int, regions: list[str] | None = None,
+                        max_pages: int = 40) -> tuple[list[dict], list[str]]:
+    """Các giấc ngủ Mi Fitness đã phân tích (kèm dòng thời gian giai đoạn: sâu, nông, REM, thức) trong khoảng
+    [start_s, end_s]. Đây là số liệu ứng dụng Mi Fitness hiển thị, gồm cả REM do Xiaomi tính từ nhịp tim.
+
+    Theo mô tả của dự án mifit: GET ký get_fitness_data_by_time với key "sleep", phân trang bằng next_key; mỗi
+    bản ghi có trường "value" (chuỗi JSON) chứa bedtime, wake_up_time và items [{start_time, end_time, state}]."""
+    trail: list[str] = []
+    for n, region in enumerate(regions or REGIONS):
+        host = f"{region}.hlth.io.mi.com" if region else "hlth.io.mi.com"
+        records: list[dict] = []
+        next_key = None
+        answered = False
+        for page in range(max_pages):
+            req = {"key": "sleep", "start_time": start_s, "end_time": end_s, "reverse": True, "limit": 50}
+            if next_key:
+                req["next_key"] = next_key
+            try:
+                status, res = login.request(host, FITNESS_DATA_PATH, {"data": json.dumps(req, separators=(",", ":"))},
+                                            method="GET", region=region)
+            except login.requests.exceptions.RequestException as e:
+                trail.append(f"{host} {FITNESS_DATA_PATH}: {type(e).__name__}")
+                break
+            if status == 401 and n == 0 and page == 0:
+                raise SessionExpired(tr('Phiên đăng nhập Xiaomi đã hết hạn.'))
+            if not isinstance(res, dict) or res.get("code", 0) != 0:
+                detail = f"HTTP {status}" if res is None else f"code {res.get('code')} {str(res.get('message') or '')[:50]}"
+                trail.append(f"{host} {FITNESS_DATA_PATH}: {detail}")
+                break
+            answered = True
+            body = res["result"] if isinstance(res.get("result"), dict) else res
+            for entry in body.get("data_list") or []:
+                if not isinstance(entry, dict) or entry.get("deleted"):
+                    continue
+                value = entry.get("value")
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        continue
+                if isinstance(value, dict) and value.get("bedtime") and value.get("wake_up_time"):
+                    records.append(value)
+            if not body.get("has_more") or not body.get("next_key") or body.get("next_key") == next_key:
+                break
+            next_key = body["next_key"]
+        if answered:
+            trail.append(f"{host} {FITNESS_DATA_PATH} sleep: {len(records)}")
+        if records:
+            return records, trail
+    return [], trail
+
+
 GPS_LINK_PATH = "/healthapp/service/gen_download_url"
 GPS_LINK_SIGN = "/service/gen_download_url"
 FDS_IV = b"1234567887654321"
@@ -753,16 +809,18 @@ _FDS_SESSION = None
 def _fds_session():
     """Phiên HTTP dùng chung để tải tệp từ máy chủ tệp (FDS) của Xiaomi.
 
-    Từ một số mạng, mở kết nối tới máy chủ này mất 30-60 giây; giữ kết nối (keep-alive) và dùng lại cho các
-    lần tải sau nên chỉ lần đầu chậm. Không gửi cookie đăng nhập (đường dẫn tải đã có chữ ký)."""
+    Tên máy chủ trỏ tới nhiều địa chỉ IP, và từ một số mạng có địa chỉ không trả lời: thử lần lượt thì mỗi lần
+    tải mất tới 60 giây. netrace.RacingAdapter thử mọi địa chỉ gần như cùng lúc và nhớ địa chỉ trả lời nhanh;
+    kết nối được giữ (keep-alive) để dùng lại. Không gửi cookie đăng nhập (đường dẫn tải đã có chữ ký)."""
     global _FDS_SESSION
     if _FDS_SESSION is None:
         import requests
-        from requests.adapters import HTTPAdapter
+
+        from .netrace import RacingAdapter
 
         s = requests.Session()
         s.headers.update({"User-Agent": APP_UA})
-        s.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=4))
+        s.mount("https://", RacingAdapter(pool_connections=4, pool_maxsize=8))
         _FDS_SESSION = s
     return _FDS_SESSION
 
@@ -786,8 +844,7 @@ def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, pr
     entry = res["result"].get(f"{suffix}_{report_time}")
     if not isinstance(entry, dict) or not entry.get("obj_key") or not isinstance(entry.get("url"), str):
         return None   # buổi tập không có tệp lộ trình
-    # mở kết nối có thể mất tới ~60 giây (xem _fds_session); đọc dữ liệu thì nhanh
-    r = _fds_session().get(entry["url"], timeout=(90, 30), allow_redirects=False)
+    r = _fds_session().get(entry["url"], timeout=(20, 30), allow_redirects=False)
     if r.status_code != 200:
         raise LoginError(tr('Không tải được tệp lộ trình (HTTP {status}).', status=r.status_code))
     return decrypt_fds(r.content, entry["obj_key"])
