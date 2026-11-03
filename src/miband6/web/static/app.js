@@ -204,13 +204,36 @@ const quiet = (p) => p.catch(() => {});
 const PAGES = ["overview", "health", "settings", "alarms", "tools", "device", "app"];   // settings: vòng tay; app: ứng dụng
 const SUBS = ["profile", "display", "face", "apps", "health"];
 
+const LAST_SUBS = (() => {
+  try {
+    const s = sessionStorage.getItem("mb6_last_subs");
+    return s ? JSON.parse(s) : {};
+  } catch {
+    return {};
+  }
+})();
+
+function saveLastSub(page, sub) {
+  LAST_SUBS[page] = sub;
+  try { sessionStorage.setItem("mb6_last_subs", JSON.stringify(LAST_SUBS)); } catch {}
+}
+
 function route() {
   const [page0, sub0] = (location.hash.slice(1) || "").split("/");
   const page = PAGES.includes(page0) ? page0 : STATE.connected || STATE.last_device ? "overview" : "device";
   $$(".page").forEach((p) => (p.hidden = p.id !== `page-${page}`));
-  $$(".nav a").forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === `#${page}` ? "page" : "false"));
+  $$(".nav a").forEach((a) => {
+    const target = (a.getAttribute("href") || "").slice(1).split("/")[0];
+    a.setAttribute("aria-current", target === page ? "page" : "false");
+  });
   if (page === "settings") {
-    const sub = SUBS.includes(sub0) ? sub0 : "profile";
+    const sub = SUBS.includes(sub0) ? sub0 : (LAST_SUBS.settings && SUBS.includes(LAST_SUBS.settings) ? LAST_SUBS.settings : "profile");
+    saveLastSub("settings", sub);
+    if (sub0 !== sub) {
+      history.replaceState(null, "", `#settings/${sub}`);
+    }
+    const navSettings = $('.nav a[href^="#settings"]');
+    if (navSettings) navSettings.setAttribute("href", `#settings/${sub}`);
     $$(".subtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === sub)));
     $$(".subpage").forEach((s) => (s.hidden = s.id !== `sub-${sub}`));
     if (sub === "face") requestAnimationFrame(() => (WP.img ? wpDraw() : drawSim()));
@@ -228,7 +251,10 @@ function route() {
   }
 }
 window.addEventListener("hashchange", route);
-$$(".subtabs button").forEach((b) => b.addEventListener("click", () => (location.hash = `#settings/${b.dataset.sub}`)));
+$$(".subtabs button").forEach((b) => b.addEventListener("click", () => {
+  saveLastSub("settings", b.dataset.sub);
+  location.hash = `#settings/${b.dataset.sub}`;
+}));
 
 /* ============================================================ vòng tay + số liệu */
 
@@ -318,7 +344,8 @@ function renderWatchface(info) {
   else img.removeAttribute("href");
   img.style.display = has ? "" : "none";
   $("#bandDefault").style.display = has ? "none" : "";
-  $("#wfEmpty").hidden = has;
+  const wfEmpty = $("#wfEmpty");
+  if (wfEmpty) wfEmpty.hidden = has;
   let current = t("Chưa cài mặt đồng hồ nào qua ứng dụng");
   if (info?.name) {
     const when = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(info.installed * 1000));
