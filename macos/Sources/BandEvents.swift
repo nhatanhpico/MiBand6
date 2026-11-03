@@ -12,6 +12,10 @@ struct BandSnapshot {
     var heartRate: Int?
     var keepConnected = true
     var lang = "vi"
+    var healthSyncState = "idle"
+    var healthSyncStep = ""
+    var healthSyncErrors: [String] = []
+    var healthLastSync: Date?
     /// Vòng tay kết nối gần nhất: (địa chỉ, auth key, giao thức) để nút Kết nối trên thanh menu dùng lại.
     var lastDevice: (address: String, key: String, proto: String)?
 
@@ -23,6 +27,7 @@ struct BandSnapshot {
         let settings = state["settings"] as? [String: Any] ?? [:]
         keepConnected = settings["keep_connected"] as? Bool ?? true
         lang = settings["ui_lang"] as? String ?? lang
+        applyHealth(state["health"] as? [String: Any] ?? [:])
         battery = nil
         steps = nil
         heartRate = nil
@@ -34,6 +39,14 @@ struct BandSnapshot {
            let saved = (state["saved_devices"] as? [[String: Any]])?.first(where: { $0["address"] as? String == address }) {
             lastDevice = (address, saved["auth_key"] as? String ?? "", saved["protocol"] as? String ?? "auto")
         }
+    }
+
+    /// Sync is owned by the background server and remains observable with the window closed.
+    mutating func applyHealth(_ status: [String: Any]) {
+        healthSyncState = status["state"] as? String ?? "idle"
+        healthSyncStep = status["step"] as? String ?? ""
+        healthSyncErrors = status["errors"] as? [String] ?? []
+        healthLastSync = (status["last_sync"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
     }
 
     /// Cập nhật từ một sự kiện lẻ (pin, bước chân, nhịp tim). Trả về true nếu có thay đổi.
@@ -127,6 +140,10 @@ final class BandEvents {
             onChange?(snapshot)
         case "disconnected", "device_event":
             onEvent?(type, type == "disconnected" ? msg["reconnecting"] : msg["data"])
+        case "health":
+            guard let status = msg["status"] as? [String: Any] else { return }
+            snapshot.applyHealth(status)
+            onChange?(snapshot)
         default:
             if snapshot.apply(kind: type, data: msg["data"]) {
                 onChange?(snapshot)

@@ -901,7 +901,6 @@
   "Cài đặt ứng dụng": "App settings",
   "Các cài đặt ở đây được ghi vào Mi Band 6. Cài đặt của ứng dụng trên máy tính này (ngôn ngữ, lịch đồng bộ, tài khoản Mi Fitness, thời tiết…) nằm ở": "These settings are written to your Mi Band 6. Settings of the app on this computer (language, sync schedule, Mi Fitness account, weather…) are in",
   "Cài đặt của ứng dụng trên máy tính này, không ghi vào vòng tay. Cài đặt của vòng tay nằm ở": "Settings of the app on this computer, not written to the band. The band's own settings are in",
-  "Mi Band 6 không ghi giai đoạn REM, và Mi Fitness cũng không tính REM cho vòng tay này. Ứng dụng ước tính REM từ nhịp tim khi ngủ; bật \"Hỗ trợ giấc ngủ\" ở Cài đặt vòng tay → Sức khỏe để vòng tay đo nhịp tim mỗi phút.": "Mi Band 6 doesn't record REM sleep, and Mi Fitness doesn't compute REM for this band either. The app estimates REM from your heart rate during sleep; turn on \"Sleep assistant\" in Band settings → Health so the band measures heart rate every minute.",
   "Không có số đo căng thẳng. Bật Theo dõi căng thẳng trong Cài đặt vòng tay → Sức khỏe.": "No stress readings. Turn on Stress tracking in Band settings → Health.",
   "Cài đặt ứng dụng…": "App Settings…",
   "Cài đặt vòng tay…": "Band Settings…",
@@ -938,5 +937,9 @@
   "Đồng bộ vòng tay": "Sync band",
   "Ước tính của vòng tay": "Band estimate",
   "Ước tính từ nhịp tim khi ngủ": "Estimated from sleeping heart rate",
-  "Cần kiểm tra tín hiệu": "Check signal quality"
+  "Cần kiểm tra tín hiệu": "Check signal quality",
+  "Đồng bộ sức khỏe chưa hoàn tất": "Health sync is incomplete",
+  "Mở ứng dụng để xem dữ liệu chưa lấy được. Dữ liệu đã lưu vẫn được giữ lại.": "Open the app to review the missing data. Previously saved data is retained.",
+  "Để đồng bộ khi đóng cửa sổ, nhận thông báo và dùng Apple Maps, hãy mở ứng dụng macOS và giữ ứng dụng chạy.": "For syncing with the window closed, notifications and Apple Maps, open the macOS app and keep it running.",
+  "Xiaomi có hỗ trợ REM, nhưng ứng dụng này chưa xác minh được giai đoạn REM của hãng qua dữ liệu Bluetooth. Tùy chọn này ước tính REM từ nhịp tim khi ngủ, chưa được kiểm chứng bằng nghiên cứu giấc ngủ; không phải kết quả REM của Xiaomi.": "Xiaomi supports REM, but this app has not verified vendor REM stages from its Bluetooth data. This option estimates REM from sleeping heart rate, has not been validated against a sleep study, and is not Xiaomi’s REM result."
 }

@@ -70,6 +70,7 @@
   <main class="main">
     <div id="offline" class="banner warn" hidden>Mất kết nối tới server trên máy tính. Đang thử lại…</div>
     <div id="demoBanner" class="banner info" hidden>Chế độ xem thử: đang dùng vòng tay giả lập, không có Bluetooth.</div>
+    <div id="nativeAppNotice" class="banner info" hidden><span>Để đồng bộ khi đóng cửa sổ, nhận thông báo và dùng Apple Maps, hãy mở ứng dụng macOS và giữ ứng dụng chạy.</span> <a href="miband6://open?page=overview" class="btn small">Mở trong ứng dụng</a></div>
 
     <!-- ============================================================ Tổng quan -->
     <section class="page" id="page-overview">
@@ -654,7 +655,7 @@
           <div class="group-foot"><button id="wxSyncBtn" class="btn" type="button" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Gửi thời tiết ngay</span></button></div>
         </div>
         <div class="group">
-          <div class="group-head"><h2>Giấc ngủ REM</h2><p>Mi Band 6 không ghi giai đoạn REM, và Mi Fitness cũng không tính REM cho vòng tay này. Ứng dụng ước tính REM từ nhịp tim khi ngủ; bật "Hỗ trợ giấc ngủ" ở Cài đặt vòng tay → Sức khỏe để vòng tay đo nhịp tim mỗi phút.</p></div>
+          <div class="group-head"><h2>Giấc ngủ REM</h2><p>Xiaomi có hỗ trợ REM, nhưng ứng dụng này chưa xác minh được giai đoạn REM của hãng qua dữ liệu Bluetooth. Tùy chọn này ước tính REM từ nhịp tim khi ngủ, chưa được kiểm chứng bằng nghiên cứu giấc ngủ; không phải kết quả REM của Xiaomi.</p></div>
           <div class="rows">
             <div class="row"><span class="row-label">Giai đoạn REM</span>
               <div class="seg"><input type="radio" name="remMode" id="remEst" value="estimate"><label for="remEst">Ước tính từ nhịp tim</label><input type="radio" name="remMode" id="remOff" value="off"><label for="remOff">Tắt</label></div></div>

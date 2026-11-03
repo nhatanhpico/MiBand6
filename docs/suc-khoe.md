@@ -71,7 +71,7 @@ Các khoảng thức ngắn hơn 45 phút ở giữa đêm vẫn tính là cùng
 
 ### REM (ước tính)
 
-Mi Band 6 không ghi giai đoạn REM (byte REM trong dữ liệu luôn bằng 0), và Mi Fitness cũng không tính REM cho vòng tay này (báo cáo giấc ngủ trong tài khoản ghi REM 0 phút mọi đêm). Vòng tay chỉ phân biệt ngủ sâu và ngủ nông theo cử động, nên REM nằm lẫn trong "ngủ nông". Ứng dụng tách REM ra theo nhịp tim:
+[Xiaomi công bố hỗ trợ REM](https://www.mi.com/sg/support/faq/details/KA-07049/), nhưng bộ giải mã Bluetooth của ứng dụng chưa xác minh được REM của hãng. Byte REM bằng 0 trong các dữ liệu đã quan sát không chứng minh rằng thiết bị hoặc mọi ứng dụng đồng hành không hỗ trợ REM. Tùy chọn dưới đây là ước tính riêng từ nhịp tim, chưa được kiểm chứng với PSG và không phải kết quả REM của Xiaomi:
 
 - Khi ngủ REM cơ thể gần như bất động, nhưng nhịp tim tăng so với nền NREM và dao động nhiều hơn.
 - Chỉ xét giấc từ 3 giờ trở lên có nhịp tim ở ít nhất 80% số phút. Bật **Cài đặt vòng tay → Sức khỏe → Hỗ trợ giấc ngủ** để vòng tay đo nhịp tim mỗi phút khi ngủ; đêm không đủ thì không ước tính.

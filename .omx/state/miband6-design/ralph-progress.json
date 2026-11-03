@@ -1,0 +1,17 @@
+{
+  "visual_verdict": {
+    "score": 92,
+    "verdict": "pass",
+    "category_match": true,
+    "differences": [
+      "Readiness is a separate first card above the goal/streak summary, preserving the current app hierarchy.",
+      "Unsupported standing hours and unconfigured calorie goals are omitted rather than shown as rings.",
+      "Native Health expands the HR chart in place; the adjacent SpO2 card retains its row height."
+    ],
+    "suggestions": [],
+    "reasoning": "Visual inspection of the native Overview and Health screenshots confirms clear hierarchy, readable status text, consistent dark surfaces, and working disclosure. This is a qualitative review against the requested layout and observed existing app, not a pixel-match score against an external reference design."
+  },
+  "threshold": 90,
+  "passed": true,
+  "next_actions": []
+}

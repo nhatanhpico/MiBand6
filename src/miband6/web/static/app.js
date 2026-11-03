@@ -1823,8 +1823,8 @@ function renderReadyToday(H) {
   card.className = r ? `ready-today lv-${r.status}` : "ready-today";
   $("#ovReadyScore").textContent = r ? String(r.score) : "—";
   const note = $("#ovReadyNote");
-  note.hidden = !!r;
-  note.textContent = r ? "" : !ins?.readiness_night
+  note.hidden = false;
+  note.textContent = r ? t("Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.") : !ins?.readiness_night
     ? t("Chưa có giấc ngủ đêm qua: đeo vòng khi ngủ rồi đồng bộ để có điểm của ngày này.")
     : t("Đang học mức nền của bạn: {n}/{need} đêm có nhịp tim khi ngủ.", { n: ins.readiness_progress?.nights ?? 0, need: ins.readiness_progress?.need ?? 8 });
   card.setAttribute("aria-label", `${t("Điểm sẵn sàng hôm nay")}: ${r ? `${r.score}/100` : note.textContent}`);
@@ -3104,4 +3104,5 @@ $("#cloudReloginBtn").addEventListener("click", () => startCloud(true));
 $("#cloudCancelBtn").addEventListener("click", cancelCloud);
 $("#cloudDialog").addEventListener("cancel", (ev) => { ev.preventDefault(); cancelCloud(); });
 
+$("#nativeAppNotice").hidden = !!window.webkit?.messageHandlers?.nativeMap;
 init();

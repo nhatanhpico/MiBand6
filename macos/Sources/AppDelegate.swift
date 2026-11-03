@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private var lostAt: Date?
     private var notifiedLost = false
     private var wasConnected = false
+    private var notifiedSyncErrors: [String] = []
 
     private var canNotify: Bool { Bundle.main.bundleIdentifier != nil }
 
@@ -126,6 +127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             notifiedLost = false
         }
         wasConnected = snap.connected
+        if snap.healthSyncState == "error", !snap.healthSyncErrors.isEmpty,
+           snap.healthSyncErrors.sorted() != notifiedSyncErrors {
+            notifiedSyncErrors = snap.healthSyncErrors.sorted()
+            notify(id: "health-sync", title: t("Đồng bộ sức khỏe chưa hoàn tất"),
+                   body: t("Mở ứng dụng để xem dữ liệu chưa lấy được. Dữ liệu đã lưu vẫn được giữ lại."))
+        } else if snap.healthSyncState == "done" && snap.healthSyncErrors.isEmpty {
+            notifiedSyncErrors = []
+        }
         updateStatusButton()
     }
 
@@ -158,13 +167,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         button.image = Icons.band(connected: connected)
         button.appearsDisabled = !(connected || (events.online && (snap.busy || snap.reconnectAttempt != nil)))
         if connected, let battery = snap.battery {
-            button.title = " \(battery)%"
+            button.title = " \(battery)%" + (snap.healthSyncState == "running" ? " ↻" : snap.healthSyncState == "error" ? " !" : "")
         } else if events.online && (snap.busy || snap.reconnectAttempt != nil) {
             button.title = " …"
         } else {
             button.title = ""
         }
-        button.toolTip = statusLine()
+        button.toolTip = statusLine() + "\n" + healthSyncLine()
+    }
+
+    private func healthSyncLine() -> String {
+        let snap = events.snapshot
+        if !events.online { return t("Đang khởi động…") }
+        if snap.healthSyncState == "running" {
+            return t("Đang lấy dữ liệu từ vòng tay: {step}…", ["step": snap.healthSyncStep])
+        }
+        if snap.healthSyncState == "error" { return t("Đồng bộ sức khỏe chưa hoàn tất") }
+        guard let date = snap.healthLastSync else { return t("Chưa đồng bộ dữ liệu sức khỏe.") }
+        let formatter = DateFormatter()
+        formatter.locale = L10n.locale
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return t("Đồng bộ lần cuối {when}", ["when": formatter.string(from: date)])
     }
 
     private func statusLine() -> String {
@@ -201,6 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
         menu.addItem(disabledItem(statusLine()))
         if let detail = detailLine() { menu.addItem(disabledItem(detail)) }
+        menu.addItem(disabledItem(healthSyncLine()))
         menu.addItem(.separator())
         menu.addItem(item(t("Mở cửa sổ Mi Band 6"), #selector(openWindow), key: "o"))
         menu.addItem(item(t("Mở trong trình duyệt"), #selector(openInBrowser), enabled: baseURL != nil))
@@ -218,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
         if online && snap.connected {
             menu.addItem(item(t("Rung vòng tay"), #selector(findBand)))
-            menu.addItem(item(t("Đồng bộ dữ liệu sức khỏe"), #selector(syncHealth)))
+            menu.addItem(item(t("Đồng bộ dữ liệu sức khỏe"), #selector(syncHealth), enabled: snap.healthSyncState != "running"))
         }
         if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
 
@@ -423,6 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
                 self?.events.post("/api/find-phone/stop")
             } else {
                 self?.showWindow()
+                if id == "health-sync" { self?.window.open(page: "health") }
             }
         }
         completionHandler()
