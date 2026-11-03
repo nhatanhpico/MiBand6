@@ -173,7 +173,7 @@ const SUBS = ["profile", "display", "face", "apps", "health"];
 
 function route() {
   const [page0, sub0] = (location.hash.slice(1) || "").split("/");
-  const page = PAGES.includes(page0) ? page0 : STATE.connected ? "overview" : "device";
+  const page = PAGES.includes(page0) ? page0 : STATE.connected || STATE.last_device ? "overview" : "device";
   $$(".page").forEach((p) => (p.hidden = p.id !== `page-${page}`));
   $$(".nav a").forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === `#${page}` ? "page" : "false"));
   if (page === "settings") {
@@ -1111,7 +1111,8 @@ const loadImage = (src) => new Promise((resolve, reject) => {
 });
 
 const WP = { W: 152, H: 486, R: 76, img: null, base: 1, scale: 1, ox: 0, oy: 0, k: 1 };
-const SIM = { source: null, binB64: null, binName: "", binPreview: null, current: null, currentKey: null };
+const SIM = { source: null, binB64: null, binName: "", binPreview: null, binRendered: false, binAnim: null, raf: 0,
+  current: null, currentKey: null };
 const DIGIT_W = 44;
 const DIGIT_H = 64;
 const DIGIT_X = (152 - 2 * DIGIT_W) / 2;
@@ -1144,6 +1145,22 @@ function drawCover(g, img) {
   g.drawImage(img, (WP.W - img.width * s) / 2, (WP.H - img.height * s) / 2, img.width * s, img.height * s);
 }
 
+/** Mặt đồng hồ có ảnh động trong tệp .bin: lớp dưới, khung hiện tại của từng ảnh động, lớp trên. */
+function drawFaceAnim(g, a, now) {
+  g.drawImage(a.below, 0, 0);
+  for (const it of a.items) g.drawImage(it.frames[Math.floor(now / it.interval) % it.frames.length], it.x, it.y);
+  if (a.above) g.drawImage(a.above, 0, 0);
+}
+
+/** Chạy ảnh động trong khung mô phỏng; tự dừng khi rời chế độ tệp .bin hoặc bỏ tệp. */
+function simAnimate(now) {
+  SIM.raf = 0;
+  const a = SIM.binAnim;
+  if (!a || faceMode() !== "bin") return;
+  if ($("#simScreen").getClientRects().length) drawFaceAnim($("#simScreen").getContext("2d"), a, now);
+  SIM.raf = requestAnimationFrame(simAnimate);
+}
+
 function drawSim() {
   const g = $("#simScreen").getContext("2d");
   g.fillStyle = "#000";
@@ -1153,6 +1170,10 @@ function drawSim() {
     wpBackground(g);
     wpDrawTime(g);
     source = "photo";
+  } else if (faceMode() === "bin" && SIM.binAnim) {
+    drawFaceAnim(g, SIM.binAnim, performance.now());
+    if (!SIM.raf) SIM.raf = requestAnimationFrame(simAnimate);
+    source = "bin";
   } else if (faceMode() === "bin" && SIM.binPreview) {
     drawCover(g, SIM.binPreview);
     source = "bin";
@@ -1167,7 +1188,7 @@ function drawSim() {
   $("#simEmpty").hidden = true;
   $("#simCaption").textContent = ({
     photo: () => t("Mô phỏng ảnh nền của bạn trên Mi Band 6"),
-    bin: () => t("Mô phỏng: ảnh xem trước trong tệp .bin"),
+    bin: () => (SIM.binRendered ? t("Mô phỏng mặt đồng hồ trong tệp .bin") : t("Mô phỏng: ảnh xem trước trong tệp .bin")),
     current: () => t("Mặt đồng hồ đã cài qua ứng dụng"),
     default: () => t("Mặt mặc định của ứng dụng (chưa chọn ảnh)"),
   }[source])();
@@ -1365,6 +1386,8 @@ $("#wfFile").onchange = async () => {
   if (!file) return;
   SIM.binB64 = null;
   SIM.binPreview = null;
+  SIM.binRendered = false;
+  SIM.binAnim = null;
   $("#wfInfo").hidden = true;
   try {
     const b64 = await readBase64(file);
@@ -1374,7 +1397,17 @@ $("#wfFile").onchange = async () => {
     $("#wfName").textContent = `${file.name} · ${fmtInt(Math.round(r.size / 1024))} KB`;
     $("#wfName").classList.add("chosen");
     if (r.preview) SIM.binPreview = await loadImage(r.preview);
-    $("#wfInfo").textContent = r.preview ? t("Đã đọc ảnh xem trước trong tệp.") : t("Không đọc được ảnh xem trước trong tệp này (ảnh nén); tệp vẫn cài được.");
+    if (r.animation) {
+      const a = r.animation;
+      SIM.binAnim = {
+        below: await loadImage(a.below), above: a.above ? await loadImage(a.above) : null,
+        items: await Promise.all(a.items.map(async (it) => ({ ...it, frames: await Promise.all(it.frames.map(loadImage)) }))),
+      };
+    }
+    SIM.binRendered = !!r.rendered;
+    $("#wfInfo").textContent = r.animation ? t("Đã dựng mặt đồng hồ từ các ảnh trong tệp, kể cả ảnh động.")
+      : r.rendered ? t("Đã dựng mặt đồng hồ từ các ảnh trong tệp.")
+        : r.preview ? t("Đã đọc ảnh xem trước trong tệp.") : t("Không đọc được ảnh trong tệp này; tệp vẫn cài được.");
     $("#wfInfo").hidden = false;
   } catch (e) {
     $("#wfName").textContent = t("Chưa chọn tệp");
@@ -1682,11 +1715,33 @@ async function loadOverview() {
   renderOverview();
 }
 
+/** Điểm sẵn sàng hôm nay ở đầu trang Tổng quan: chỉ con số, hiện cả khi vòng tay chưa kết nối. */
+function renderReadyToday(H) {
+  const card = $("#ovReadyCard");
+  card.hidden = H?.date !== todayISO();
+  if (card.hidden) return;
+  const ins = H.insights;
+  const r = ins?.readiness;
+  const ring = $("#ovReadyRing");
+  ring.textContent = "";
+  sv("circle", { cx: 60, cy: 60, r: 50, class: "track" }, ring);
+  const len = 2 * Math.PI * 50;
+  if (r) sv("circle", { cx: 60, cy: 60, r: 50, class: "arc", style: `stroke-dasharray: ${(len * r.score) / 100} ${len}` }, ring);
+  card.className = r ? `ready-today lv-${r.status}` : "ready-today";
+  $("#ovReadyScore").textContent = r ? String(r.score) : "—";
+  const note = $("#ovReadyNote");
+  note.hidden = !!r;
+  note.textContent = r ? "" : !ins?.readiness_night
+    ? t("Chưa có giấc ngủ đêm qua: đeo vòng khi ngủ rồi đồng bộ để có điểm của ngày này.")
+    : t("Đang học mức nền của bạn: {n}/{need} đêm có nhịp tim khi ngủ.", { n: ins.readiness_progress?.nights ?? 0, need: ins.readiness_progress?.need ?? 8 });
+  card.setAttribute("aria-label", `${t("Điểm sẵn sàng hôm nay")}: ${r ? `${r.score}/100` : note.textContent}`);
+}
+
 function renderOverview() {
+  renderReadyToday(overviewData);
   const v = overviewSummary(overviewData, STATE.connected ? STATE.live?.activity : null,
     Number(STATE.profile?.goal || 8000), todayISO());
   $("#ovGoal").textContent = v.pct == null ? "—" : `${v.pct}%`;
-  $("#ovReady").textContent = v.readiness?.score == null ? "—" : `${v.readiness.score}/100`;
   $("#ovStreak").textContent = v.streak == null ? "—" : fmtInt(v.streak);
   $("#ovSteps").textContent = fmtInt(v.steps);
   $("#ovGoalTarget").textContent = t("/ {n} bước", { n: fmtInt(v.target) });
@@ -1890,9 +1945,12 @@ function hoverable(el, rows) {
 }
 
 function chartBox(el, height, label) {
-  el.textContent = "";
+  // Đo trước, rồi thay biểu đồ cũ bằng khung mới (đã có chiều cao) trong một bước. Xóa trước rồi mới đo thì trang
+  // ngắn lại giữa chừng; WebKit (ứng dụng macOS) không có scroll anchoring nên kéo trang lên mỗi lần vẽ lại,
+  // vd. mỗi số đo khi đang theo dõi nhịp tim liên tục.
   const w = Math.max(240, Math.floor(el.clientWidth || 600));
-  const svg = sv("svg", { viewBox: `0 0 ${w} ${height}`, width: w, height, role: "img", "aria-label": label }, el);
+  const svg = sv("svg", { viewBox: `0 0 ${w} ${height}`, width: w, height, role: "img", "aria-label": label });
+  el.replaceChildren(svg);
   return { svg, w, h: height };
 }
 function emptyChart(el, height, text) {

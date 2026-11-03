@@ -81,6 +81,17 @@
         <button id="refreshBtn" class="btn ghost" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đọc lại</span></button>
       </header>
 
+      <a class="ready-today" id="ovReadyCard" href="#health/readiness" hidden>
+        <span class="ready-today-dial">
+          <svg class="rd-ring" id="ovReadyRing" viewBox="0 0 120 120" aria-hidden="true"></svg>
+          <b id="ovReadyScore">—</b>
+        </span>
+        <span class="ready-today-text">
+          <span class="ready-today-title">Điểm sẵn sàng hôm nay</span>
+          <span class="ready-today-note" id="ovReadyNote" hidden></span>
+        </span>
+      </a>
+
       <div class="empty" id="overviewEmpty">
         <svg class="empty-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-band"/></svg>
         <h2>Chưa kết nối vòng tay</h2>
@@ -93,7 +104,6 @@
           <div class="summary-heading"><p class="eyebrow">MI BAND 6 · HÔM NAY</p><h2>Mỗi ngày, hiểu cơ thể hơn.</h2><p id="ovSync" class="muted">Chưa đồng bộ dữ liệu sức khỏe.</p></div>
           <div class="summary-metrics">
             <a href="#health/steps"><b id="ovGoal">—</b><span>Mục tiêu bước</span></a>
-            <a href="#health/readiness"><b id="ovReady">—</b><span>Sẵn sàng · ước tính</span></a>
             <a href="#health/steps"><b id="ovStreak">—</b><span>Chuỗi ngày đạt mục tiêu</span></a>
           </div>
         </section>
@@ -506,7 +516,7 @@
               </div>
 
               <div id="modeBin" class="face-mode" hidden>
-                <p class="face-hint">Tệp mặt đồng hồ dành cho Mi Band 6 (bắt đầu bằng “UIHH”). Ảnh xem trước có trong tệp được hiện ở khung mô phỏng.</p>
+                <p class="face-hint">Tệp mặt đồng hồ dành cho Mi Band 6 (bắt đầu bằng “UIHH”). Khung mô phỏng vẽ mặt đồng hồ từ chính các ảnh trong tệp, kể cả ảnh động.</p>
                 <div class="pick">
                   <button class="btn" id="wfPickBtn" type="button"><svg class="ic"><use href="#i-file"/></svg><span>Chọn tệp .bin…</span></button>
                   <span class="pick-name" id="wfName">Chưa chọn tệp</span>

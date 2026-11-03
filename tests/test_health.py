@@ -318,6 +318,73 @@ def test_preview_extracted_from_bin():
     assert WF.preview_png(b"UIHH\x01" + bytes(100)) is None
 
 
+def _solid(w, h, rgb):
+    return WF.image_24bit(w, h, bytes([*rgb, 255]) * (w * h))
+
+
+def _pixel(shot, x, y):
+    w, _h, rgba = shot
+    return tuple(rgba[(y * w + x) * 4:(y * w + x) * 4 + 4])
+
+
+DIGIT = [(8 * (d + 1), 248, 0) for d in range(10)]   # màu riêng mỗi chữ số, giữ nguyên qua RGB565
+
+
+def _layered_face(hands=None):
+    """Mặt đồng hồ kiểu tệp tải về: nền, chữ số giờ, số pin canh phải, ảnh động 3 khung, ảnh xem trước có hình mờ."""
+    images = [_solid(152, 486, (0, 0, 0))] + [_solid(10, 20, c) for c in DIGIT]
+    first = len(images)
+    images += [_solid(152, 40, (0, 0, 8 * (k + 1))) for k in range(3)]
+    images.append(_solid(76, 243, (248, 0, 248)))
+    params = {
+        WF.BACKGROUND: {WF.BG_IMAGE: {1: 0, 2: 0, 3: 0}, WF.BG_PREVIEW_EN: {1: 0, 2: 0, 3: first + 3}},
+        WF.TIME: {WF.TIME_HOURS: {1: {1: 10, 2: 50, 3: 1, 4: 10}, 2: {1: 20, 2: 50, 3: 1, 4: 10}}},
+        9: {1: {1: {1: 40, 2: 100, 3: 100, 4: 120, 5: 4, 6: 2, 7: 0, 8: 1, 9: 10}}},
+        11: {1: {1: {1: 0, 2: 200, 3: first, 4: 3}, 2: 4, 3: 99, 4: 0}},
+    }
+    if hands:
+        params[10] = hands
+    return WF.build(params, images)
+
+
+def test_render_face_from_layers():
+    face = _layered_face()
+    st = WF.face_status(dt.datetime(2025, 2, 15, 21, 41), battery=60)
+    layers = WF.scene(face, st)
+    [anim] = layers["animations"]
+    assert (anim["x"], anim["y"], anim["interval"], len(anim["frames"])) == (0, 200, 80, 3)   # tốc độ 4 → tối thiểu 80 ms
+    assert layers["above"] is None
+    shot = WF.render(face, st)
+    assert _pixel(shot, 12, 52) == (*DIGIT[2], 255) and _pixel(shot, 22, 52) == (*DIGIT[1], 255)   # "21"
+    # "60" canh phải trong khung x 40-100: rộng 10 + 2 + 10, bắt đầu ở x = 78; giữa theo chiều dọc: y = 100
+    assert _pixel(shot, 79, 101) == (*DIGIT[6], 255) and _pixel(shot, 91, 101) == (*DIGIT[0], 255)
+    assert _pixel(shot, 77, 101) == (0, 0, 0, 255)
+    assert _pixel(shot, 5, 205) == (0, 0, 8, 255)   # khung đầu của ảnh động
+    # kiểu 12 giờ: 21 giờ hiện "09"
+    shot12 = WF.render(face, WF.face_status(dt.datetime(2025, 2, 15, 21, 41), time_24h=False))
+    assert _pixel(shot12, 12, 52) == (*DIGIT[0], 255) and _pixel(shot12, 22, 52) == (*DIGIT[9], 255)
+    # vẽ được thì không dùng ảnh xem trước nhúng (thường là ảnh nhỏ có hình mờ)
+    assert WF.preview_png(face, st) == WF.png(*shot)
+    assert WF.embedded_preview(face)[:2] == (76, 243)
+
+
+def test_render_analog_hand():
+    hand = {2: {2: 0xFF0000, 3: {1: 76, 2: 243}, 4: [{1: 0, 2: -2}, {1: 40, 2: -2}, {1: 40, 2: 2}, {1: 0, 2: 2}]}}
+    face = _layered_face(hand)
+    at = lambda minute: WF.render(face, WF.face_status(dt.datetime(2025, 2, 15, 10, minute)))  # noqa: E731
+    assert _pixel(at(15), 100, 243) == (255, 0, 0, 255) and _pixel(at(15), 76, 220) != (255, 0, 0, 255)
+    assert _pixel(at(0), 76, 220) == (255, 0, 0, 255)   # phút 0: kim chỉ lên
+
+
+def test_decode_compressed_image_and_signed_params():
+    img = b"BM" + struct.pack("<5HI", 0x65, 3, 2, 6, 16, 10) + struct.pack("<3H2H", 1, 1, 2, 0xF800, 0x001F)
+    w, h, rgba = WF.decode_image(img)
+    assert (w, h) == (3, 2) and rgba[16:24] == bytes([248, 0, 0, 255, 0, 0, 248, 255]) and rgba[:16] == bytes(16)
+    assert WF.decode_image(b"BM" + struct.pack("<5HI", 0x65, 60000, 60000, 2, 16, 0)) is None   # cỡ vô lý
+    assert WF.decode_params(WF.encode_params({1: -5, 2: {1: 3}})) == {1: -5, 2: {1: 3}}
+    assert WF.scene(b"UIHH\x01" + bytes(100)) is None
+
+
 async def test_inspect_and_auto_preview(client):
     fake = await connected(client)
     bg = bytes([10, 120, 200, 255]) * (152 * 486)
@@ -332,6 +399,15 @@ async def test_inspect_and_auto_preview(client):
     assert (await r.json())["state"]["watchface"]["preview"] and fake.installed_watchface == face
     shot = await (await client.get("/api/watchface/preview")).read()
     assert shot == WF.preview_png(face)
+
+
+async def test_inspect_returns_animation_layers(client):
+    body = await (await post(client, "/api/watchface/inspect",
+                             {"file": base64.b64encode(_layered_face()).decode()})).json()
+    assert body["rendered"] and body["preview"].startswith("data:image/png;base64,")
+    anim = body["animation"]
+    assert anim["below"].startswith("data:image/png") and anim["above"] is None
+    assert [(i["x"], i["y"], i["interval"], len(i["frames"])) for i in anim["items"]] == [(0, 200, 80, 3)]
 
 
 def test_analysis_rules():

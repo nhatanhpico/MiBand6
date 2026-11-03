@@ -7,7 +7,7 @@ Thẻ **Cài đặt vòng tay → Mặt đồng hồ** cài mặt đồng hồ l
 Bên trái là hình Mi Band 6 với màn hình đúng kích thước thật (152 × 486 điểm ảnh, bo góc như vòng tay). Nó hiện đúng thứ sẽ lên vòng tay trước khi bạn cài:
 
 - ảnh nền đang chỉnh (kèm giờ),
-- ảnh xem trước có sẵn trong tệp `.bin` vừa chọn,
+- mặt đồng hồ trong tệp `.bin` vừa chọn, vẽ từ chính các ảnh trong tệp (kể cả ảnh động),
 - hoặc, khi chưa chọn gì, mặt đồng hồ đã cài qua ứng dụng.
 
 ## Dùng ảnh của bạn
@@ -25,7 +25,8 @@ Bên trái là hình Mi Band 6 với màn hình đúng kích thước thật (15
 ## Cài tệp .bin
 
 1. Chọn thẻ **Tệp .bin**, bấm **Chọn tệp .bin…**. Tệp phải là mặt đồng hồ dành cho Mi Band 6 (bắt đầu bằng `UIHH`; tệp của Mi Band 5 hay vòng khác bị từ chối).
-2. Ứng dụng đọc ảnh xem trước trong tệp và hiện ở khung mô phỏng. Một số tệp dùng ảnh nén mà ứng dụng chưa đọc được; tệp đó vẫn cài được, chỉ không có ảnh xem trước.
+2. Khung mô phỏng vẽ mặt đồng hồ như vòng tay vẽ: ảnh nền, giờ, ngày, thứ, pin, bước chân, nhịp tim, thời tiết, biểu tượng Không làm phiền / Bluetooth, kim đồng hồ, và **ảnh động** (phát lại liên tục, mỗi khung tối thiểu 80 ms như vòng tay thật). Giờ và ngày lấy theo lúc chọn tệp; pin, bước chân, nhịp tim lấy từ vòng tay nếu đang kết nối, còn lại là số mẫu.
+   Ảnh xem trước nhúng trong tệp thường chỉ là ảnh nhỏ cho danh sách mặt đồng hồ, có khi kèm hình mờ của công cụ tạo ra nó (BandStudio…) và thiếu ảnh động, nên ứng dụng chỉ dùng nó khi không vẽ được từ các lớp ảnh. Tệp không đọc được vẫn cài được, chỉ không có hình mô phỏng.
 3. Bấm **Cài lên vòng tay**.
 
 Cách cài giống Gadgetbridge. Vòng tay từ chối khi pin yếu hoặc không đủ chỗ trống: sạc vòng tay hoặc xóa bớt mặt đồng hồ trên vòng tay rồi thử lại.

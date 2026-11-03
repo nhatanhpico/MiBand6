@@ -26,7 +26,7 @@
 
 **Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
 - **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
-- **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Thêm **trạng thái tinh thần** ước tính, **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
+- **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Con số của hôm nay cũng nằm ở đầu trang **Tổng quan** (trang mở ra khi khởi động), hiện cả khi vòng tay chưa kết nối; bấm vào để xem chi tiết. Thêm **trạng thái tinh thần** ước tính, **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
 - Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức và **REM ước tính từ nhịp tim** (Mi Band 6 và Mi Fitness đều không có REM cho vòng này; tắt được) theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
@@ -46,7 +46,7 @@
 **Mặt đồng hồ và ảnh nền** (**Cài đặt vòng tay → Mặt đồng hồ**; hướng dẫn chi tiết: [docs/mat-dong-ho.md](docs/mat-dong-ho.md))
 - Khung **mô phỏng Mi Band 6** (màn hình 152 × 486, bo góc như thật) hiện đúng thứ sẽ lên vòng tay trước khi cài
 - **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Chọn vị trí và màu giờ rồi **Cài lên vòng tay**: ứng dụng dựng một mặt đồng hồ Mi Band 6 từ ảnh đó (nếu vòng tay gặp sự cố, xem [cách khôi phục](docs/mat-dong-ho.md#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ))
-- **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); ảnh xem trước có trong tệp được đọc ra và hiện ở khung mô phỏng
+- **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); khung mô phỏng vẽ mặt đồng hồ từ chính các ảnh trong tệp (giờ, ngày, pin, biểu tượng trạng thái…) và phát ảnh động như trên vòng tay
 - Vòng tay không cho đọc mặt đồng hồ đang dùng (kể cả mặt có sẵn), nên hình vòng tay ở Tổng quan hiện mặt đã cài qua ứng dụng. Với mặt có sẵn: chụp ảnh màn hình vòng tay, chọn ở **Ảnh của bạn**, đặt Giờ là **Ẩn**, bấm **Chỉ đặt làm ảnh xem trước**
 
 **Giữ kết nối**

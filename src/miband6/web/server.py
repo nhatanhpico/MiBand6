@@ -892,7 +892,7 @@ class BandService:
         self.watchface_dir.mkdir(parents=True, exist_ok=True)
         (self.watchface_dir / "current.bin").write_bytes(data)
         if preview is None:
-            preview = WF.preview_png(data)   # ảnh xem trước có sẵn trong tệp, nếu đọc được
+            preview = WF.preview_png(data, self.face_status())   # vẽ từ các ảnh trong tệp, nếu đọc được
         info = {"name": name[:120], "size": len(data), "installed": int(time.time()), "preview": False}
         if preview is not None:
             (self.watchface_dir / "preview").write_bytes(preview)
@@ -903,6 +903,16 @@ class BandService:
         self.store.save()
         self.push_state()
         return tr('Đã cài mặt đồng hồ lên vòng tay.')
+
+    def face_status(self) -> dict:
+        """Số liệu để vẽ mặt đồng hồ trong tệp .bin: giờ máy, kiểu giờ đã lưu, pin, bước, nhịp tim thật nếu có."""
+        battery, activity = self.live.get("battery"), self.live.get("activity")
+        pulse = self.live.get("heart_rate")
+        return WF.face_status(
+            time_24h=self.settings.get("time_24h") is not False, metric=self.settings.get("metric") is not False,
+            battery=getattr(battery, "level", None), steps=getattr(activity, "steps", None),
+            calories=getattr(activity, "calories", None), meters=getattr(activity, "meters", None),
+            pulse=pulse if isinstance(pulse, int) else None, goal=int(self.profile.get("goal") or 8000))
 
     def set_watchface_preview(self, preview: bytes | None) -> None:
         """Ảnh xem trước của mặt đồng hồ đang dùng (vòng tay không cho đọc mặt đồng hồ hiện tại)."""
@@ -1374,8 +1384,26 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             P.check_watchface(data)
         except ValueError as e:
             raise ApiError(str(e)) from e
-        shot = WF.preview_png(data)
-        return ok(size=len(data), preview=("data:image/png;base64," + base64.b64encode(shot).decode()) if shot else None)
+        status = S.face_status()
+
+        def inspect() -> dict:
+            def url(shot) -> str:
+                return "data:image/png;base64," + base64.b64encode(WF.png(*shot)).decode()
+
+            layers = WF.scene(data, status)
+            if not layers:   # không vẽ được từ các lớp: dùng ảnh xem trước nhúng sẵn, nếu có
+                shot = WF.embedded_preview(data)
+                return {"preview": url(shot) if shot else None, "rendered": False, "animation": None}
+            screen = (WF.SCREEN_W, WF.SCREEN_H)
+            animation = {
+                "below": url((*screen, layers["below"])),
+                "above": url((*screen, layers["above"])) if layers["above"] else None,
+                "items": [{"x": a["x"], "y": a["y"], "interval": a["interval"], "frames": [url(f) for f in a["frames"]]}
+                          for a in layers["animations"]],
+            } if layers["animations"] else None
+            return {"preview": url(WF.flatten(layers)), "rendered": True, "animation": animation}
+
+        return ok(size=len(data), **await asyncio.to_thread(inspect))
 
     async def watchface_post(req):
         b = await body(req)

@@ -877,7 +877,17 @@ select:invalid, select.unknown { color: var(--muted); }
 .eyebrow { color: #a6c9b7; font-size: 11px; font-weight: 600; letter-spacing: .13em; margin-bottom: 10px; }
 .summary-heading h2 { font-size: clamp(22px, 2.1vw, 30px); line-height: 1.3; font-weight: 500; letter-spacing: -.035em; max-width: 18ch; }
 .summary-heading .muted { font-size: 12px; margin-top: 14px; }
-.summary-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 20px; }
+.summary-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 20px; }
+/* Điểm sẵn sàng hôm nay: thứ đầu tiên nhìn thấy khi mở ứng dụng, chỉ con số */
+.ready-today { display: flex; align-items: center; gap: 24px; margin-bottom: 20px; padding: 18px 28px 18px 18px; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--text); text-decoration: none; }
+.ready-today:hover { border-color: var(--lv, var(--line)); }
+.ready-today-dial { position: relative; display: grid; place-items: center; flex-shrink: 0; }
+.ready-today .rd-ring { width: 128px; height: 128px; }
+.ready-today .arc { stroke: var(--lv, var(--muted)); }
+.ready-today-dial b { position: absolute; font-size: 46px; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: var(--lv, var(--muted)); }
+.ready-today-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ready-today-title { font-size: 18px; font-weight: 500; }
+.ready-today-note { color: var(--muted); font-size: 13px; max-width: 52ch; }
 .summary-metrics a { display: flex; flex-direction: column; text-decoration: none; gap: 7px; padding: 6px 0; }
 .summary-metrics a:hover span { color: var(--text); }
 .summary-metrics b { font-size: clamp(26px, 3vw, 40px); line-height: 1.2; letter-spacing: -.04em; font-weight: 600; font-variant-numeric: tabular-nums; }
