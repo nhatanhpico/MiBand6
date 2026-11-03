@@ -203,6 +203,14 @@ const quiet = (p) => p.catch(() => {});
 
 const PAGES = ["overview", "health", "settings", "alarms", "tools", "device", "app"];   // settings: vòng tay; app: ứng dụng
 const SUBS = ["profile", "display", "face", "apps", "health"];
+// Thẻ của trang Sức khỏe; cycle chỉ cho hồ sơ nữ, intimacy chỉ cho hồ sơ nam. Địa chỉ cũ (#health/steps…) vẫn mở đúng thẻ.
+const HTABS = ["sleep", "activity", "heart", "workouts", "cycle", "intimacy", "insights"];
+const HTAB_ALIAS = { readiness: "insights", analysis: "insights", mind: "insights", hr: "heart", stress: "heart", spo2: "heart",
+  measure: "heart", steps: "activity", pai: "activity", intensity: "activity", circadian: "sleep" };
+/** Giới tính trong hồ sơ (Cài đặt vòng tay → Hồ sơ): 0 nam, 1 nữ; "Khác" / chưa chọn: null. */
+const profileSex = () => ({ 0: "male", 1: "female" })[Number(STATE.profile?.gender ?? -1)] ?? null;
+const tabAllowed = (tab) => HTABS.includes(tab) && (tab !== "cycle" || profileSex() === "female")
+  && (tab !== "intimacy" || profileSex() === "male");
 
 const LAST_SUBS = (() => {
   try {
@@ -234,28 +242,38 @@ function route() {
     }
     const navSettings = $('.nav a[href^="#settings"]');
     if (navSettings) navSettings.setAttribute("href", `#settings/${sub}`);
-    $$(".subtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === sub)));
-    $$(".subpage").forEach((s) => (s.hidden = s.id !== `sub-${sub}`));
+    $$("#page-settings .subtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === sub)));
+    $$("#page-settings .subpage").forEach((s) => (s.hidden = s.id !== `sub-${sub}`));
     if (sub === "face") requestAnimationFrame(() => (WP.img ? wpDraw() : drawSim()));
   }
   window.scrollTo({ top: 0 });
   $(".main")?.scrollTo({ top: 0 });
   if (page === "overview") quiet(loadOverview());
   if (page === "health") {
-    healthAnchor = sub0 || "";
-    if (healthAnchor.startsWith("map:")) {   // ứng dụng mở từ nút "Mở trong ứng dụng" của trình duyệt
-      healthMap = healthAnchor.slice(4);
-      healthAnchor = "workouts";
-      history.replaceState(null, "", "#health");
+    const day = (location.hash.slice(1).split("/")[2] || "").match(/^\d{4}-\d{2}-\d{2}$/)?.[0];
+    if (day) healthDate = day > todayISO() ? todayISO() : day;   // #health/<thẻ>/<ngày>: mở đúng ngày (bấm cột ở trang Hôm nay)
+    let tab = sub0 || "";
+    if (tab.startsWith("map:")) {   // ứng dụng mở từ nút "Mở trong ứng dụng" của trình duyệt
+      healthMap = tab.slice(4);
+      tab = "workouts";
     }
+    tab = HTAB_ALIAS[tab] || tab;
+    if (!tabAllowed(tab)) tab = tabAllowed(LAST_SUBS.health) ? LAST_SUBS.health : "sleep";
+    healthTab = tab;
+    saveLastSub("health", tab);
+    if (sub0 !== tab || day) history.replaceState(null, "", `#health/${tab}`);
+    $('.nav a[href^="#health"]')?.setAttribute("href", `#health/${tab}`);
+    showHealthTab();
+    if (healthData) renderHealth();   // vẽ ngay bằng dữ liệu đã có, rồi lấy bản mới
     quiet(loadHealth());
   }
 }
 window.addEventListener("hashchange", route);
-$$(".subtabs button").forEach((b) => b.addEventListener("click", () => {
+$$("#page-settings .subtabs button").forEach((b) => b.addEventListener("click", () => {
   saveLastSub("settings", b.dataset.sub);
   location.hash = `#settings/${b.dataset.sub}`;
 }));
+$$(".htabs button").forEach((b) => b.addEventListener("click", () => { location.hash = `#health/${b.dataset.htab}`; }));
 
 /* ============================================================ vòng tay + số liệu */
 
@@ -359,6 +377,7 @@ function renderWatchface(info) {
   faceButtons();
 }
 setInterval(drawBand, 15000);
+setInterval(() => renderSyncChip(), 30000);   // "Đồng bộ 5 phút trước" cập nhật theo thời gian
 
 /** Nhịp tim các lần đo gần nhất (trang Tổng quan): trục số, giờ đo, giá trị mới nhất. */
 function drawSpark() {
@@ -393,9 +412,8 @@ function render(kind, d) {
       live.battery = d.level;
       live.charging = d.charging;
       $("#bat").textContent = `${d.level}%`;
-      const c = 2 * Math.PI * 40;
-      $("#batRing").setAttribute("stroke-dasharray", `${((d.level / 100) * c).toFixed(1)} ${c.toFixed(1)}`);
-      $("#batRing").classList.toggle("low", d.level <= 20);
+      $("#batBar").style.width = `${Math.max(0, Math.min(100, d.level))}%`;
+      $("#batBar").classList.toggle("low", d.level <= 20);
       const notes = [];
       if (d.charging) notes.push(t("Đang sạc"));
       if (d.last_charge) {
@@ -441,6 +459,14 @@ function render(kind, d) {
 
 /* ============================================================ trạng thái */
 
+/** "Mất kết nối… Tự thử lại lúc hh:mm:ss (lần n)." kèm lý do lần thử trước (Bluetooth tắt, vòng tay bận…). */
+function reconnectText(rc) {
+  const at = new Date(rc.at * 1000);
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  const text = t("Mất kết nối với vòng tay. Tự thử lại lúc {time} (lần {n}).", { time, n: rc.attempt });
+  return rc.error ? `${text} ${t("Lần trước: {e}", { e: rc.error })}` : text;
+}
+
 const PROTO = { classic: () => t("Kiểu cũ"), "2021": () => t("Kiểu mới (2021)"), auto: () => t("Tự động") };
 let wasReconnecting = false;
 
@@ -456,19 +482,20 @@ function applyState(st) {
   $("#keepConn").checked = st.settings?.keep_connected ?? true;
   $("#demoBanner").hidden = !st.demo;
   $$(".conn-hint").forEach((el) => (el.hidden = on));
-  $("#overviewEmpty").hidden = on;
-  $("#overviewBody").hidden = !on;
   $("#deviceHero").hidden = !on;
+  $("#liveHrAuto").checked = !!st.settings?.live_hr_auto;
+  $("#hrLiveBtn").setAttribute("aria-pressed", String(!!(on && st.live_hr)));
 
   const status = $("#status");
   status.dataset.state = on ? "on" : st.busy || waiting ? "busy" : "off";
   $("#statusText").textContent = on ? st.device?.name || "Mi Smart Band 6"
     : st.busy ? t("Đang kết nối…") : waiting ? t("Đang chờ kết nối lại…") : t("Chưa kết nối");
   if (waiting) {
-    const at = new Date(st.reconnect.at * 1000);
-    const time = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
     $("#connStatus").className = "conn-status";
-    $("#connStatus").textContent = t("Mất kết nối với vòng tay. Tự thử lại lúc {time} (lần {n}).", { time, n: st.reconnect.attempt });
+    $("#connStatus").textContent = reconnectText(st.reconnect);
+  } else if (!on && st.reconnect_stopped) {
+    $("#connStatus").className = "conn-status error";
+    $("#connStatus").textContent = t("Đã ngừng tự kết nối lại: {reason}", { reason: st.reconnect_stopped.message });
   } else if (on && wasReconnecting) {
     $("#connStatus").className = "conn-status ok";
     $("#connStatus").textContent = t("Đã tự kết nối lại với vòng tay.");
@@ -477,7 +504,10 @@ function applyState(st) {
   if (!on) {
     $("#statusBat").textContent = "";
     live.hr = null;
-    $("#hrLiveBtn").setAttribute("aria-pressed", "false");
+    live.battery = null;
+    $("#bat").textContent = "—";
+    $("#batBar").style.width = "0";
+    $("#batNote").textContent = t("Chưa kết nối");
   } else {
     $("#iProtocol").textContent = (PROTO[st.device?.protocol] || (() => "—"))();
   }
@@ -486,6 +516,7 @@ function applyState(st) {
     formsFilled = true;
   }
   markSync();
+  showHealthTab();
   renderWatchface(st.watchface);
   renderHealthStatus(st.health);
   renderWeather(st.weather);
@@ -701,7 +732,6 @@ $("#keepConn").onchange = () => quiet(run(null, async () => {
 
 /* ============================================================ tổng quan */
 
-$("#refreshBtn").onclick = () => quiet(run($("#refreshBtn"), () => api("/api/refresh", {}), t("Đã đọc dữ liệu mới nhất từ vòng tay.")));
 $("#syncTimeBtn").onclick = () => quiet(run($("#syncTimeBtn"), async () => {
   setSyncActive(true);
   try {
@@ -1606,6 +1636,9 @@ $("#acctLoginBtn").onclick = () => startCloud(true, "workouts");
 $("#acctLogoutBtn").onclick = () => quiet(run($("#acctLogoutBtn"), async () => {
   await api("/api/cloud/forget", {});
 }, t("Đã đăng xuất khỏi Mi Fitness.")));
+$("#liveHrAuto").onchange = () => quiet(run(null, async () => {
+  applyState((await api("/api/prefs", { live_hr_auto: $("#liveHrAuto").checked })).state);
+}, $("#liveHrAuto").checked ? t("Vòng tay sẽ tự đo nhịp tim liên tục mỗi lần kết nối.") : t("Đã tắt tự đo nhịp tim liên tục.")));
 $("#reconnectNowBtn").onclick = () => quiet(run($("#reconnectNowBtn"), async () => {
   applyState((await api("/api/reconnect", {})).state);
 }));
@@ -1742,7 +1775,7 @@ const stressLabel = (v) => (v < 40 ? t("Thư giãn") : v < 60 ? t("Bình thườ
 
 let healthDate = todayISO();
 let healthData = null;
-let healthAnchor = "";
+let healthTab = "sleep";   // thẻ đang mở của trang Sức khỏe
 let healthMap = null;   // bản đồ cần mở sau khi tải xong dữ liệu sức khỏe
 
 function renderHealthStatus(st) {
@@ -1758,8 +1791,34 @@ function renderHealthStatus(st) {
   }
   $("#hSyncBtn").disabled = !STATE.connected || st.state === "running";
   $("#ovSyncBtn").disabled = !STATE.connected || st.state === "running";
-  $("#ovSync").textContent = line.textContent;
+  renderSyncChip(st);
   updateCornerDot();
+}
+
+/** "vừa xong", "5 phút trước", "lúc 08:12" hoặc ngày giờ: lần đồng bộ cuối ở đầu trang Hôm nay. */
+function agoText(ts) {
+  const s = Date.now() / 1000 - ts;
+  if (s < 90) return t("vừa xong");
+  if (s < 3600) return t("{n} phút trước", { n: Math.round(s / 60) });
+  return new Date(ts * 1000).toDateString() === new Date().toDateString() ? t("lúc {time}", { time: hhmm(ts) }) : dateTime(ts);
+}
+
+function renderSyncChip(st = STATE.health) {
+  const chip = $("#ovSyncChip");
+  if (!chip || !st) return;
+  if (st.state === "running") {
+    chip.dataset.state = "running";
+    chip.textContent = t("Đang đồng bộ…");
+    chip.title = "";
+  } else if (st.last_sync) {
+    chip.dataset.state = st.errors?.length ? "error" : "ok";
+    chip.textContent = t("Đồng bộ {when}", { when: agoText(st.last_sync) });
+    chip.title = st.errors?.length ? t("chưa lấy được: {list}", { list: st.errors.join(", ") }) : dateTime(st.last_sync);
+  } else {
+    chip.dataset.state = "none";
+    chip.textContent = t("Chưa đồng bộ");
+    chip.title = "";
+  }
 }
 
 async function loadHealth() {
@@ -1770,10 +1829,6 @@ async function loadHealth() {
   if (healthMap) {
     openMapFromHash(healthMap);
     healthMap = null;
-  }
-  if (healthAnchor) {
-    $(`#health-${healthAnchor}`)?.scrollIntoView({ block: "start" });
-    healthAnchor = "";
   }
 }
 
@@ -1808,72 +1863,157 @@ async function loadOverview() {
   renderOverview();
 }
 
-/** Điểm sẵn sàng hôm nay ở đầu trang Tổng quan: chỉ con số, hiện cả khi vòng tay chưa kết nối. */
-function renderReadyToday(H) {
-  const card = $("#ovReadyCard");
-  card.hidden = H?.date !== todayISO();
-  if (card.hidden) return;
-  const ins = H.insights;
-  const r = ins?.readiness;
-  const ring = $("#ovReadyRing");
-  ring.textContent = "";
-  sv("circle", { cx: 60, cy: 60, r: 50, class: "track" }, ring);
-  const len = 2 * Math.PI * 50;
-  if (r) sv("circle", { cx: 60, cy: 60, r: 50, class: "arc", style: `stroke-dasharray: ${(len * r.score) / 100} ${len}` }, ring);
-  card.className = r ? `ready-today lv-${r.status}` : "ready-today";
-  $("#ovReadyScore").textContent = r ? String(r.score) : "—";
-  const note = $("#ovReadyNote");
-  note.hidden = false;
-  note.textContent = r ? t("Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.") : !ins?.readiness_night
-    ? t("Chưa có giấc ngủ đêm qua: đeo vòng khi ngủ rồi đồng bộ để có điểm của ngày này.")
-    : t("Đang học mức nền của bạn: {n}/{need} đêm có nhịp tim khi ngủ.", { n: ins.readiness_progress?.nights ?? 0, need: ins.readiness_progress?.need ?? 8 });
-  card.setAttribute("aria-label", `${t("Điểm sẵn sàng hôm nay")}: ${r ? `${r.score}/100` : note.textContent}`);
+/** Trang Hôm nay hiện cả khi vòng tay chưa kết nối (dữ liệu đã đồng bộ), kèm băng báo kết nối; chỉ màn hình trống
+    khi chưa có dữ liệu nào. */
+function renderConnBanner() {
+  const el = $("#ovConn");
+  const has = !!overviewData?.has_data;
+  const st = STATE;
+  $("#overviewEmpty").hidden = st.connected || has;
+  $("#overviewBody").hidden = !(st.connected || has);
+  el.hidden = st.connected || !has;
+  if (el.hidden) return;
+  let mode = "off";
+  let text = t("Vòng tay chưa kết nối.");
+  if (st.reconnect_stopped) {
+    mode = "stopped";
+    text = t("Đã ngừng tự kết nối lại: {reason}", { reason: st.reconnect_stopped.message });
+  } else if (st.busy) {
+    mode = "waiting";
+    text = t("Đang kết nối với vòng tay…");
+  } else if (st.reconnect) {
+    mode = "waiting";
+    text = reconnectText(st.reconnect);
+  }
+  const last = st.health?.last_sync;
+  if (last) text += ` ${t("Số liệu dưới đây đồng bộ lúc {when}.", { when: dateTime(last) })}`;
+  el.dataset.mode = mode;
+  $("#ovConnText").textContent = text;
+  $("#ovRetryBtn").hidden = !(st.reconnect_stopped || st.reconnect) || st.busy;
 }
 
-function renderOverview() {
-  renderReadyToday(overviewData);
-  const v = overviewSummary(overviewData, STATE.connected ? STATE.live?.activity : null,
-    Number(STATE.profile?.goal || 8000), todayISO());
-  $("#ovGoal").textContent = v.pct == null ? "—" : `${v.pct}%`;
-  $("#ovStreak").textContent = v.streak == null ? "—" : fmtInt(v.streak);
-  $("#ovSteps").textContent = fmtInt(v.steps);
-  $("#ovGoalTarget").textContent = t("/ {n} bước", { n: fmtInt(v.target) });
-  $("#ovGoalRing").style.setProperty("--progress", `${(v.pct || 0) * 3.6}deg`);
-  $("#ovGoalRing").setAttribute("aria-label", t("Mục tiêu bước: {p}", { p: v.pct == null ? t("Chưa có dữ liệu") : `${v.pct}%` }));
-  const calories = STATE.connected ? (live.calories ?? STATE.live?.activity?.calories) : null;
-  $("#ovCalories").textContent = calories == null ? "—" : `${fmtInt(calories)} kcal`;
-  const meters = STATE.connected ? (live.meters ?? STATE.live?.activity?.meters) : null;
-  $("#ovDist").textContent = meters == null ? "—" : `${fmtDec(meters / 1000)} km`;
-  const hr = v.day?.hr?.at(-1);
-  const stress = v.day?.stress?.at(-1);
-  $("#ovHr").textContent = hr ? `${hr[1]} ${t("nhịp/phút")}` : "—";
-  $("#ovHrTime").textContent = hr ? dateTime(hr[0]) : t("Chưa có dữ liệu");
-  $("#ovStress").textContent = stress ? `${stress[1]}/100 · ${stressLabel(stress[1])}` : "—";
-  $("#ovStressTime").textContent = stress ? dateTime(stress[0]) : t("Chưa có dữ liệu");
-  $("#ovRhr").textContent = v.readiness?.parts?.find((p) => p.key === "rhr")?.value || "—";
-  const sl = v.day?.sleep;
-  $("#ovSleep").textContent = sl ? fmtMinutes(sl.minutes) : "—";
-  $("#ovSleepScore").textContent = v.readiness?.parts?.find((p) => p.key === "sleep")?.score ?? "—";
-  $("#ovSleepRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) }) : t("Giấc ngủ kết thúc hôm nay");
-  const segments = $("#ovSleepStages");
-  const legend = $("#ovSleepLegend");
-  segments.replaceChildren(); legend.replaceChildren();
+const ring = (svg, value, cls = "arc") => {
+  svg.textContent = "";
+  sv("circle", { cx: 60, cy: 60, r: 50, class: "track" }, svg);
+  const len = 2 * Math.PI * 50;
+  if (value != null) sv("circle", { cx: 60, cy: 60, r: 50, class: cls, style: `stroke-dasharray: ${(len * value) / 100} ${len}` }, svg);
+};
+
+/** Điểm sẵn sàng hôm nay: thẻ đầu tiên của trang, kèm lời khuyên và thời gian hồi phục. */
+function renderReadyToday(H) {
+  const ins = H?.insights;
+  const r = ins?.readiness;
+  ring($("#ovReadyRing"), r?.score);
+  $("#ovReadyCard").className = `hero-card ready-card${r ? ` lv-${r.status}` : ""}`;
+  $("#ovReadyScore").textContent = r ? String(r.score) : "—";
+  $("#ovReadyLabel").textContent = r ? r.label : t("Chưa có điểm hôm nay");
+  $("#ovReadyPlan").textContent = r ? r.plan : !H?.has_data ? t("Đồng bộ vòng tay để có điểm sẵn sàng.")
+    : !ins?.readiness_night ? t("Chưa có giấc ngủ đêm qua: đeo vòng khi ngủ rồi đồng bộ để có điểm của ngày này.")
+    : t("Đang học mức nền của bạn: {n}/{need} đêm có nhịp tim khi ngủ.", { n: ins.readiness_progress?.nights ?? 0, need: ins.readiness_progress?.need ?? 8 });
+  $("#ovReadyMeta").textContent = !r ? "" : r.recovery_hours >= 1
+    ? t("Thời gian hồi phục còn lại: khoảng {h} giờ", { h: Math.round(r.recovery_hours) }) : t("Đã hồi phục sau các buổi tập gần đây.");
+  $("#ovReadyCard").setAttribute("aria-label", `${t("Điểm sẵn sàng hôm nay")}: ${r ? `${r.score}/100, ${r.label}` : $("#ovReadyPlan").textContent}`);
+}
+
+function sleepStages(sl, bar, legend) {
+  bar.replaceChildren();
+  legend.replaceChildren();
   for (const [key, name, color] of STAGES) {
     if (!sl?.[key]) continue;
     const label = key === "rem" && sl.rem_estimated ? t("REM (ước tính)") : name();
-    const segment = mkEl("span", { style: `flex:${sl[key]};background:${color}` }, segments);
-    segment.title = `${label}: ${fmtMinutes(sl[key])}`;
+    mkEl("span", { style: `flex:${sl[key]};background:${color}`, title: `${label}: ${fmtMinutes(sl[key])}` }, bar);
     const li = mkEl("li", {}, legend);
     mkEl("i", { style: `background:${color}` }, li);
-    li.append(`${label} ${fmtMinutes(sl[key])}`);
+    li.append(`${label} `);
+    mkEl("b", {}, li).textContent = fmtMinutes(sl[key]);
   }
-  segments.setAttribute("aria-label", sl ? legend.textContent : t("Chưa có dữ liệu"));
-  if (!$("#page-overview").hidden) {
-    const recent = (overviewData?.date === todayISO() ? overviewData?.steps_days || [] : []).slice(-7);
+  bar.setAttribute("aria-label", sl ? legend.textContent : t("Chưa có dữ liệu"));
+}
+
+function scorePill(el, score) {
+  el.hidden = score == null;
+  if (score == null) return;
+  el.className = `${el.classList.contains("big") ? "score-pill big" : "score-pill"} lv-${scoreStatus(score)}`;
+  el.textContent = `${t("Điểm")} `;
+  mkEl("b", {}, el).textContent = String(score);
+}
+
+function renderOverview() {
+  renderConnBanner();
+  const H = overviewData?.date === todayISO() ? overviewData : null;
+  const v = overviewSummary(overviewData, STATE.connected ? STATE.live?.activity : null,
+    Number(STATE.profile?.goal || 8000), todayISO());
+  renderReadyToday(H);
+
+  // giấc ngủ đêm qua
+  const sl = v.day?.sleep;
+  const night = H?.insights?.last_night;
+  $("#ovSleep").textContent = sl ? fmtMinutes(sl.minutes) : "—";
+  scorePill($("#ovSleepScore"), sl && night ? night.score : null);
+  $("#ovSleepRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) })
+    : t("Chưa có giấc ngủ kết thúc hôm nay. Đeo vòng khi ngủ rồi đồng bộ.");
+  sleepStages(sl, $("#ovSleepStages"), $("#ovSleepLegend"));
+
+  // bước chân
+  $("#ovSteps").textContent = fmtInt(v.steps);
+  $("#ovGoalTarget").textContent = t("/ {n} bước", { n: fmtInt(v.target) });
+  $("#ovGoalRing").style.setProperty("--p", `${(v.pct || 0) * 3.6}deg`);
+  $("#ovGoalRing").setAttribute("aria-label", t("Mục tiêu bước: {p}", { p: v.pct == null ? t("Chưa có dữ liệu") : `${v.pct}%` }));
+  const meters = STATE.connected ? (live.meters ?? STATE.live?.activity?.meters) : null;
+  const calories = STATE.connected ? (live.calories ?? STATE.live?.activity?.calories) : null;
+  const stepBits = [];
+  if (v.pct != null) stepBits.push(t("{p}% mục tiêu", { p: v.pct }));
+  if (meters != null) stepBits.push(`${fmtDec(meters / 1000)}\u00a0km`);   // số và đơn vị không tách dòng
+  if (calories != null) stepBits.push(`${fmtInt(calories)}\u00a0kcal`);
+  $("#ovStepsSub").textContent = stepBits.join(" · ");
+
+  // nhịp tim: số đo trực tiếp (đang đo / theo dõi liên tục) mới hơn số đã đồng bộ
+  const hr = v.day?.hr?.at(-1);
+  const liveHr = STATE.connected && live.hr ? live.hr : null;
+  $("#ovHr").textContent = liveHr ?? (hr ? hr[1] : "—");
+  const hrBits = [];
+  if (liveHr) hrBits.push(STATE.live_hr ? t("Trực tiếp") : t("Vừa đo"));
+  else if (hr) hrBits.push(t("lúc {time}", { time: hhmm(hr[0]) }));
+  if (night?.hr) {
+    const d = night.hr_baseline != null ? Math.round(night.hr - night.hr_baseline) : 0;
+    hrBits.push(t("Nghỉ {n}", { n: night.hr }) + (d ? ` (${d > 0 ? "+" : ""}${d})` : ""));
+  }
+  $("#ovHrSub").textContent = hrBits.join(" · ");
+
+  // căng thẳng
+  const stress = v.day?.stress?.at(-1);
+  $("#ovStress").textContent = stress ? String(stress[1]) : "—";
+  $("#ovStressLabel").textContent = stress ? stressLabel(stress[1]) : "";
+  const sv_ = (v.day?.stress || []).map((x) => x[1]);
+  $("#ovStressSub").textContent = stress
+    ? `${t("TB hôm nay {n}", { n: Math.round(sv_.reduce((a, b) => a + b, 0) / sv_.length) })} · ${t("lúc {time}", { time: hhmm(stress[0]) })}`
+    : t("Chưa có số đo hôm nay");
+
+  // chu kỳ (hồ sơ nữ đã ghi kỳ kinh)
+  const cy = H?.insights?.cycle;
+  $("#ovCycleTile").hidden = !cy;
+  if (cy) {
+    $("#ovCycleDay").textContent = String(cy.day);
+    $("#ovCyclePhase").textContent = t("/ {n} ngày", { n: cy.cycle_length });
+    $("#ovCycleSub").textContent = [cy.phase ? PHASES[cy.phase]() : "", cycleNext(cy)].filter(Boolean).join(" · ");
+  }
+
+  if (!$("#page-overview").hidden && !$("#overviewBody").hidden) {
+    const recent = (H?.steps_days || []).slice(-7);
     columnChart($("#ovStepsTrend"), recent.map((d) => ({ key: d.date, label: shortDate(d.date),
       parts: [{ value: d.date === todayISO() ? v.steps ?? d.steps : d.steps, color: "var(--c-steps)" }],
-      tip: () => [[fmtInt(d.steps), longDate(d.date)]],
-    })), { height: 100, label: t("Bước chân 7 ngày đã ghi gần nhất"), empty: t("Chưa có lịch sử bước chân."), valueFmt: fmtInt });
+      tip: () => [[fmtInt(d.date === todayISO() ? v.steps ?? d.steps : d.steps), longDate(d.date)]],
+    })), { height: 120, label: t("Bước chân 7 ngày đã ghi gần nhất"), empty: t("Chưa có lịch sử bước chân."), valueFmt: compact,
+      refs: [{ value: v.target, name: t("Mục tiêu"), text: compact(v.target) }], onPick: (d) => { location.hash = `#health/activity/${d}`; } });
+    $("#ovStreak").textContent = v.streak ? t("Đạt mục tiêu {n} ngày liền", { n: v.streak }) : "";
+    const nights = (H?.sleep_days || []).slice(-7);
+    const slept = nights.filter((d) => d.minutes);
+    columnChart($("#ovSleepTrend"), nights.map((d) => ({ key: d.date, label: shortDate(d.date),
+      parts: [["deep", d.deep], ["light", d.light], ["rem", d.rem]].map(([k, x]) => ({ value: x / 60, color: stageInfo(k)[2] })),
+      tip: () => [[fmtMinutes(d.minutes), longDate(d.date)]],
+    })), { height: 120, label: t("Giấc ngủ 7 đêm gần đây"), empty: t("Chưa có dữ liệu giấc ngủ."), yFmt: (x) => `${x}h`,
+      band: { from: 7, to: 9, label: t("Khuyến nghị 7–9 giờ") }, onPick: (d) => { location.hash = `#health/sleep/${d}`; } });
+    $("#ovSleepAvg").textContent = slept.length ? t("TB {t}", { t: fmtMinutes(slept.reduce((a, d) => a + d.minutes, 0) / slept.length) }) : "";
     drawSpark();
   }
 }
@@ -1881,21 +2021,14 @@ function renderOverview() {
 $("#ovSyncBtn").onclick = () => quiet(run($("#ovSyncBtn"), async () => {
   setSyncActive(true);
   try {
+    await quiet(api("/api/refresh", {}));   // pin, bước chân, giờ trên vòng tay
     renderHealthStatus((await api("/api/health/sync", {})).status);
   } finally {
     setSyncActive(false);
   }
 }));
-$("#ovMeasureBtn").onclick = () => {
-  $("#hrMeasureBtn").click();
-  $(".tile-hr").scrollIntoView({ block: "center", behavior: "smooth" });
-};
-$("#ovFindBtn").onclick = () => quiet(run($("#ovFindBtn"), () => api("/api/find", { on: true })));
-
-// Graphs need a new layout pass when their initially collapsed detail is opened.
-$$(".metric-details").forEach((el) => el.addEventListener("toggle", () => {
-  if (el.open && healthData && !$("#page-health").hidden) renderHealth();
-}));
+$("#ovFindBtn").onclick = () => quiet(run($("#ovFindBtn"), () => api("/api/find", { on: true }), t("Vòng tay đang rung.")));
+$("#ovRetryBtn").onclick = () => quiet(run($("#ovRetryBtn"), async () => applyState((await api("/api/reconnect", {})).state)));
 
 /* ---- chọn ngày */
 
@@ -2130,7 +2263,9 @@ function columnChart(el, items, o) {
       y0 = y;
     });
     if (o.valueFmt && total(it) > 0 && (isSel || (it === highest && !o.refs?.length))) {
-      svText(g, sx + slot / 2, Math.max(12, y0 - 6), o.valueFmt(total(it)), "value-label", "middle");
+      // cột sát lề phải: canh phải để nhãn số không đè lên nhãn của đường mốc bên lề
+      const edge = sx + slot / 2 > padL + iw - 36;
+      svText(g, edge ? sx + slot : sx + slot / 2, Math.max(12, y0 - 6), o.valueFmt(total(it)), "value-label", edge ? "end" : "middle");
     }
     if (it.label && (i % every === 0 || isSel)) svText(svg, sx + slot / 2, H - 8, it.label, isSel ? "axis strong" : "axis", "middle");
     const hit = sv("rect", { x: sx, y: padT, width: slot, height: ih, class: "hit" }, g);
@@ -2348,13 +2483,6 @@ function chip(el, status, label, cls) {
   el.append(label);
 }
 
-function renderInsights(ins) {
-  renderReadiness(ins?.readiness, ins?.readiness_history || [], ins?.readiness_progress, ins?.readiness_night);
-  renderMind(ins?.mental);
-  renderIntensity(ins?.intensity);
-  renderCircadian(ins?.circadian);
-}
-
 function renderReadiness(r, history, progress, hasNight) {
   const ring = $("#rdRing");
   ring.textContent = "";
@@ -2543,45 +2671,61 @@ function sleepTimingChart(el, c) {
   if (yf != null) ref(c.msf, "ref-free", t("Ngày nghỉ"), lf);
 }
 
+/** Hiện đúng thẻ của trang Sức khỏe: thẻ Chu kỳ / Sinh lý theo giới tính trong hồ sơ; Tập luyện không cần chọn ngày. */
+function showHealthTab() {
+  if (!tabAllowed(healthTab)) healthTab = "sleep";
+  $$(".htabs button").forEach((b) => {
+    b.hidden = !tabAllowed(b.dataset.htab);
+    b.setAttribute("aria-selected", String(b.dataset.htab === healthTab));
+  });
+  $$("#page-health .hpanel").forEach((el) => (el.hidden = el.id !== `htab-${healthTab}`));
+  $("#hDayNav").hidden = healthTab === "workouts";
+}
+
 function renderHealth() {
   const H = healthData;
   renderDateNav();
+  showHealthTab();
   $("#hEmpty").hidden = !!H?.has_data;
-  renderAnalysis(H?.analysis);
-  renderInsights(H?.insights);
-  if (!H) {
-    $$(".hgrid .chart").forEach((el) => emptyChart(el, 80, t("Chưa có dữ liệu")));
-    return;
-  }
-  const day = H.day;
-  const isToday = healthDate === todayISO();
-  const dayLabel = isToday ? t("Hôm nay") : longDate(healthDate);
-  const t0 = new Date(`${healthDate}T00:00:00`).getTime() / 1000;
-  const t1 = t0 + 86400;
+  const draw = { sleep: renderSleepTab, activity: renderActivityTab, heart: renderHeartTab, workouts: renderWorkoutsTab,
+    cycle: renderCycleTab, intimacy: renderIntimacyTab, insights: renderInsightsTab }[healthTab];
+  draw?.(H);
+}
 
-  // giấc ngủ
-  const sl = day.sleep;
-  $("#slTotal").textContent = sl ? fmtMinutes(sl.minutes) : "—";
-  $("#slRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) }) : t("Không có giấc ngủ kết thúc vào {day}.", { day: dayLabel.toLowerCase() });
-  const hasRem = H.sleep_days.some((d) => d.rem > 0);   // Mi Band 6 không ghi REM: chỉ có khi ứng dụng ước tính
-  const remName = H.insights?.rem_estimated || sl?.rem_estimated ? () => t("REM (ước tính)") : () => t("REM");
-  const rows = STAGES.filter(([key]) => key !== "rem" || hasRem);
+const dayLabelOf = () => (healthDate === todayISO() ? t("Hôm nay") : longDate(healthDate));
+const dayBounds = () => { const t0 = new Date(`${healthDate}T00:00:00`).getTime() / 1000; return [t0, t0 + 86400]; };
+
+function renderSleepTab(H) {
+  const sl = H?.day?.sleep;
+  const night = H?.insights?.last_night;
+  $("#health-sleep h2").textContent = healthDate === todayISO() ? t("Giấc ngủ đêm qua") : t("Giấc ngủ");
+  $("#slRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) })
+    : t("Không có giấc ngủ kết thúc vào {day}.", { day: dayLabelOf().toLowerCase() });
+  scorePill($("#slScore"), sl && night ? night.score : null);
+  const inBed = sl ? sl.minutes + sl.awake : 0;
+  statsList($("#slStats"), sl ? [
+    [t("Thời gian ngủ"), fmtMinutes(sl.minutes), ""],
+    [t("Ngủ sâu"), String(Math.round((sl.deep * 100) / sl.minutes)), "%"],
+    [t("Liền mạch"), String(Math.round((sl.minutes * 100) / inBed)), "%"],
+    ...(night?.hr ? [[t("Nhịp tim khi ngủ"), String(night.hr), t("nhịp/phút")]] : []),
+  ] : []);
+  const hasRem = (H?.sleep_days || []).some((d) => d.rem > 0);   // Mi Band 6 không ghi REM: chỉ có khi ứng dụng ước tính
+  const remName = H?.insights?.rem_estimated || sl?.rem_estimated ? () => t("REM (ước tính)") : () => t("REM");
+  const rows = STAGES.filter(([key]) => key !== "rem" || hasRem).map(([k, name, c]) => [k, k === "rem" ? remName : name, c]);
   if (sl) sleepChart($("#slChart"), sl, rows); else emptyChart($("#slChart"), 60, t("Chưa có dữ liệu giấc ngủ cho ngày này."));
   const legend = $("#slLegend");
   legend.textContent = "";
-  for (const [key, name, color] of STAGES) {
-    if (key === "rem" && !hasRem) continue;   // Mi Band 6 thường không ghi REM
-    const li = document.createElement("li");
-    const sw = document.createElement("i");
-    sw.style.background = color;
-    const b = document.createElement("b");
-    b.textContent = sl ? fmtMinutes(sl[key]) : "—";
-    li.append(sw, `${(key === "rem" ? remName : name)()} `, b);
-    legend.append(li);
+  for (const [key, name, color] of rows) {
+    const li = mkEl("li", {}, legend);
+    mkEl("i", { style: `background:${color}` }, li);
+    li.append(`${name()} `);
+    mkEl("b", {}, li).textContent = sl ? fmtMinutes(sl[key]) : "—";
   }
-  const slept = H.sleep_days.filter((d) => d.minutes);
+  $("#slNotes").textContent = night?.notes?.length ? t("Lưu ý: {notes}.", { notes: night.notes.join("; ") }) : "";
+  const days = H?.sleep_days || [];
+  const slept = days.filter((d) => d.minutes);
   const avgSleep = slept.length ? slept.reduce((a, d) => a + d.minutes, 0) / slept.length : 0;
-  columnChart($("#slHistory"), H.sleep_days.map((d) => ({
+  columnChart($("#slHistory"), days.map((d) => ({
     key: d.date, label: shortDate(d.date),
     parts: [["deep", d.deep], ["light", d.light], ["rem", d.rem]].map(([k, v]) => ({ value: v / 60, color: stageInfo(k)[2] })),
     tip: () => [[fmtMinutes(d.minutes), longDate(d.date)], ...["deep", "light", "rem", "awake"].filter((k) => k !== "rem" || hasRem).map((k) => [fmtMinutes(d[k]), stageInfo(k)[1](), stageInfo(k)[2]])],
@@ -2591,18 +2735,22 @@ function renderHealth() {
     band: { from: 7, to: 9, label: t("Khuyến nghị 7–9 giờ") },
     refs: avgSleep ? [{ value: avgSleep / 60, name: t("Trung bình"), text: fmtMinutes(avgSleep) }] : [],
   });
+  renderCircadian(H?.insights?.circadian);
+}
 
-  // bước chân (hôm nay: số trực tiếp từ vòng tay mới hơn dữ liệu đã đồng bộ)
+function renderActivityTab(H) {
+  const isToday = healthDate === todayISO();
   const goal = Number(STATE.profile?.goal || 8000);
   const liveSteps = isToday && STATE.connected ? STATE.live?.activity?.steps : null;
-  const steps = Math.max(day.steps, liveSteps ?? 0);
+  const day = H?.day;
+  const steps = Math.max(day?.steps ?? 0, liveSteps ?? 0);
   $("#stTotal").textContent = fmtInt(steps);
-  $("#stSub").textContent = t("{day} · {p}% mục tiêu {goal} bước", { day: dayLabel, p: Math.round((steps / goal) * 100), goal: fmtInt(goal) });
-  columnChart($("#stHourly"), day.steps_hourly.map((v, h) => ({
+  $("#stSub").textContent = t("{day} · {p}% mục tiêu {goal} bước", { day: dayLabelOf(), p: Math.round((steps / goal) * 100), goal: fmtInt(goal) });
+  columnChart($("#stHourly"), (day?.steps_hourly || []).map((v, h) => ({
     key: h, label: h % 3 === 0 ? `${pad(h)}:00` : "", parts: [{ value: v, color: "var(--c-steps)" }],
     tip: () => [[t("{n} bước", { n: fmtInt(v) }), `${pad(h)}:00–${pad((h + 1) % 24)}:00`]],
   })), { height: 180, label: t("Bước chân theo giờ"), empty: t("Không có bước chân nào được ghi trong ngày này."), valueFmt: fmtInt });
-  const days = H.steps_days.slice();
+  const days = (H?.steps_days || []).map((d) => ({ ...d }));
   if (liveSteps != null) {
     const today = days.find((d) => d.date === healthDate);
     if (today) today.steps = Math.max(today.steps, liveSteps); else days.push({ date: healthDate, steps: liveSteps });
@@ -2615,29 +2763,50 @@ function renderHealth() {
     valueFmt: fmtInt, refs: [{ value: goal, name: t("Mục tiêu"), text: fmtInt(goal) }],
   });
   tableRows($("#stTable"), days.slice().reverse().map((d) => [longDate(d.date), fmtInt(d.steps)]), t("Chưa có dữ liệu"), 2);
+  renderIntensity(H?.insights?.intensity);
+  const pai = H?.pai || { latest: null, days: [] };
+  if (pai.latest) statsList($("#paiStats"), [[t("Tổng 7 ngày"), fmtInt(Math.round(pai.latest.total)), ""], [t("Thêm hôm đó"), `+${fmtInt(Math.round(pai.latest.today))}`, ""]]);
+  else statsList($("#paiStats"), []);
+  columnChart($("#paiChart"), pai.days.map((d) => ({
+    key: d.date, label: shortDate(d.date), parts: [{ value: d.total, color: "var(--c-pai)" }],
+    tip: () => [[`${fmtInt(Math.round(d.total))} PAI`, longDate(d.date)], [`+${fmtInt(Math.round(d.today))}`, t("trong ngày")]],
+  })), {
+    height: 200, label: t("PAI các ngày gần đây"), empty: t("Chưa có dữ liệu PAI."), valueFmt: (v) => fmtInt(Math.round(v)),
+    refs: [{ value: 100, name: t("Mục tiêu"), text: "100" }],
+  });
+}
 
-  // nhịp tim (vùng tô: lúc ngủ)
-  const hr = day.hr;
-  $("#hrSub").textContent = dayLabel;
-  const hrQuality = H.quality?.hr?.counts;
+function renderHeartTab(H) {
+  const [t0, t1] = dayBounds();
+  const day = H?.day || { hr: [], stress: [] };
+  const sl = day.sleep;
+  const night = H?.insights?.last_night;
+  const hr = day.hr || [];
+  $("#hrSub").textContent = dayLabelOf();
+  const hrQuality = H?.quality?.hr?.counts;
   const hrFlagged = (hrQuality?.suspect || 0) + (hrQuality?.invalid || 0) > 0;
   $("#hrBadge").textContent = hrFlagged ? t("Cần kiểm tra tín hiệu") : hr.length ? t("Dữ liệu đã đồng bộ") : t("Chưa có dữ liệu");
   $("#hrBadge").classList.toggle("quality-attention", hrFlagged);
+  const stats = [];
   if (hr.length) {
     const v = hr.map((p) => p[1]);
-    statsList($("#hrStats"), [[t("Thấp nhất"), fmtInt(Math.min(...v)), t("nhịp/phút")], [t("Trung bình"), fmtInt(Math.round(v.reduce((a, b) => a + b, 0) / v.length)), t("nhịp/phút")], [t("Cao nhất"), fmtInt(Math.max(...v)), t("nhịp/phút")]]);
-  } else statsList($("#hrStats"), []);
+    stats.push([t("Thấp nhất"), fmtInt(Math.min(...v)), t("nhịp/phút")], [t("Trung bình"), fmtInt(Math.round(v.reduce((a, b) => a + b, 0) / v.length)), t("nhịp/phút")], [t("Cao nhất"), fmtInt(Math.max(...v)), t("nhịp/phút")]);
+  }
+  if (night?.hr) {
+    const d = night.hr_baseline != null ? Math.round(night.hr - night.hr_baseline) : null;
+    stats.push([t("Nhịp tim nghỉ (khi ngủ)"), String(night.hr), d ? `${t("nhịp/phút")} (${d > 0 ? "+" : ""}${d})` : t("nhịp/phút")]);
+  }
+  statsList($("#hrStats"), stats);
   lineChart($("#hrChart"), hr, {
     t0, t1, color: "var(--c-hr)", unit: t("nhịp/phút"), label: t("Nhịp tim trong ngày"), xTicks: dayTicks(t0), extremes: true,
     shade: [sl, ...(day.naps || [])].filter(Boolean).map((s) => ({ from: s.start, to: s.end, label: t("Ngủ") })),
     empty: t("Không có số đo nhịp tim trong ngày này."),
   });
-
-  // căng thẳng (nền chia theo mức)
-  const autoS = day.stress.filter((s) => s[2]).map((s) => [s[0], s[1]]);
-  const manualS = day.stress.filter((s) => !s[2]).map((s) => [s[0], s[1]]);
-  $("#ssSub").textContent = dayLabel;
-  const sv_ = day.stress.map((s) => s[1]);
+  const stress = day.stress || [];
+  const autoS = stress.filter((s) => s[2]).map((s) => [s[0], s[1]]);
+  const manualS = stress.filter((s) => !s[2]).map((s) => [s[0], s[1]]);
+  $("#ssSub").textContent = dayLabelOf();
+  const sv_ = stress.map((s) => s[1]);
   if (sv_.length) {
     const avg = Math.round(sv_.reduce((a, b) => a + b, 0) / sv_.length);
     statsList($("#ssStats"), [[t("Trung bình"), String(avg), stressLabel(avg)], [t("Cao nhất"), String(Math.max(...sv_)), ""]]);
@@ -2649,42 +2818,39 @@ function renderHealth() {
     label: t("Mức căng thẳng trong ngày"),
     empty: manualS.length ? t("Chỉ có lần đo tay.") : t("Không có số đo căng thẳng. Bật Theo dõi căng thẳng trong Cài đặt vòng tay → Sức khỏe."),
   });
-
-  // PAI
-  const pai = H.pai;
-  if (pai.latest) statsList($("#paiStats"), [[t("Tổng 7 ngày"), fmtInt(Math.round(pai.latest.total)), ""], [t("Thêm hôm đó"), `+${fmtInt(Math.round(pai.latest.today))}`, ""]]);
-  else statsList($("#paiStats"), []);
-  columnChart($("#paiChart"), pai.days.map((d) => ({
-    key: d.date, label: shortDate(d.date), parts: [{ value: d.total, color: "var(--c-pai)" }],
-    tip: () => [[`${fmtInt(Math.round(d.total))} PAI`, longDate(d.date)], [`+${fmtInt(Math.round(d.today))}`, t("trong ngày")]],
-  })), {
-    height: 200, label: t("PAI các ngày gần đây"), empty: t("Chưa có dữ liệu PAI."), valueFmt: (v) => fmtInt(Math.round(v)),
-    refs: [{ value: 100, name: t("Mục tiêu"), text: "100" }],
-  });
-
-  // SpO2
-  const sp = H.spo2_recent;
-  const spQuality = H.quality?.spo2?.counts;
+  const sp = H?.spo2_recent || [];
+  const spQuality = H?.quality?.spo2?.counts;
   const spFlagged = (spQuality?.suspect || 0) + (spQuality?.invalid || 0) > 0;
   $("#spBadge").textContent = spFlagged ? t("Cần kiểm tra tín hiệu") : sp.length ? t("Đo từng lần") : t("Chưa có dữ liệu");
   $("#spBadge").classList.toggle("quality-attention", spFlagged);
   if (sp.length) statsList($("#spStats"), [[t("Lần đo gần nhất · {when}", { when: dateTime(sp[0][0]) }), String(sp[0][1]), "%"]]);
   else statsList($("#spStats"), []);
   tableRows($("#spTable"), sp.map(([ts, v, auto]) => [dateTime(ts), `${v}%`, auto ? t("Tự động") : t("Đo tay")]), t("Chưa có lần đo SpO2 nào. Đo trên vòng tay rồi đồng bộ lại."), 3);
+  // cách vòng tay đang đo (chỉ biết khi đã lưu từ ứng dụng này)
+  const s = STATE.settings || {};
+  const unknown = t("Chưa đồng bộ");
+  const facts = [
+    `${t("Nhịp tim")}: ${s.hr_interval == null ? unknown : hrIntervalLabel(s.hr_interval)}`,
+    `${t("Căng thẳng")}: ${s.stress == null ? unknown : s.stress ? t("Bật") : t("Tắt")}`,
+    `SpO2: ${t("Đo trên vòng tay")}`,
+  ];
+  $("#measureFacts").textContent = `${t("Đo tự động")} · ${facts.join(" · ")}. ${t("Mi Band 6 chỉ đo SpO2 khi bạn mở mục SpO2 trên vòng tay và bấm đo; kết quả hiện ở đây sau lần đồng bộ kế tiếp. Đổi chu kỳ đo ở Cài đặt vòng tay → Sức khỏe.")}`;
+}
 
-  // tập luyện
-  const fromCloud = H.workouts.filter((w) => w.source === "mifitness").length;
-  $("#woSub").textContent = t("{n} buổi tập: {band} từ vòng tay, {cloud} từ Mi Fitness.", { n: H.workouts.length, band: H.workouts.length - fromCloud, cloud: fromCloud });
-  tableRows($("#woTable"), H.workouts.map((w) => [
+function renderWorkoutsTab(H) {
+  const workouts = H?.workouts || [];
+  const fromCloud = workouts.filter((w) => w.source === "mifitness").length;
+  $("#woSub").textContent = t("{n} buổi tập: {band} từ vòng tay, {cloud} từ Mi Fitness.", { n: workouts.length, band: workouts.length - fromCloud, cloud: fromCloud });
+  tableRows($("#woTable"), workouts.map((w) => [
     workoutName(w), dateTime(w.start), fmtMinutes(((w.active_seconds || (w.end - w.start)) / 60)),
     w.distance ? `${fmtDec(w.distance / 1000)} km` : "—", w.calories ? `${fmtInt(w.calories)} kcal` : "—",
     w.avg_hr ? t("{n} nhịp/phút", { n: w.avg_hr }) : "—", w.steps ? fmtInt(w.steps) : "—",
     w.source === "mifitness" ? "Mi Fitness" : t("Vòng tay"), "",
   ]), t("Chưa có buổi tập nào. Bấm Lấy lịch sử từ Mi Fitness để lấy các buổi cũ."), 9);
   // nút Bản đồ cho buổi chạy / đạp xe ngoài trời có lộ trình GPS (Mi Fitness ghi từ GPS của điện thoại)
-  $("#woMapAllBtn").hidden = !H.workouts.some((w) => w.gps);
+  $("#woMapAllBtn").hidden = !workouts.some((w) => w.gps);
   $$("#woTable tr").forEach((tr, i) => {
-    const w = H.workouts[i];
+    const w = workouts[i];
     if (!w) return;
     if (!w.gps) {   // không có lộ trình GPS (bài tập trong nhà, hoặc tệp lộ trình trống): nhãn thay cho nút
       const tag = mkEl("span", { class: "no-gps", title: t("Buổi tập này không có lộ trình GPS.") }, tr.lastElementChild);
@@ -2699,23 +2865,135 @@ function renderHealth() {
     b.onclick = () => openMap(w);
     tr.lastElementChild.append(b);
   });
+}
 
-  // đo tự động
-  const s = STATE.settings || {};
-  const facts = $("#measureFacts");
-  facts.textContent = "";
-  const unknown = t("Chưa đồng bộ");
-  for (const [k, v] of [
-    [t("Nhịp tim"), s.hr_interval == null ? unknown : s.hr_interval === 0 ? t("Tắt") : s.hr_interval === 1 ? t("Mỗi phút") : t("Mỗi {m} phút", { m: s.hr_interval })],
-    [t("Căng thẳng"), s.stress == null ? unknown : s.stress ? t("Bật") : t("Tắt")],
-    ["SpO2", t("Đo trên vòng tay")],
-  ]) {
-    const dt_ = document.createElement("dt");
-    dt_.textContent = k;
-    const dd = document.createElement("dd");
-    dd.textContent = v;
-    facts.append(dt_, dd);
+function renderInsightsTab(H) {
+  renderAnalysis(H?.analysis);
+  const ins = H?.insights;
+  renderReadiness(ins?.readiness, ins?.readiness_history || [], ins?.readiness_progress, ins?.readiness_night);
+  renderMind(ins?.mental);
+}
+
+/* ---------------- nhật ký riêng: chu kỳ kinh nguyệt (hồ sơ nữ), xuất tinh (hồ sơ nam). Chỉ lưu trên máy này. */
+
+const PHASES = {
+  menstrual: () => t("hành kinh"), follicular: () => t("nang noãn"), ovulation: () => t("rụng trứng (ước tính)"), luteal: () => t("hoàng thể"),
+};
+const cycleNext = (cy) => (cy.late ? t("Trễ {n} ngày so với dự đoán", { n: cy.late })
+  : cy.days_to_next === 0 ? t("Kỳ kinh có thể bắt đầu hôm nay") : t("Kỳ kinh tiếp theo sau khoảng {n} ngày", { n: cy.days_to_next }));
+const journalMonth = { cycle: null, intimacy: null };
+
+/** Lịch tháng của nhật ký: bấm một ngày (không sau hôm nay) để ghi hoặc bỏ ghi. marks(iso) trả {cls: [], count}. */
+function journalGrid(grid, month, marks, onPick) {
+  grid.textContent = "";
+  for (const name of weekdays()) mkEl("span", { class: "cal-dow" }, grid).textContent = name;
+  const lead = (month.getDay() + 6) % 7;
+  for (let i = 0; i < lead; i++) grid.append(document.createElement("span"));
+  const today = todayISO();
+  const d = new Date(month);
+  while (d.getMonth() === month.getMonth()) {
+    const iso = isoOf(d);
+    const m = marks(iso);
+    const b = mkEl("button", { type: "button", class: ["cal-day", ...m.cls, iso === today ? "today" : ""].join(" ").trim() }, grid);
+    b.textContent = String(d.getDate());
+    if (m.count > 1) mkEl("span", { class: "cnt" }, b).textContent = `×${m.count}`;
+    b.disabled = iso > today;
+    b.setAttribute("aria-pressed", String(m.cls.includes("logged")));
+    b.setAttribute("aria-label", new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(d));
+    b.onclick = () => onPick(iso);
+    d.setDate(d.getDate() + 1);
   }
+}
+
+async function saveJournal(kind, date, value) {
+  await run(null, () => api("/api/journal", { kind, date, value }));
+  await loadHealth();
+  if (!$("#page-overview").hidden) quiet(loadOverview());
+}
+
+function monthOf(kind) {
+  if (!journalMonth[kind]) { const d = new Date(`${healthDate}T12:00:00`); journalMonth[kind] = new Date(d.getFullYear(), d.getMonth(), 1); }
+  return journalMonth[kind];
+}
+const monthTitle = (m) => new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric" }).format(m);
+
+function renderCycleTab(H) {
+  const cy = H?.insights?.cycle;
+  const logged = H?.journal?.kind === "period" ? H.journal.days : {};
+  const isToday = healthDate === todayISO();
+  $("#cySub").textContent = cy ? t("Tính từ {n} kỳ kinh đã ghi; dự đoán theo lịch.", { n: Object.keys(logged).length ? cy.cycles + 1 : 0 })
+    : t("Ghi các ngày có kinh để ứng dụng tính chu kỳ, dự đoán kỳ tiếp theo và hiểu nhịp tim nghỉ thay đổi theo chu kỳ.");
+  $("#cyDay").textContent = cy ? `${t("Ngày {n}", { n: cy.day })}${cy.phase ? ` · ${PHASES[cy.phase]()}` : ""}` : "—";
+  statsList($("#cyStats"), cy ? [
+    [cycleNext(cy), new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short" }).format(new Date(`${cy.next_start}T12:00:00`)), ""],
+    [t("Chu kỳ trung bình"), String(cy.cycle_length), t("ngày")],
+    [t("Kỳ kinh"), String(cy.period_length), t("ngày")],
+  ] : []);
+  const notes = [];
+  if (cy?.phase === "luteal") {
+    notes.push(t("Pha hoàng thể: nhịp tim nghỉ thường cao hơn khoảng {d} nhịp/phút; điểm sẵn sàng đã trừ phần này khi so với mức nền.", { d: fmtDec(cy.rhr_offset, 1) }));
+  } else if (cy?.phase === "menstrual") {
+    notes.push(t("Đang hành kinh: mệt hơn và ngủ kém hơn một chút là bình thường; vận động nhẹ có thể giúp giảm đau bụng kinh."));
+  }
+  if (cy?.rhr_offset_personal) notes.push(t("Mức chênh nhịp tim theo chu kỳ tính từ dữ liệu của chính bạn."));
+  if (cy?.irregular) notes.push(t("Các chu kỳ gần đây chênh nhau hơn 7 ngày nên dự đoán kém chính xác."));
+  $("#cyEffect").textContent = notes.join(" ");
+  const todayOn = !!logged[todayISO()];
+  $("#cyTodayBtn").setAttribute("aria-pressed", String(todayOn));
+  $("#cyTodayBtn").textContent = todayOn ? t("Bỏ đánh dấu hôm nay") : t("Hôm nay có kinh");
+  $("#cyTodayBtn").hidden = !isToday;
+  const pred = new Set(cy?.predicted_period || []);
+  const fertile = new Set(cy?.predicted_fertile || []);
+  const month = monthOf("cycle");
+  $("#cyMonth").textContent = monthTitle(month);
+  journalGrid($("#cyGrid"), month, (iso) => ({
+    cls: [logged[iso] ? "logged" : "", !logged[iso] && pred.has(iso) ? "pred" : "", fertile.has(iso) ? "fertile" : "",
+      cy && iso === cy.ovulation ? "ovu" : ""].filter(Boolean),
+    count: 0,
+  }), (iso) => quiet(saveJournal("period", iso, logged[iso] ? 0 : 1)));
+}
+
+function renderIntimacyTab(H) {
+  const ej = H?.insights?.ejaculation;
+  const logged = H?.journal?.kind === "ejaculation" ? H.journal.days : {};
+  $("#ejSub").textContent = ej?.last ? t("Lần gần nhất: {when}", { when: ej.days_since === 0 ? t("hôm nay") : ej.days_since === 1 ? t("hôm qua") : t("{n} ngày trước", { n: ej.days_since }) })
+    : t("Chưa có lần nào được ghi.");
+  statsList($("#ejStats"), ej ? [
+    [t("7 ngày qua"), String(ej.count_7), t("lần")],
+    [t("30 ngày qua"), String(ej.count_30), t("lần")],
+    [t("Trung bình 4 tuần"), fmtDec(ej.per_week, 1), t("lần/tuần")],
+  ] : []);
+  $("#ejTodayBtn").hidden = healthDate !== todayISO();
+  const today = logged[todayISO()] || 0;
+  $("#ejTodayBtn").textContent = today ? t("Ghi thêm hôm nay (đã có {n})", { n: today }) : t("Ghi hôm nay");
+  const box = $("#ejCompare");
+  box.textContent = "";
+  const cmp = ej?.sleep;
+  if (!cmp) {
+    mkEl("p", { class: "compare-empty" }, box).textContent = t("Cần ít nhất {n} đêm sau ngày có ghi và {n} đêm khác có dữ liệu giấc ngủ (hiện có {k}).", { n: ej?.need ?? 3, k: ej?.nights_after ?? 0 });
+  } else {
+    const table = mkEl("table", { class: "data-table" }, box);
+    const head = mkEl("tr", {}, mkEl("thead", {}, table));
+    for (const h of ["", t("Đêm sau ngày có ghi ({n})", { n: cmp.after.n }), t("Các đêm khác ({n})", { n: cmp.other.n })]) mkEl("th", {}, head).textContent = h;
+    const body = mkEl("tbody", {}, table);
+    const row = (label, a, b) => { const tr = mkEl("tr", {}, body); for (const c of [label, a, b]) mkEl("td", {}, tr).textContent = c; };
+    row(t("Thời gian ngủ"), fmtMinutes(cmp.after.minutes), fmtMinutes(cmp.other.minutes));
+    row(t("Ngủ sâu"), `${fmtDec(cmp.after.deep_pct, 1)}%`, `${fmtDec(cmp.other.deep_pct, 1)}%`);
+    row(t("Thức giấc"), fmtMinutes(cmp.after.awake), fmtMinutes(cmp.other.awake));
+    row(t("Giờ đi ngủ trung bình"), cmp.after.bedtime, cmp.other.bedtime);
+    if (cmp.after.hr && cmp.other.hr) row(t("Nhịp tim khi ngủ"), fmtDec(cmp.after.hr, 1), fmtDec(cmp.other.hr, 1));
+  }
+  const month = monthOf("intimacy");
+  $("#ejMonth").textContent = monthTitle(month);
+  journalGrid($("#ejGrid"), month, (iso) => ({ cls: logged[iso] ? ["logged"] : [], count: logged[iso] || 0 }),
+    (iso) => quiet(saveJournal("ejaculation", iso, logged[iso] ? 0 : 1)));
+}
+
+$("#cyTodayBtn").onclick = () => { const on = $("#cyTodayBtn").getAttribute("aria-pressed") === "true"; quiet(saveJournal("period", todayISO(), on ? 0 : 1)); };
+$("#ejTodayBtn").onclick = () => quiet(saveJournal("ejaculation", todayISO(), ((healthData?.journal?.days || {})[todayISO()] || 0) + 1));
+for (const [kind, prev, next] of [["cycle", "#cyPrevM", "#cyNextM"], ["intimacy", "#ejPrevM", "#ejNextM"]]) {
+  $(prev).onclick = () => { const m = monthOf(kind); journalMonth[kind] = new Date(m.getFullYear(), m.getMonth() - 1, 1); renderHealth(); };
+  $(next).onclick = () => { const m = monthOf(kind); journalMonth[kind] = new Date(m.getFullYear(), m.getMonth() + 1, 1); renderHealth(); };
 }
 
 /* ============================================================ bản đồ lộ trình */
@@ -3104,5 +3382,9 @@ $("#cloudReloginBtn").addEventListener("click", () => startCloud(true));
 $("#cloudCancelBtn").addEventListener("click", cancelCloud);
 $("#cloudDialog").addEventListener("cancel", (ev) => { ev.preventDefault(); cancelCloud(); });
 
-$("#nativeAppNotice").hidden = !!window.webkit?.messageHandlers?.nativeMap;
+$("#nativeAppNotice").hidden = !!window.webkit?.messageHandlers?.nativeMap || localStorage.getItem("mb6_hide_app_notice") === "1";
+$("#nativeAppClose").onclick = () => {
+  $("#nativeAppNotice").hidden = true;
+  try { localStorage.setItem("mb6_hide_app_notice", "1"); } catch { /* bỏ qua */ }
+};
 init();

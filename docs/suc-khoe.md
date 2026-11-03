@@ -13,21 +13,17 @@ Chọn ngày bằng nút ngày ở đầu trang (mở lịch; ngày có chấm x
 
 ## Các thẻ
 
+Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng dụng nhớ thẻ mở lần trước). Những gì xem hằng ngày (điểm sẵn sàng, giấc ngủ đêm qua, bước chân, nhịp tim, căng thẳng, pin, chu kỳ) nằm gọn ở trang **Hôm nay**; bấm từng ô ở đó để mở đúng thẻ ở đây, bấm một cột trong biểu đồ 7 ngày để mở ngày đó.
+
 | Thẻ | Nội dung |
 | --- | --- |
-| **Điểm sẵn sàng hôm nay** | Điểm 0–100 và lời khuyên hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ; 7 thành phần, thời gian hồi phục và xu hướng 14 ngày (xem bên dưới) |
-| **Phân tích sức khỏe** | Nhận xét từng mặt (xem bên dưới) |
-| **Trạng thái tinh thần** | Ước tính trạng thái (Thư thái, Cân bằng, Căng thẳng, Mệt mỏi, Quá tải), mức áp lực và các yếu tố góp phần |
-| **Cường độ vận động** | Tỉ lệ cường độ vận động 7 ngày và số phút nhẹ / vừa / mạnh mỗi ngày |
-| **Nhịp sinh học** | Lệch múi giờ xã hội, chronotype, độ đều đặn giấc ngủ (SRI), độ lệch pha (CPD) và giờ ngủ từng đêm |
-| **Giấc ngủ** | Giờ ngủ, giờ dậy, tổng thời gian; sơ đồ các giai đoạn (thức, ngủ nông, ngủ sâu, REM ước tính) theo giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ và mức trung bình của bạn |
-| **Bước chân** | Bước theo giờ trong ngày; mọi ngày vòng tay đã ghi so với mục tiêu; **Xem dạng bảng** để xem số liệu từng ngày |
-| **Nhịp tim** | Nhịp tim cả ngày (vùng tô là lúc ngủ), thấp nhất, trung bình, cao nhất |
-| **Căng thẳng** | Mức căng thẳng tự đo (đường) và đo tay (chấm), nền chia theo mức Thư giãn / Bình thường / Trung bình / Cao |
-| **PAI** | Tổng PAI 7 ngày và phần tăng mỗi ngày, so với mốc 100 |
-| **SpO2** | Các lần đo nồng độ oxy trong máu |
-| **Tập luyện** | Các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness) |
-| **Đo tự động** | Cài đặt đo hiện tại và lối tắt tới **Cài đặt vòng tay → Sức khỏe** |
+| **Giấc ngủ** | Đêm của ngày đang xem: giờ ngủ, giờ dậy, tổng thời gian, phần ngủ sâu, độ liền mạch, nhịp tim khi ngủ, **điểm ngủ**; sơ đồ các giai đoạn (thức, ngủ nông, ngủ sâu, REM ước tính) theo giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ và mức trung bình của bạn; **nhịp sinh học** (lệch múi giờ xã hội, chronotype, SRI, CPD, giờ ngủ từng đêm) |
+| **Vận động** | Bước theo giờ trong ngày; mọi ngày vòng tay đã ghi so với mục tiêu (**Xem dạng bảng** để xem số liệu từng ngày); **cường độ vận động** 7 ngày (phút nhẹ / vừa / mạnh); **PAI** 7 ngày so với mốc 100 |
+| **Tim mạch** | Nhịp tim cả ngày (vùng tô là lúc ngủ), thấp nhất, trung bình, cao nhất và nhịp tim nghỉ (khi ngủ) so với mức nền; **căng thẳng** tự đo (đường) và đo tay (chấm); **SpO2** các lần đo; cách vòng tay đang đo tự động |
+| **Tập luyện** | Các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness); bản đồ lộ trình |
+| **Chu kỳ** (hồ sơ nữ) | Nhật ký kỳ kinh và dự đoán, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
+| **Sinh lý** (hồ sơ nam) | Nhật ký xuất tinh và so sánh giấc ngủ, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
+| **Phân tích** | **Điểm sẵn sàng** (điểm 0–100, lời khuyên, các thành phần, thời gian hồi phục, xu hướng 14 ngày), **phân tích sức khỏe** từng mặt và **trạng thái tinh thần** ước tính (xem bên dưới) |
 
 Rê chuột (hoặc chọn bằng phím Tab) lên cột, đoạn hay đường trong biểu đồ để xem số liệu chi tiết.
 
@@ -58,7 +54,8 @@ Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời 
 
 ### Đo tự động
 
-- **Nhịp tim** và **căng thẳng**: vòng tay tự đo theo **Cài đặt vòng tay → Sức khỏe** (chu kỳ đo nhịp tim, Theo dõi căng thẳng). Không bật thì thẻ Căng thẳng trống.
+- **Nhịp tim** và **căng thẳng**: vòng tay tự đo theo **Cài đặt vòng tay → Sức khỏe** (chu kỳ đo nhịp tim, Theo dõi căng thẳng). Không bật thì thẻ Căng thẳng trống. Cách đo hiện tại ghi ở cuối thẻ **Tim mạch**.
+- **Theo dõi nhịp tim liên tục** (số đo theo thời gian thực ở trang Hôm nay) bật tay ở thẻ **Đo nhịp tim**, hoặc tự bật mỗi lần kết nối nếu bật **Cài đặt ứng dụng → Nhịp tim trực tiếp**. Vòng tay đo liên tục tốn pin hơn.
 - **SpO2**: Mi Band 6 chỉ đo khi bạn mở mục SpO2 trên vòng tay và bấm đo; ứng dụng không bật đo từ xa được (giao thức không có lệnh này). Kết quả hiện sau lần đồng bộ kế tiếp.
 
 ## Giấc ngủ được tính thế nào
@@ -103,7 +100,7 @@ Mục nào chưa có dữ liệu thì không hiện (hoặc hiện **Chưa đủ
 
 ## Điểm sẵn sàng hôm nay
 
-Thẻ đầu tiên của trang. Điểm 0–100 trả lời câu hỏi **hôm nay nên tập hay nên nghỉ**, như Readiness của Apple Watch, Physical Readiness của Huawei Watch GT 7 hay Training Readiness của Garmin. Các hãng không công bố công thức, nhưng cùng dựa trên ba nhóm dữ liệu so với **mức nền của chính bạn**: giấc ngủ (đêm qua và các đêm gần đây), chỉ số cơ thể (nhịp tim nghỉ, HRV) và tải vận động (các ngày gần đây và thời gian hồi phục). Ứng dụng làm theo cấu trúc đó; trọng số và ngưỡng dưới đây là lựa chọn của ứng dụng.
+Ô đầu tiên của trang **Hôm nay**; chi tiết ở thẻ **Phân tích**. Điểm 0–100 trả lời câu hỏi **hôm nay nên tập hay nên nghỉ**, như Readiness của Apple Watch, Physical Readiness của Huawei Watch GT 7 hay Training Readiness của Garmin. Các hãng không công bố công thức, nhưng cùng dựa trên ba nhóm dữ liệu so với **mức nền của chính bạn**: giấc ngủ (đêm qua và các đêm gần đây), chỉ số cơ thể (nhịp tim nghỉ, HRV) và tải vận động (các ngày gần đây và thời gian hồi phục). Ứng dụng làm theo cấu trúc đó; trọng số và ngưỡng dưới đây là lựa chọn của ứng dụng.
 
 | Thành phần (trọng số) | Tính từ | 100 điểm khi |
 | --- | --- | --- |
@@ -137,6 +134,28 @@ Vòng tay đo nhịp tim theo chu kỳ đã cài (mỗi phút, 5, 10 hay 30 phú
 - Dòng thứ hai giải thích thành phần thấp nhất. Biểu đồ dưới thẻ là điểm 14 ngày gần đây (các ngày trước tính lúc 8 giờ sáng).
 - **Điều chỉnh cho Mi Band 6:** Apple, Huawei, Garmin và Oura dùng HRV, nhiệt độ da; Mi Band 6 không cho đọc HRV thô hay nhiệt độ. "HRV" được thay bằng chỉ số căng thẳng của vòng tay (vòng tay tính nó từ HRV), không có thành phần nhiệt độ.
 - Cần đeo vòng khi ngủ ít nhất 8 đêm (Apple cần 7 đêm, Huawei 3 ngày đêm) để có mức nền; trước đó thẻ hiện số đêm đã có.
+
+## Hồ sơ: tuổi, giới tính, chiều cao, cân nặng
+
+Ứng dụng đọc hồ sơ ở **Cài đặt vòng tay → Hồ sơ** (nhập tay hoặc lấy từ Mi Fitness):
+
+- **Nhịp tim tối đa** (cho TRIMP, vùng nhịp tim gợi ý): nữ theo Gulati 2010, 206 − 0,88 × tuổi (đo trên 5.437 phụ nữ); còn lại theo Tanaka 2001, 208 − 0,7 × tuổi. Chưa có ngày sinh thì coi 30 tuổi.
+- **Nhu cầu ngủ** theo tuổi (National Sleep Foundation / AASM, lấy giữa khoảng): 6–13 tuổi 10 giờ (9–11), 14–17 tuổi 9 giờ (8–10), người lớn 7,5 giờ (7–9; từ 65 tuổi 7–8). Dùng cho điểm giấc ngủ, cân bằng giấc ngủ, trạng thái tinh thần và mục "Thời gian ngủ" của phân tích (Tốt khi trung bình từ nhu cầu − 30 phút tới nhu cầu + 2 giờ; dưới mức đó 1 giờ là Cần lưu ý).
+- **BMI** = cân nặng / chiều cao² (từ 18 tuổi; dưới 18 tuổi BMI phải so theo bách phân vị tuổi nên không hiện). Ngưỡng cho người châu Á của WHO (Lancet 2004), vì người Việt có nguy cơ tim mạch, tiểu đường ở BMI thấp hơn ngưỡng chung 25/30: dưới 18,5 thiếu cân (Nên chú ý), 18,5–22,9 bình thường (Tốt), 23–24,9 thừa cân (Ổn), 25–29,9 béo phì độ I (Nên chú ý), từ 30 béo phì độ II (Cần lưu ý). BMI không phân biệt cơ và mỡ.
+
+## Nhật ký riêng: chu kỳ kinh nguyệt và xuất tinh
+
+Vòng tay không đo được những điều này, nên bạn tự ghi: bấm một ngày trên lịch của thẻ để ghi hoặc bỏ ghi. Thẻ **Chu kỳ** chỉ hiện khi giới tính trong hồ sơ là Nữ, thẻ **Sinh lý** chỉ khi là Nam. Dữ liệu nằm trong tệp SQLite của vòng tay trên máy tính này và không gửi đi đâu. Mi Band 6 có theo dõi chu kỳ trong Mi Fitness / Zepp Life, nhưng nhật ký đó nằm ở ứng dụng điện thoại; giao thức Bluetooth của ứng dụng này không có lệnh đọc nó.
+
+**Chu kỳ kinh nguyệt** (`personal.py`)
+- Các ngày có kinh cách nhau tối đa 2 ngày không ghi là một kỳ kinh. Độ dài chu kỳ là trung vị khoảng cách giữa các ngày bắt đầu (6 chu kỳ gần nhất, chỉ tính 18–50 ngày, nên quên ghi một tháng không làm lệch); chưa có thì 28 ngày. Độ dài kỳ kinh là trung vị các kỳ đã ghi đủ (chỉ ghi ngày đầu thì coi như 5 ngày).
+- Rụng trứng ước tính 14 ngày trước kỳ kinh kế tiếp (pha hoàng thể khá ổn định quanh 14 ngày, Lenton 1984); **cửa sổ dễ thụ thai** từ 5 ngày trước tới 1 ngày sau đó (Wilcox 1995). Các pha: hành kinh, nang noãn, rụng trứng (±1 ngày), hoàng thể. Quá ngày dự đoán mà chưa ghi kỳ mới thì hiện số ngày trễ. Chu kỳ gần đây chênh nhau hơn 7 ngày thì báo dự đoán kém chính xác. **Không dùng để tránh thai hay chẩn đoán.**
+- **Điểm sẵn sàng**: ở pha hoàng thể nhịp tim nghỉ thường cao hơn 2–3 nhịp/phút so với pha nang noãn (Shilaih 2017). Trước khi so với mức nền, ứng dụng trừ phần tăng này khỏi nhịp tim khi ngủ của các đêm pha hoàng thể (cả đêm nay lẫn các đêm làm mức nền), để chu kỳ bình thường không bị báo là "chưa hồi phục". Có từ 5 đêm ở mỗi pha thì dùng mức chênh của chính bạn (giới hạn 0–6 nhịp/phút), chưa đủ thì 2 nhịp/phút. Trạng thái tinh thần dùng cùng giá trị đã trừ.
+
+**Xuất tinh** (`personal.py`)
+- Lần gần nhất, số lần 7 và 30 ngày qua, trung bình mỗi tuần trong 4 tuần.
+- **Giấc ngủ đêm sau so với các đêm khác** (60 ngày): thời lượng, phần ngủ sâu, thức giấc, giờ đi ngủ trung bình và nhịp tim khi ngủ của đêm ngay sau ngày có ghi (đêm thức dậy hôm sau), so với các đêm còn lại; cần ít nhất 3 đêm mỗi nhóm. Đây chỉ là so sánh trên dữ liệu của bạn, không cho thấy nguyên nhân.
+- Điểm sẵn sàng **không** đổi theo nhật ký này: chưa có bằng chứng hoạt động tình dục đêm trước làm giảm thể lực hôm sau (tổng quan Zavorsky 2019); nhiều người tự thấy dễ ngủ hơn sau cực khoái (Lastella 2019, tự báo cáo), điều mà phần so sánh giấc ngủ giúp bạn tự kiểm tra.
 
 ## Trạng thái tinh thần (ước tính)
 

@@ -1,6 +1,7 @@
 """Kiểm thử server web với vòng tay giả lập (không cần Bluetooth)."""
 
 import asyncio
+import datetime as dt
 import json
 
 import pytest
@@ -324,3 +325,57 @@ async def test_running_server_is_detected(client):
         sock.bind(("127.0.0.1", 0))
         free = sock.getsockname()[1]
     assert await running_server(free) is None
+
+
+async def test_live_hr_turns_on_automatically_when_set(client):
+    """Cài đặt ứng dụng → Nhịp tim trực tiếp: mỗi lần kết nối (kể cả tự kết nối lại) vòng tay tự đo liên tục; vẫn tắt
+    tay được trong phiên đó."""
+    s = client.service
+    r = await post(client, "/api/prefs", {"live_hr_auto": True})
+    assert (await r.json())["state"]["settings"]["live_hr_auto"] is True
+    await connect(client)
+    assert await wait_for(lambda: s.live_hr)
+    st = (await (await client.get("/api/state")).json())["state"]
+    assert st["live_hr"] is True
+    r = await post(client, "/api/hr/live", {"on": False})
+    assert (await r.json())["state"]["live_hr"] is False and not s.live_hr
+    # rớt kết nối rồi tự nối lại: lại tự bật
+    s.reconnect_delays = (0.01,)
+    s.band._client.drop()
+    assert not s.live_hr
+    assert await wait_for(lambda: s.connected and s.live_hr, 5)
+
+
+async def test_live_hr_stays_off_by_default(client):
+    await connect(client)
+    await asyncio.sleep(0.1)
+    assert client.service.live_hr is False
+
+
+async def test_journal_follows_profile_gender(client):
+    """Nhật ký kỳ kinh chỉ cho hồ sơ nữ, nhật ký xuất tinh chỉ cho hồ sơ nam; dữ liệu trả về cùng trang Sức khỏe."""
+    s = client.service
+    await connect(client)
+    today = dt.date.today().isoformat()
+    r = await post(client, "/api/journal", {"kind": "period", "date": today, "value": 1})
+    assert r.status == 400                                     # chưa chọn giới tính
+    s.profile["gender"] = 1
+    r = await post(client, "/api/journal", {"kind": "period", "date": today, "value": 1})
+    assert r.status == 200
+    h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
+    assert h["journal"] == {"kind": "period", "days": {today: 1}}
+    assert h["insights"]["cycle"]["day"] == 1 and h["insights"]["ejaculation"] is None
+    r = await post(client, "/api/journal", {"kind": "ejaculation", "date": today, "value": 1})
+    assert r.status == 400                                     # không đúng giới tính
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    r = await post(client, "/api/journal", {"kind": "period", "date": tomorrow, "value": 1})
+    assert r.status == 400                                     # không ghi trước ngày
+    s.profile["gender"] = 0
+    r = await post(client, "/api/journal", {"kind": "ejaculation", "date": today, "value": 2})
+    assert r.status == 200
+    h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
+    assert h["journal"]["kind"] == "ejaculation" and h["journal"]["days"] == {today: 2}
+    assert h["insights"]["ejaculation"]["count_7"] == 2 and h["insights"]["cycle"] is None
+    r = await post(client, "/api/journal", {"kind": "ejaculation", "date": today, "value": 0})
+    h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
+    assert h["journal"]["days"] == {}

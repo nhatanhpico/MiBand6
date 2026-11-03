@@ -41,6 +41,7 @@ from ..device import (PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError,
                       explain_ble_error, scan)
 from ..healthdb import HealthDB, db_path
 from .. import xiaomi_cloud as XC
+from .. import personal as PS
 from ..xiaomi_cloud import LoginError, SessionExpired, fetch_gps_file
 from .cloud import CloudSync
 
@@ -146,6 +147,7 @@ class BandService:
         self.reconnect_stopped: dict | None = None   # {"message", "at"}: tự kết nối lại đã dừng (key bị từ chối…)
         self.reconnect_delays = RECONNECT_DELAYS
         self._reconnect_task: asyncio.Task | None = None
+        self.live_hr = False   # đang theo dõi nhịp tim liên tục (bật tay, hoặc tự bật khi kết nối: settings.live_hr_auto)
         # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
         self.auto_health = True
         self.auto_cloud = not demo   # tự đồng bộ Mi Fitness sau khi kết nối (tắt ở chế độ xem thử)
@@ -229,6 +231,7 @@ class BandService:
             "env_key": bool(self.env_key),
             "reconnect": None if self.connected else self.reconnect,
             "reconnect_stopped": None if self.connected else self.reconnect_stopped,
+            "live_hr": self.live_hr and self.connected,
             "health": self.health_status,
             "weather": {**self.weather_status, **self.weather_settings()},
             "sync": {**self.sync_settings(), "cloud_last": self._cloud_last()},
@@ -249,6 +252,7 @@ class BandService:
     def on_event(self, kind: str, data) -> None:
         if kind == "disconnected":
             self._stop_beep = True
+            self.live_hr = False
             self._cancel_health()
             if self.busy:  # rớt giữa lúc đang kết nối: lỗi đã được báo qua kết quả của lần kết nối đó
                 return
@@ -360,6 +364,7 @@ class BandService:
         self.reconnect_stopped = None
         self.device_meta = {"name": name, "address": address, "protocol": used}
         self.live = {}
+        self.live_hr = False   # kết nối mới: vòng tay chưa đo liên tục (_after_connect bật nếu cài đặt muốn)
         # key từ .env không bị chép vào config.json (và xóa key cũ đã lưu ở đó)
         self.store.remember_device(address, name, "" if from_env else key_text.strip(), used)
         self.push_state()
@@ -379,6 +384,8 @@ class BandService:
                 await job()
             except Exception as e:  # noqa: BLE001
                 self.log(tr('Lỗi khi đọc dữ liệu: {e}', e=e))
+        if self.settings.get("live_hr_auto") and self.band is band and self.connected:
+            await self._live_hr_quiet(True)
         if self.auto_cloud:
             self._spawn(self._cloud_background())
         if self.weather_settings()["enabled"]:
@@ -860,13 +867,37 @@ class BandService:
             return None
         rem = self.rem_estimate()
         summary = db.summary(date, rem=rem)
-        summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000), rem=rem)
-        key = (date, db.last("last_sync"), db.last("cloud_workouts"), rem, get_lang(), self.profile.get("birth"))
-        if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, đổi ngôn ngữ…
+        summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000), rem=rem, profile=self.profile)
+        body = tuple(self.profile.get(k) for k in ("birth", "gender", "height", "weight"))
+        key = (date, db.last("last_sync"), db.last("cloud_workouts"), db.last("journal"), rem, get_lang(), body)
+        if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, ngôn ngữ, hồ sơ, nhật ký…
             self._insight_cache = {"key": key, "value": db.insights(date, self.profile, rem=rem)}
         summary["insights"] = self._insight_cache["value"]
         summary["rem_mode"] = self.settings.get("rem_mode", "estimate")
+        # nhật ký riêng chỉ cho đúng giới tính trong hồ sơ: nữ ghi kỳ kinh, nam ghi xuất tinh
+        sex = PS.sex_of(self.profile)
+        kind = {PS.SEX_FEMALE: "period", PS.SEX_MALE: "ejaculation"}.get(sex)
+        summary["journal"] = {"kind": kind, "days": db.journal(kind)} if kind else None
         return summary
+
+    def set_journal(self, kind: str, date: str, value: int) -> None:
+        """Ghi một ngày vào nhật ký riêng (chỉ loại hợp với giới tính trong hồ sơ). Chỉ lưu trên máy này."""
+        allowed = {PS.SEX_FEMALE: "period", PS.SEX_MALE: "ejaculation"}.get(PS.sex_of(self.profile))
+        if kind != allowed:
+            raise ApiError(tr('Chọn giới tính trong Cài đặt vòng tay → Hồ sơ trước khi ghi nhật ký này.'))
+        try:
+            day = dt.date.fromisoformat(date)
+        except ValueError as e:
+            raise ApiError(tr('Ngày không hợp lệ.')) from e
+        if day > dt.date.today() or day < dt.date.today() - dt.timedelta(days=3 * 366):
+            raise ApiError(tr('Ngày không hợp lệ.'))
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= (1 if kind == "period" else 20):
+            raise ApiError(tr('Lựa chọn không hợp lệ.'))
+        db = self.health_db()
+        if db is None:
+            raise ApiError(tr('Kết nối vòng tay một lần trước để ứng dụng biết lưu dữ liệu sức khỏe ở đâu.'), 409)
+        db.set_journal(kind, day.isoformat(), value)
+        self.push({"type": "health_data"})
 
     # ------------------------------------------------------------ mặt đồng hồ
     @property
@@ -1060,10 +1091,25 @@ class BandService:
         self.push_state()
         return message
 
+    async def set_live_hr(self, on: bool) -> None:
+        """Bật / tắt theo dõi nhịp tim liên tục (vòng tay đo liên tục, tốn pin hơn) và báo cho mọi giao diện."""
+        await self.require().realtime_heart_rate(on)
+        self.live_hr = on
+        self.push_state()
+
+    async def _live_hr_quiet(self, on: bool) -> None:
+        try:
+            await self.set_live_hr(on)
+            if on:
+                self.log(tr('Đã tự bật theo dõi nhịp tim liên tục (Cài đặt ứng dụng).'))
+        except Exception as e:  # noqa: BLE001
+            self.log(tr('Không bật được theo dõi nhịp tim liên tục: {e}', e=e))
+
     async def disconnect(self) -> None:
         """Người dùng chủ động ngắt: không tự kết nối lại nữa (kể cả khi đang chờ nối lại)."""
         self.want_connected = False
         self.reconnect_stopped = None
+        self.live_hr = False
         self._cancel_reconnect()
         self._cancel_health()
         if self.band:
@@ -1308,12 +1354,15 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             bpm = await band.measure_heart_rate()
         except asyncio.TimeoutError as e:
             raise ApiError(tr('Không đo được. Đeo vòng sát cổ tay hơn rồi thử lại.'), 504) from e
+        finally:
+            if S.live_hr and S.connected:   # đo một lần dừng chế độ liên tục của vòng tay: bật lại như trước
+                await S._live_hr_quiet(True)
         return ok(bpm=bpm)
 
     async def hr_live(req):
         on = bool((await body(req)).get("on"))
-        await S.require().realtime_heart_rate(on)
-        return ok(on=on)
+        await S.set_live_hr(on)
+        return ok(on=on, state=S.state())
 
     async def settings_h(req):
         return ok(message=await S.apply(req.match_info["section"], await body(req)), state=S.state())
@@ -1376,6 +1425,11 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
 
     async def health_sync(_):
         return ok(status=S.start_health_sync())
+
+    async def journal_post(req):
+        b = await body(req)
+        S.set_journal(str(b.get("kind") or ""), str(b.get("date") or ""), b.get("value", 1))
+        return ok()
 
     async def track_get(req):
         try:
@@ -1486,6 +1540,10 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             S.settings["rem_mode"] = b["rem_mode"]
             S._insight_cache = {}
             S.push({"type": "health_data"})
+        if "live_hr_auto" in b:
+            S.settings["live_hr_auto"] = bool(b["live_hr_auto"])
+            if S.settings["live_hr_auto"] and S.connected and not S.live_hr:   # bật lúc đang kết nối: bật luôn
+                S._spawn(S._live_hr_quiet(True))
         S.store.save()
         if "keep_connected" in b:
             S.set_keep_connected(bool(b["keep_connected"]))
@@ -1564,6 +1622,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/devices/forget", forget_h)
     r.add_post("/api/log/clear", log_clear)
     r.add_get("/api/health", health_get)
+    r.add_post("/api/journal", journal_post)
     r.add_post("/api/health/sync", health_sync)
     r.add_get("/api/workouts/{start}/track", track_get)
     r.add_get("/api/tracks", tracks_get)

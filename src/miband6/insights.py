@@ -73,8 +73,21 @@ def _clock(minutes: float) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
-def hr_max(age: float | None) -> float:
-    return 208 - 0.7 * (age if age else 30)   # Tanaka, Monahan, Seals 2001
+def hr_max(age: float | None, sex: str | None = None) -> float:
+    """Nhịp tim tối đa ước tính: nữ theo Gulati 2010 (206 - 0,88 x tuổi, đo trên 5.437 phụ nữ), còn lại theo Tanaka,
+    Monahan, Seals 2001 (208 - 0,7 x tuổi). Chưa có ngày sinh thì coi 30 tuổi."""
+    age = age if age else 30
+    return 206 - 0.88 * age if sex == "female" else 208 - 0.7 * age
+
+
+def sleep_need(age: float | None) -> int:
+    """Nhu cầu ngủ (phút) theo khuyến nghị theo tuổi của National Sleep Foundation / AASM: 6-13 tuổi 9-11 giờ, 14-17 tuổi
+    8-10 giờ, người lớn 7-9 giờ (từ 65 tuổi 7-8 giờ); lấy giữa khoảng."""
+    if age is not None and age < 14:
+        return 600
+    if age is not None and age < 18:
+        return 540
+    return SLEEP_NEED
 
 
 def edwards_trimp(hr: float, hrmax: float) -> int:
@@ -90,15 +103,23 @@ def _part(key: str, title: str, score: float, value: str, detail: str) -> dict:
     return {"key": key, "title": title, "score": int(round(max(0.0, min(100.0, score)))), "value": value, "detail": detail}
 
 
+def _hr(n: dict) -> float:
+    """Nhịp tim khi ngủ dùng để so với mức nền: đã trừ phần tăng của pha hoàng thể nếu có ghi chu kỳ (personal.py)."""
+    return n.get("hr_adj", n["hr"])
+
+
 def _rhr_part(nights: list[dict], night: dict) -> dict | None:
-    base = [n["hr"] for n in nights[-BASELINE_NIGHTS - 1:-1] if n.get("hr")]
+    base = [_hr(n) for n in nights[-BASELINE_NIGHTS - 1:-1] if n.get("hr")]
     if not night.get("hr") or len(base) < MIN_BASELINE:
         return None
     mean, sd = _mean(base), max(_sd(base) or 0, 1.5)
-    z = (night["hr"] - mean) / sd
+    z = (_hr(night) - mean) / sd
     score = _interp(z, [(0.5, 100), (1.5, 75), (2.5, 50), (3.5, 25), (5, 10)])
-    diff = night["hr"] - mean
+    diff = _hr(night) - mean
     detail = tr('Nhịp tim khi ngủ đêm qua so với mức nền {n} đêm ({base} nhịp/phút).', n=len(base), base=int(round(mean)))
+    if "hr_adj" in night:
+        detail += " " + tr('Đang ở pha hoàng thể của chu kỳ: đã trừ {d} nhịp/phút nhịp tim tăng theo chu kỳ trước khi so.',
+                           d=f"{night['hr'] - night['hr_adj']:.1f}".rstrip("0").rstrip("."))
     if z >= 1.5:
         detail += " " + tr('Cao hơn thường lệ: cơ thể có thể chưa hồi phục (mệt, căng thẳng, rượu bia, sắp ốm).')
     value = tr('{n} nhịp/phút', n=int(round(night["hr"]))) + (f" ({diff:+.0f})" if abs(diff) >= 1 else "")
@@ -115,11 +136,13 @@ def _recovery_part(night: dict) -> dict | None:
                     p=int(round(frac * 100))))
 
 
-def sleep_score(night: dict, chronotype: float | None) -> tuple[float, list[str]]:
-    """Điểm giấc ngủ một đêm (0-100) và các lưu ý: thời lượng, hiệu quả, ngủ sâu, giờ ngủ so với chronotype."""
+def sleep_score(night: dict, chronotype: float | None, need: int = SLEEP_NEED) -> tuple[float, list[str]]:
+    """Điểm giấc ngủ một đêm (0-100) và các lưu ý: thời lượng (so với nhu cầu theo tuổi), hiệu quả, ngủ sâu, giờ ngủ
+    so với chronotype."""
     notes = []
-    dur = _interp(night["minutes"], [(0, 0), (240, 20), (300, 45), (360, 70), (420, 95), (450, 100), (540, 100),
-                                      (600, 90), (720, 70)])
+    shift = need - SLEEP_NEED   # đường điểm thời lượng dịch theo nhu cầu ngủ (người lớn 7,5 giờ)
+    dur = _interp(night["minutes"], [(0, 0)] + [(m + shift, v) for m, v in (
+        (240, 20), (300, 45), (360, 70), (420, 95), (450, 100), (540, 100), (600, 90), (720, 70))])
     in_bed = night["minutes"] + night.get("awake", 0)
     eff = night["minutes"] / in_bed if in_bed else 1
     eff_s = _interp(eff, [(0.70, 40), (0.80, 65), (0.85, 80), (0.90, 95), (0.95, 100)])
@@ -131,31 +154,32 @@ def sleep_score(night: dict, chronotype: float | None) -> tuple[float, list[str]
         parts.append((_interp(off, [(30, 100), (60, 85), (120, 60), (180, 40)]), 0.2))
         if off >= 90:
             notes.append(tr('ngủ lệch {t} so với giờ quen thuộc', t=_hm(off)))
-    if night["minutes"] < 420:
-        notes.append(tr('ngủ {t}, dưới 7 giờ', t=_hm(night["minutes"])))
+    if night["minutes"] < need - 30:
+        notes.append(tr('ngủ {t}, dưới {h} giờ', t=_hm(night["minutes"]), h=(need - 30) // 60))
     if eff < 0.85:
         notes.append(tr('thức giấc nhiều ({p}% thời gian trên giường là ngủ)', p=int(round(eff * 100))))
     total = sum(s * w for s, w in parts) / sum(w for _s, w in parts)
     return total, notes
 
 
-def _sleep_part(night: dict, chronotype: float | None) -> dict:
-    score, notes = sleep_score(night, chronotype)
+def _sleep_part(night: dict, chronotype: float | None, need: int = SLEEP_NEED) -> dict:
+    score, notes = sleep_score(night, chronotype, need)
     detail = tr('Thời lượng, độ liền mạch, ngủ sâu và giờ ngủ của đêm qua.')
     if notes:
         detail += " " + tr('Lưu ý: {notes}.', notes="; ".join(notes))
     return _part("sleep", tr('Giấc ngủ đêm qua'), score, _hm(night["minutes"]), detail)
 
 
-def _sleep_balance_part(nights: list[dict]) -> dict | None:
+def _sleep_balance_part(nights: list[dict], need: int = SLEEP_NEED) -> dict | None:
     recent = nights[-14:]
     if len(recent) < 3:
         return None
     weights = [i + 1 for i in range(len(recent))]   # đêm gần đây nặng hơn
-    ratio = sum(min(1.1, n["minutes"] / SLEEP_NEED) * w for n, w in zip(recent, weights)) / sum(weights)
-    debt = sum(max(0, SLEEP_NEED - n["minutes"]) for n in recent[-7:])
+    ratio = sum(min(1.1, n["minutes"] / need) * w for n, w in zip(recent, weights)) / sum(weights)
+    debt = sum(max(0, need - n["minutes"]) for n in recent[-7:])
     score = _interp(ratio, [(0.6, 20), (0.75, 50), (0.85, 70), (0.95, 90), (1.0, 100)])
-    detail = tr('Ngủ {n} đêm gần đây so với nhu cầu khoảng 7,5 giờ mỗi đêm (đêm gần nặng hơn).', n=len(recent))
+    detail = tr('Ngủ {n} đêm gần đây so với nhu cầu khoảng {t} mỗi đêm ở tuổi của bạn (đêm gần nặng hơn).',
+                n=len(recent), t=_hm(need))
     if debt >= 60:
         detail += " " + tr('Nợ ngủ 7 đêm qua: {t}.', t=_hm(debt))
     return _part("sleep_balance", tr('Cân bằng giấc ngủ'), score, tr('{p}% nhu cầu', p=int(round(ratio * 100))), detail)
@@ -245,7 +269,7 @@ def _zones(hrmax: float) -> dict:
 
 
 def readiness(nights: list[dict], days: list[dict], chronotype: float | None = None, fatigue: dict | None = None,
-              hrmax: float | None = None) -> dict | None:
+              hrmax: float | None = None, need: int = SLEEP_NEED) -> dict | None:
     """Điểm sẵn sàng hằng ngày (0-100) và lời khuyên tập hay nghỉ, cho ngày của đêm cuối trong `nights`.
 
     days: các ngày trước đó (ngày cuối là hôm qua); fatigue: {"hours": [(giờ, TRIMP)], "now": thời điểm tính} cho
@@ -253,8 +277,8 @@ def readiness(nights: list[dict], days: list[dict], chronotype: float | None = N
     if not nights:
         return None
     night = nights[-1]
-    parts = [p for p in (_rhr_part(nights, night), _recovery_part(night), _sleep_part(night, chronotype),
-                         _sleep_balance_part(nights), _stress_part(days)) if p]
+    parts = [p for p in (_rhr_part(nights, night), _recovery_part(night), _sleep_part(night, chronotype, need),
+                         _sleep_balance_part(nights, need), _stress_part(days)) if p]
     parts += _load_parts(days, fatigue)
     have = {p["key"] for p in parts}
     if len(parts) < 3 or not ({"rhr", "sleep"} & have):
@@ -423,7 +447,7 @@ def circadian(nights: list[dict], sri: float | None = None) -> dict | None:
 # ---------------------------------------------------------------- trạng thái tinh thần (ước tính)
 
 
-def mental_state(nights: list[dict], days: list[dict], circ: dict | None) -> dict | None:
+def mental_state(nights: list[dict], days: list[dict], circ: dict | None, need: int = SLEEP_NEED) -> dict | None:
     """Ước tính trạng thái tinh thần hiện tại từ các yếu tố sinh lý liên quan tới tâm trạng. Không phải chẩn đoán."""
     factors = []   # (khóa, mức rủi ro 0-1, trọng số, nhóm "tension" | "fatigue", mô tả)
     stress_days = [d for d in days[-3:] if d.get("stress_n", 0) >= 6]
@@ -437,8 +461,8 @@ def mental_state(nights: list[dict], days: list[dict], circ: dict | None) -> dic
     recent = nights[-3:]
     if recent:
         avg = _mean([n["minutes"] for n in recent])
-        debt = sum(max(0, SLEEP_NEED - n["minutes"]) for n in nights[-7:])
-        risk = min(1.0, max(0.0, (SLEEP_NEED - avg) / 150) + min(0.4, debt / 900))
+        debt = sum(max(0, need - n["minutes"]) for n in nights[-7:])
+        risk = min(1.0, max(0.0, (need - avg) / 150) + min(0.4, debt / 900))
         factors.append(("sleep", risk, 0.25, "fatigue",
                         tr('ngủ trung bình {t} mỗi đêm ({n} đêm), nợ ngủ 7 ngày {d}', t=_hm(avg), n=len(recent), d=_hm(debt))))
     if circ and (circ.get("cpd") is not None or circ.get("sjl") is not None):
@@ -447,11 +471,11 @@ def mental_state(nights: list[dict], days: list[dict], circ: dict | None) -> dic
         risk = min(1.0, max(cpd - 0.5, 0) / 2.0 * 0.6 + min(sjl / 2, 1) * 0.4)
         factors.append(("circadian", risk, 0.15, "fatigue",
                         tr('áp lực nhịp sinh học {s}/100', s=circ.get("strain", 0))))
-    base = [n["hr"] for n in nights[-BASELINE_NIGHTS - 1:-1] if n.get("hr")]
+    base = [_hr(n) for n in nights[-BASELINE_NIGHTS - 1:-1] if n.get("hr")]
     if len(base) >= MIN_BASELINE and nights and nights[-1].get("hr"):
-        z = (nights[-1]["hr"] - _mean(base)) / max(_sd(base) or 0, 1.5)
+        z = (_hr(nights[-1]) - _mean(base)) / max(_sd(base) or 0, 1.5)
         factors.append(("rhr", min(1.0, max(0.0, z / 2.5)), 0.15, "tension",
-                        tr('nhịp tim nghỉ {d} nhịp/phút so với thường lệ', d=f"{nights[-1]['hr'] - _mean(base):+.0f}")))
+                        tr('nhịp tim nghỉ {d} nhịp/phút so với thường lệ', d=f"{_hr(nights[-1]) - _mean(base):+.0f}")))
     week = days[-7:]
     if week:
         mvpa = sum(d.get("moderate", 0) + 2 * d.get("vigorous", 0) for d in week)

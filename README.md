@@ -24,11 +24,18 @@
 - 10 báo thức: đọc từ vòng tay, chỉnh sửa, lưu lại
 - Đồng bộ giờ với máy tính (tự làm mỗi lần kết nối)
 
-**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
+**Hôm nay** (trang mở ra khi khởi động): mọi thứ xem hằng ngày trên một màn hình, kể cả khi vòng tay chưa kết nối (hiện số liệu đã đồng bộ, kèm băng báo kết nối và lý do nếu tự kết nối lại đã dừng)
+- **Điểm sẵn sàng** kèm lời khuyên và thời gian hồi phục, **giấc ngủ đêm qua** (thời lượng, điểm ngủ, các giai đoạn)
+- Ô **bước chân** (vòng tiến độ mục tiêu, quãng đường, năng lượng), **nhịp tim** (số mới nhất, nhịp tim nghỉ so với mức nền), **căng thẳng**, **pin vòng tay**, và **chu kỳ** nếu hồ sơ là nữ và đã ghi kỳ kinh
+- Bước chân 7 ngày và giấc ngủ 7 đêm (bấm một cột để mở ngày đó), đo nhịp tim ngay hoặc theo dõi liên tục; nút **Đồng bộ** và **Tìm vòng tay** ở đầu trang
+
+**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness, chia thẻ **Giấc ngủ / Vận động / Tim mạch / Tập luyện / Phân tích**; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
 - **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
 - **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Con số của hôm nay cũng nằm ở đầu trang **Tổng quan** (trang mở ra khi khởi động), hiện cả khi vòng tay chưa kết nối; bấm vào để xem chi tiết. Thêm **trạng thái tinh thần** ước tính, **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
 - Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức và **REM ước tính từ nhịp tim** (chưa xác minh được REM của hãng qua bộ giải mã Bluetooth hiện tại; tắt được) theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
-- Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
+- Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); bấm ô **Bước chân** ở trang Hôm nay để mở thẻ Vận động
+- Theo **hồ sơ** (Cài đặt vòng tay → Hồ sơ): nhịp tim tối đa theo tuổi và giới tính, nhu cầu ngủ theo tuổi, **BMI** (ngưỡng cho người châu Á)
+- **Nhật ký riêng**, chỉ lưu trên máy: hồ sơ nữ có thẻ **Chu kỳ** (ghi ngày có kinh, dự đoán kỳ tiếp theo và ngày dễ thụ thai theo lịch; điểm sẵn sàng trừ phần nhịp tim nghỉ tăng ở pha hoàng thể), hồ sơ nam có thẻ **Sinh lý** (ghi ngày xuất tinh, tần suất, so sánh giấc ngủ đêm sau với các đêm khác). Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth nên phải ghi tay
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
 - Tự đồng bộ khi kết nối và theo lịch ở **Cài đặt ứng dụng** (vòng tay: 15 phút–2 giờ; Mi Fitness: 1 giờ–1 ngày; hoặc chỉ khi bấm); bấm **Đồng bộ** để lấy ngay. Cùng trang đó có ngôn ngữ giao diện, trạng thái tài khoản Mi Fitness (gia hạn, đăng nhập lại, đăng xuất) và cách tự kết nối lại.
 - **Bản đồ** của từng buổi chạy, đi bộ, đạp xe ngoài trời và bản đồ **Những nơi đã đến** gom mọi lộ trình (tô màu theo loại, **lọc theo quốc gia, thành phố**), mở ngay trong hộp thoại bằng **Apple Maps** gắn sẵn của ứng dụng macOS; **Chia sẻ ảnh** lưu ảnh bản đồ kèm số liệu rồi mở bảng chia sẻ. Trình duyệt hiện nút **Mở trong ứng dụng** thay cho bản đồ. Lộ trình được tải sẵn ở nền, mỗi lộ trình khoảng 1 giây.
@@ -37,7 +44,7 @@
 
 **Hai trang cài đặt**
 - **Cài đặt vòng tay**: những gì được ghi vào vòng tay (hồ sơ, màn hình, mặt đồng hồ, ứng dụng trên vòng tay, đo sức khỏe)
-- **Cài đặt ứng dụng** (trong ứng dụng macOS: ⌘,): những gì chỉ thuộc ứng dụng trên máy tính (ngôn ngữ, lịch tự đồng bộ, tài khoản Mi Fitness, kết nối, thời tiết, ước tính REM)
+- **Cài đặt ứng dụng** (trong ứng dụng macOS: ⌘,): những gì chỉ thuộc ứng dụng trên máy tính (ngôn ngữ, lịch tự đồng bộ, tài khoản Mi Fitness, kết nối, **tự bật theo dõi nhịp tim liên tục mỗi lần kết nối**, thời tiết, ước tính REM)
 
 **Thời tiết** (**Cài đặt ứng dụng → Thời tiết**; chi tiết: [docs/thoi-tiet.md](docs/thoi-tiet.md))
 - Mỗi lần kết nối và mỗi giờ, gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm, giờ mặt trời mọc và lặn (dữ liệu Open-Meteo, không cần tài khoản)
@@ -53,6 +60,7 @@
 - Tự kết nối lại khi vòng tay mất kết nối (ra khỏi vùng sóng, máy Mac ngủ dậy…), thử lại thưa dần tới mỗi phút một lần
 - Tự kết nối với vòng tay đã nhớ khi server khởi động
 - Bật/tắt bằng **Giữ kết nối** ở trang **Thiết bị** (mặc định bật). Bấm **Ngắt kết nối** thì ứng dụng thôi tự nối lại cho tới khi bạn kết nối lần nữa
+- Vòng tay không trả lời bước xác thực (thường vì đang nối với điện thoại) thì cứ thử tiếp; chỉ dừng khi vòng tay từ chối auth key 3 lần liền, và trang Hôm nay, Thiết bị hiện lý do kèm nút **Thử kết nối lại**. Lỗi Bluetooth tắt, chưa cấp quyền hay không thấy vòng tay được báo rõ ràng
 
 **Công cụ**
 - Gửi thông báo có biểu tượng tới vòng tay, giả lập cuộc gọi đến

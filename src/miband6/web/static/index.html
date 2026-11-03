@@ -39,6 +39,12 @@
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 11H6a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 18 11h-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.6A8.2 8.2 0 1 1 9.4 4a6.6 6.6 0 0 0 10.6 10.6z"/></symbol>
+  <symbol id="i-steps" viewBox="0 0 24 24"><ellipse cx="8.2" cy="8.3" rx="2.7" ry="4.1"/><ellipse cx="15.8" cy="12.7" rx="2.7" ry="4.1"/><path d="M6.6 15.8h3.2M14.2 20.2h3.2"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 17a7.5 7.5 0 1 1 15 0"/><path d="m12 17 3.6-4.6"/><circle cx="12" cy="17" r="1.2"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3.6s6 6.2 6 10.4a6 6 0 0 1-12 0c0-4.2 6-10.4 6-10.4z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3"/></symbol>
 </svg>
 
 <div class="app">
@@ -70,93 +76,119 @@
   <main class="main">
     <div id="offline" class="banner warn" hidden>Mất kết nối tới server trên máy tính. Đang thử lại…</div>
     <div id="demoBanner" class="banner info" hidden>Chế độ xem thử: đang dùng vòng tay giả lập, không có Bluetooth.</div>
-    <div id="nativeAppNotice" class="banner info" hidden><span>Để đồng bộ khi đóng cửa sổ, nhận thông báo và dùng Apple Maps, hãy mở ứng dụng macOS và giữ ứng dụng chạy.</span> <a href="miband6://open?page=overview" class="btn small">Mở trong ứng dụng</a></div>
+    <div id="nativeAppNotice" class="banner info app-notice" hidden><span>Để đồng bộ khi đóng cửa sổ, nhận thông báo và dùng Apple Maps, hãy mở ứng dụng macOS và giữ ứng dụng chạy.</span> <a href="miband6://open?page=overview" class="btn small">Mở trong ứng dụng</a><button id="nativeAppClose" class="icon-btn" type="button" aria-label="Ẩn thông báo này"><svg class="ic"><use href="#i-x"/></svg></button></div>
 
-    <!-- ============================================================ Tổng quan -->
+    <!-- ============================================================ Hôm nay (Tổng quan) -->
     <section class="page" id="page-overview">
       <header class="page-head">
         <div>
           <p class="date-line" id="dateLine"></p>
-          <h1>Tổng quan</h1>
+          <h1>Hôm nay</h1>
         </div>
-        <button id="refreshBtn" class="btn ghost" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đọc lại</span></button>
+        <div class="head-actions">
+          <span class="sync-chip" id="ovSyncChip" role="status"></span>
+          <button id="ovFindBtn" class="btn ghost" data-conn title="Rung vòng tay để tìm"><svg class="ic"><use href="#i-vibrate"/></svg><span>Tìm vòng tay</span></button>
+          <button id="ovSyncBtn" class="btn primary" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ</span></button>
+        </div>
       </header>
 
-      <a class="ready-today" id="ovReadyCard" href="#health/readiness" hidden>
-        <span class="ready-today-dial">
-          <svg class="rd-ring" id="ovReadyRing" viewBox="0 0 120 120" aria-hidden="true"></svg>
-          <b id="ovReadyScore">—</b>
-        </span>
-        <span class="ready-today-text">
-          <span class="ready-today-title">Điểm sẵn sàng hôm nay</span>
-          <span class="ready-today-note" id="ovReadyNote" hidden></span>
-        </span>
-      </a>
+      <div class="conn-banner" id="ovConn" role="status" hidden>
+        <span class="conn-dot" aria-hidden="true"></span>
+        <p id="ovConnText"></p>
+        <button id="ovRetryBtn" class="btn small" type="button" hidden>Thử kết nối lại</button>
+        <a class="btn small" href="#device" id="ovConnLink">Kết nối</a>
+      </div>
 
-      <div class="empty" id="overviewEmpty">
+      <div class="empty" id="overviewEmpty" hidden>
         <svg class="empty-art" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-band"/></svg>
         <h2>Chưa kết nối vòng tay</h2>
-        <p>Kết nối để xem pin, bước chân, nhịp tim và chỉnh cài đặt.</p>
+        <p>Kết nối để xem giấc ngủ, bước chân, nhịp tim và mức sẵn sàng mỗi ngày.</p>
         <a class="btn primary" href="#device">Kết nối vòng tay</a>
       </div>
 
       <div id="overviewBody" hidden>
-        <section class="daily-summary" aria-label="Tóm tắt hôm nay">
-          <div class="summary-heading"><p class="eyebrow">MI BAND 6 · HÔM NAY</p><h2>Mỗi ngày, hiểu cơ thể hơn.</h2><p id="ovSync" class="muted">Chưa đồng bộ dữ liệu sức khỏe.</p></div>
-          <div class="summary-metrics">
-            <a href="#health/steps"><b id="ovGoal">—</b><span>Mục tiêu bước</span></a>
-            <a href="#health/steps"><b id="ovStreak">—</b><span>Chuỗi ngày đạt mục tiêu</span></a>
+        <div class="today-hero">
+          <a class="hero-card ready-card" id="ovReadyCard" href="#health/insights">
+            <span class="ready-dial">
+              <svg class="rd-ring" id="ovReadyRing" viewBox="0 0 120 120" aria-hidden="true"></svg>
+              <b id="ovReadyScore">—</b>
+            </span>
+            <span class="hero-text">
+              <span class="eyebrow">Điểm sẵn sàng <span class="est-chip" title="Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.">Ước tính</span></span>
+              <span class="hero-title" id="ovReadyLabel">—</span>
+              <span class="hero-line" id="ovReadyPlan"></span>
+              <span class="hero-meta" id="ovReadyMeta"></span>
+            </span>
+          </a>
+          <a class="hero-card sleep-card" id="ovSleepCard" href="#health/sleep">
+            <span class="eyebrow"><svg class="ic"><use href="#i-moon"/></svg>Giấc ngủ đêm qua</span>
+            <span class="sleep-top">
+              <b class="hero-big" id="ovSleep">—</b>
+              <span class="score-pill" id="ovSleepScore" hidden></span>
+            </span>
+            <span class="hero-line" id="ovSleepRange"></span>
+            <span class="sleep-segments" id="ovSleepStages" role="img" aria-label="Các giai đoạn giấc ngủ"></span>
+            <ul class="legend compact" id="ovSleepLegend"></ul>
+          </a>
+        </div>
+
+        <div class="metric-row">
+          <a class="metric m-steps" href="#health/activity">
+            <span class="metric-head"><svg class="ic"><use href="#i-steps"/></svg>Bước chân</span>
+            <span class="metric-main">
+              <span class="mini-ring" id="ovGoalRing" role="img" aria-label="Tiến độ mục tiêu bước"></span>
+              <span><b class="metric-value" id="ovSteps">—</b><span class="metric-unit" id="ovGoalTarget"></span></span>
+            </span>
+            <span class="metric-sub" id="ovStepsSub"></span>
+          </a>
+          <a class="metric m-hr" href="#health/heart">
+            <span class="metric-head"><svg class="ic"><use href="#i-heart"/></svg>Nhịp tim</span>
+            <span class="metric-main"><b class="metric-value" id="ovHr">—</b><span class="metric-unit">nhịp/phút</span></span>
+            <span class="metric-sub" id="ovHrSub"></span>
+          </a>
+          <a class="metric m-stress" href="#health/heart">
+            <span class="metric-head"><svg class="ic"><use href="#i-gauge"/></svg>Căng thẳng</span>
+            <span class="metric-main"><b class="metric-value" id="ovStress">—</b><span class="metric-unit" id="ovStressLabel"></span></span>
+            <span class="metric-sub" id="ovStressSub"></span>
+          </a>
+          <a class="metric m-cycle" id="ovCycleTile" href="#health/cycle" hidden>
+            <span class="metric-head"><svg class="ic"><use href="#i-drop"/></svg>Chu kỳ</span>
+            <span class="metric-main"><b class="metric-value" id="ovCycleDay">—</b><span class="metric-unit" id="ovCyclePhase"></span></span>
+            <span class="metric-sub" id="ovCycleSub"></span>
+          </a>
+          <div class="metric m-bat">
+            <span class="metric-head"><svg class="ic"><use href="#i-battery"/></svg>Pin vòng tay</span>
+            <span class="metric-main"><b class="metric-value" id="bat">—</b></span>
+            <span class="bat-bar" aria-hidden="true"><span id="batBar"></span></span>
+            <span class="metric-sub" id="batNote"></span>
           </div>
-        </section>
-        <div class="quick-actions" aria-label="Thao tác nhanh">
-          <button id="ovSyncBtn" class="btn primary" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ vòng tay</span></button>
-          <button id="ovMeasureBtn" class="btn" data-conn><svg class="ic"><use href="#i-heart"/></svg><span>Đo nhịp tim</span></button>
-          <button id="ovFindBtn" class="btn" data-conn><svg class="ic"><use href="#i-band"/></svg><span>Tìm vòng tay</span></button>
-          <a class="btn" href="#health">Xem sức khỏe</a>
         </div>
-        <div class="glance-grid">
-          <article class="card goal-glance">
-            <header class="card-head"><h2>Mục tiêu hôm nay</h2><p class="card-sub">Dữ liệu vận động từ vòng tay</p></header>
-            <div class="goal-glance-body"><div class="goal-orbit" id="ovGoalRing" role="img" aria-label="Tiến độ mục tiêu bước"><div><b id="ovSteps">—</b><span id="ovGoalTarget">—</span></div></div>
-              <dl class="glance-facts"><div><dt>Quãng đường</dt><dd id="ovDist">—</dd><small>Ước tính của vòng tay</small></div><div><dt>Năng lượng</dt><dd id="ovCalories">—</dd><small>Ước tính của vòng tay</small></div></dl>
-            </div>
+
+        <div class="week-row">
+          <article class="card week-card">
+            <header class="week-head"><h2>Bước chân 7 ngày</h2><span class="week-note" id="ovStreak"></span><a class="more-link" href="#health/activity">Chi tiết</a></header>
             <div class="chart" id="ovStepsTrend"></div>
-            <a class="hero-link" href="#health/steps">Xem lịch sử bước chân</a>
           </article>
-          <article class="card vitals-glance">
-            <header class="card-head"><h2>Chỉ số gần nhất</h2><p class="card-sub">Số đo đã đồng bộ, không phải theo dõi trực tiếp</p></header>
-            <dl class="glance-vitals"><div><dt>Nhịp tim</dt><dd id="ovHr">—</dd><small id="ovHrTime">—</small></div><div><dt>Căng thẳng</dt><dd id="ovStress">—</dd><small id="ovStressTime">—</small></div><div><dt>Nhịp tim nghỉ</dt><dd id="ovRhr">—</dd><small>Ước tính từ nhịp tim khi ngủ</small></div></dl>
-            <a class="hero-link" href="#health/hr">Xem chi tiết chỉ số</a>
-          </article>
-          <article class="card sleep-glance">
-            <header class="card-head"><h2>Giấc ngủ &amp; hồi phục</h2><p class="card-sub" id="ovSleepRange">Giấc ngủ kết thúc hôm nay</p></header>
-            <div class="sleep-glance-top"><p class="card-value" id="ovSleep">—</p><p class="sleep-score"><b id="ovSleepScore">—</b><span>Điểm ngủ · ước tính</span></p></div>
-            <div class="sleep-segments" id="ovSleepStages" role="img" aria-label="Các giai đoạn giấc ngủ"></div><ul class="legend" id="ovSleepLegend"></ul>
-            <p class="card-sub">REM chỉ hiện khi có dữ liệu; REM do ứng dụng suy ra được ghi là ước tính. Chưa có dữ liệu chất lượng hô hấp.</p>
-            <a class="hero-link" href="#health/sleep">Xem giấc ngủ</a>
+          <article class="card week-card">
+            <header class="week-head"><h2>Giấc ngủ 7 đêm</h2><span class="week-note" id="ovSleepAvg"></span><a class="more-link" href="#health/sleep">Chi tiết</a></header>
+            <div class="chart" id="ovSleepTrend"></div>
           </article>
         </div>
-        <div class="tiles">
-          <article class="tile tile-hr">
-            <header class="tile-head"><svg class="ic"><use href="#i-heart"/></svg><h2>Nhịp tim</h2></header>
-            <p class="tile-value"><span id="hr" class="num">—</span> <span class="unit">nhịp/phút</span></p>
-            <div class="chart hr-live" id="hrLive"></div>
-            <p class="tile-note muted" id="hrRange"></p>
-            <p class="tile-note" id="hrNote">Đeo vòng sát cổ tay rồi bấm Đo ngay.</p>
-            <div class="tile-actions">
+
+        <article class="card live-card" id="ovLiveHr">
+          <header class="card-head split-head">
+            <div><h2>Đo nhịp tim</h2><p class="card-sub" id="hrNote">Đeo vòng sát cổ tay rồi bấm Đo ngay.</p></div>
+            <div class="head-actions">
               <button id="hrLiveBtn" class="btn" data-conn aria-pressed="false">Theo dõi liên tục</button>
               <button id="hrMeasureBtn" class="btn primary" data-conn>Đo ngay</button>
             </div>
-          </article>
-          <article class="tile tile-bat">
-            <header class="tile-head"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3"/></svg><h2>Pin</h2></header>
-            <div class="bat-ring">
-              <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="40" class="ring-bg"/><circle id="batRing" cx="50" cy="50" r="40" class="ring" transform="rotate(-90 50 50)" stroke-dasharray="0 252"/></svg>
-              <span id="bat" class="num">—</span>
-            </div>
-            <p class="tile-note" id="batNote"></p>
-          </article>
-        </div>
+          </header>
+          <div class="live-body">
+            <p class="live-value"><span id="hr" class="num">—</span> <span class="unit">nhịp/phút</span></p>
+            <div class="chart hr-live" id="hrLive"></div>
+          </div>
+          <p class="tile-note muted" id="hrRange"></p>
+        </article>
       </div>
     </section>
 
@@ -168,7 +200,7 @@
           <h1>Sức khỏe</h1>
         </div>
         <div class="head-actions">
-          <div class="day-nav">
+          <div class="day-nav" id="hDayNav">
             <button id="hPrev" class="nav-arrow" type="button" aria-label="Ngày trước"><svg class="ic"><use href="#i-chev-left"/></svg></button>
             <button id="hDateBtn" class="date-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="calPop">
               <svg class="ic"><use href="#i-calendar"/></svg>
@@ -191,21 +223,165 @@
           <button id="hSyncBtn" class="btn" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ</span></button>
         </div>
       </header>
-      <p class="banner info" id="hEmpty" hidden>Chưa có dữ liệu. Kết nối vòng tay rồi bấm Đồng bộ để lấy dữ liệu vòng tay đã lưu: giấc ngủ, nhịp tim, bước chân, PAI, căng thẳng, SpO2 và các buổi tập.</p>
-      <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
 
-      <div class="hgrid">
+      <div class="subtabs htabs" role="tablist" aria-label="Nhóm dữ liệu sức khỏe">
+        <button role="tab" data-htab="sleep">Giấc ngủ</button>
+        <button role="tab" data-htab="activity">Vận động</button>
+        <button role="tab" data-htab="heart">Tim mạch</button>
+        <button role="tab" data-htab="workouts">Tập luyện</button>
+        <button role="tab" data-htab="cycle" hidden>Chu kỳ</button>
+        <button role="tab" data-htab="intimacy" hidden>Sinh lý</button>
+        <button role="tab" data-htab="insights">Phân tích</button>
+      </div>
+      <p class="banner info" id="hEmpty" hidden>Chưa có dữ liệu. Kết nối vòng tay rồi bấm Đồng bộ để lấy dữ liệu vòng tay đã lưu: giấc ngủ, nhịp tim, bước chân, PAI, căng thẳng, SpO2 và các buổi tập.</p>
+
+      <!-- Giấc ngủ -->
+      <div class="hpanel" id="htab-sleep" role="tabpanel">
+        <article class="card" id="health-sleep">
+          <header class="card-head split-head">
+            <div><h2>Giấc ngủ</h2><p class="card-sub" id="slRange"></p></div>
+            <span class="score-pill big" id="slScore" hidden></span>
+          </header>
+          <dl class="stats" id="slStats"></dl>
+          <div class="chart" id="slChart"></div>
+          <ul class="legend" id="slLegend"></ul>
+          <p class="card-sub" id="slNotes"></p>
+        </article>
+        <article class="card">
+          <header class="card-head"><h2>14 đêm gần đây</h2><p class="card-sub">Bấm một cột để xem đêm đó.</p></header>
+          <div class="chart" id="slHistory"></div>
+        </article>
+        <article class="card" id="health-circadian">
+          <header class="card-head"><h2>Nhịp sinh học</h2><p class="card-sub" id="ciSub"></p></header>
+          <dl class="stats" id="ciStats"></dl>
+          <div class="chart" id="ciChart"></div>
+          <ul class="legend" id="ciLegend"></ul>
+          <ul class="ci-notes" id="ciNotes"></ul>
+        </article>
+      </div>
+
+      <!-- Vận động -->
+      <div class="hpanel" id="htab-activity" role="tabpanel" hidden>
+        <article class="card" id="health-steps">
+          <header class="card-head"><h2>Bước chân</h2><p class="card-sub" id="stSub"></p></header>
+          <p class="card-value"><span id="stTotal" class="num">—</span> <span class="unit">bước</span></p>
+          <div class="chart" id="stHourly"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><h2>Mọi ngày đã ghi</h2><p class="card-sub">Bấm một cột để xem ngày đó.</p></header>
+          <div class="chart" id="stHistory"></div>
+          <details class="table-wrap">
+            <summary>Xem dạng bảng</summary>
+            <table class="data-table"><thead><tr><th>Ngày</th><th>Bước chân</th></tr></thead><tbody id="stTable"></tbody></table>
+          </details>
+        </article>
+        <div class="hgrid">
+          <article class="card" id="health-intensity">
+            <header class="card-head"><h2>Cường độ vận động</h2><p class="card-sub" id="aiSub"></p></header>
+            <div class="hero-num"><b id="aiRatio">—</b><span id="aiRatioLabel"></span></div>
+            <div class="chart" id="aiChart"></div>
+            <ul class="legend" id="aiLegend"></ul>
+            <p class="ins-detail" id="aiDetail"></p>
+          </article>
+          <article class="card" id="health-pai">
+            <header class="card-head"><h2>PAI</h2><p class="card-sub">Điểm hoạt động cá nhân trong 7 ngày; giữ trên 100 để tốt cho tim mạch.</p></header>
+            <dl class="stats" id="paiStats"></dl>
+            <div class="chart" id="paiChart"></div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Tim mạch -->
+      <div class="hpanel" id="htab-heart" role="tabpanel" hidden>
         <article class="card" id="health-hr">
-          <header class="card-head"><h2>Nhịp tim</h2><span class="metric-badge" id="hrBadge">Chưa có dữ liệu</span><p class="card-sub" id="hrSub"></p></header>
+          <header class="card-head split-head">
+            <div><h2>Nhịp tim</h2><p class="card-sub" id="hrSub"></p></div>
+            <span class="metric-badge" id="hrBadge">Chưa có dữ liệu</span>
+          </header>
           <dl class="stats" id="hrStats"></dl>
-          <details class="metric-details"><summary>Xem biểu đồ trong ngày</summary><div class="chart" id="hrChart"></div></details>
+          <div class="chart" id="hrChart"></div>
         </article>
-        <article class="card" id="health-spo2">
-          <header class="card-head"><h2>SpO2</h2><span class="metric-badge" id="spBadge">Đo từng lần</span><p class="card-sub">Nồng độ oxy trong máu ở các lần đo.</p></header>
-          <dl class="stats" id="spStats"></dl>
-          <details class="metric-details"><summary>Xem từng lần đo</summary><div class="table-scroll"><table class="data-table"><thead><tr><th>Lúc đo</th><th>SpO2</th><th>Cách đo</th></tr></thead><tbody id="spTable"></tbody></table></div></details>
+        <div class="hgrid wide-left">
+          <article class="card" id="health-stress">
+            <header class="card-head"><h2>Căng thẳng</h2><p class="card-sub" id="ssSub"></p></header>
+            <dl class="stats" id="ssStats"></dl>
+            <div class="chart" id="ssChart"></div>
+          </article>
+          <article class="card" id="health-spo2">
+            <header class="card-head split-head">
+              <div><h2>SpO2</h2><p class="card-sub">Nồng độ oxy trong máu ở các lần đo.</p></div>
+              <span class="metric-badge" id="spBadge">Đo từng lần</span>
+            </header>
+            <dl class="stats" id="spStats"></dl>
+            <details class="table-wrap"><summary>Xem từng lần đo</summary><div class="table-scroll"><table class="data-table"><thead><tr><th>Lúc đo</th><th>SpO2</th><th>Cách đo</th></tr></thead><tbody id="spTable"></tbody></table></div></details>
+          </article>
+        </div>
+        <p class="footnote" id="measureFacts"></p>
+      </div>
+
+      <!-- Tập luyện -->
+      <div class="hpanel" id="htab-workouts" role="tabpanel" hidden>
+        <article class="card" id="health-workouts">
+          <header class="card-head split-head">
+            <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
+            <div class="head-actions">
+              <button id="woMapAllBtn" class="btn small" type="button" hidden><svg class="ic"><use href="#i-route"/></svg><span>Những nơi đã đến</span></button>
+              <button id="woCloudBtn" class="btn small" type="button"><svg class="ic"><use href="#i-cloud"/></svg><span>Lấy lịch sử từ Mi Fitness</span></button>
+            </div>
+          </header>
+          <div class="table-scroll"><table class="data-table wo-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th class="wo-map-col"><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table></div>
+          <p class="card-sub wo-note">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
         </article>
-        <article class="card wide readiness" id="health-readiness">
+      </div>
+
+      <!-- Chu kỳ (hồ sơ nữ) -->
+      <div class="hpanel" id="htab-cycle" role="tabpanel" hidden>
+        <div class="journal-layout">
+          <article class="card" id="health-cycle">
+            <header class="card-head"><h2 id="cyTitle">Chu kỳ kinh nguyệt</h2><p class="card-sub" id="cySub"></p></header>
+            <p class="hero-big" id="cyDay">—</p>
+            <dl class="stats" id="cyStats"></dl>
+            <p class="journal-effect" id="cyEffect"></p>
+            <div class="tile-actions"><button id="cyTodayBtn" class="btn primary" type="button" aria-pressed="false">Hôm nay có kinh</button></div>
+          </article>
+          <article class="card journal-cal">
+            <header class="card-head split-head">
+              <h2 id="cyMonth"></h2>
+              <span class="cal-nav"><button id="cyPrevM" class="nav-arrow small" type="button" aria-label="Tháng trước"><svg class="ic"><use href="#i-chev-left"/></svg></button><button id="cyNextM" class="nav-arrow small" type="button" aria-label="Tháng sau"><svg class="ic"><use href="#i-chev-right"/></svg></button></span>
+            </header>
+            <div class="cal-grid jcal" id="cyGrid"></div>
+            <ul class="legend compact"><li><i class="k-logged"></i>Ngày có kinh (đã ghi)</li><li><i class="k-pred"></i>Dự đoán kỳ kinh</li><li><i class="k-fertile"></i>Dễ thụ thai (ước tính)</li></ul>
+            <p class="card-sub">Bấm một ngày để đánh dấu hoặc bỏ đánh dấu ngày có kinh.</p>
+          </article>
+        </div>
+        <p class="footnote">Dự đoán theo lịch từ các kỳ đã ghi: không dùng để tránh thai hay chẩn đoán. Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth, nên bạn ghi ở đây; dữ liệu chỉ lưu trên máy tính này.</p>
+      </div>
+
+      <!-- Sinh lý (hồ sơ nam) -->
+      <div class="hpanel" id="htab-intimacy" role="tabpanel" hidden>
+        <div class="journal-layout">
+          <article class="card" id="health-intimacy">
+            <header class="card-head"><h2>Nhật ký xuất tinh</h2><p class="card-sub" id="ejSub"></p></header>
+            <dl class="stats" id="ejStats"></dl>
+            <div class="tile-actions"><button id="ejTodayBtn" class="btn primary" type="button">Ghi hôm nay</button></div>
+            <h3 class="card-h3">Giấc ngủ đêm sau so với các đêm khác</h3>
+            <div class="compare" id="ejCompare"></div>
+          </article>
+          <article class="card journal-cal">
+            <header class="card-head split-head">
+              <h2 id="ejMonth"></h2>
+              <span class="cal-nav"><button id="ejPrevM" class="nav-arrow small" type="button" aria-label="Tháng trước"><svg class="ic"><use href="#i-chev-left"/></svg></button><button id="ejNextM" class="nav-arrow small" type="button" aria-label="Tháng sau"><svg class="ic"><use href="#i-chev-right"/></svg></button></span>
+            </header>
+            <div class="cal-grid jcal" id="ejGrid"></div>
+            <p class="card-sub">Bấm một ngày để ghi hoặc bỏ ghi.</p>
+          </article>
+        </div>
+        <p class="footnote">Chỉ là so sánh trên dữ liệu của bạn, không cho thấy nguyên nhân; điểm sẵn sàng không đổi theo nhật ký này. Dữ liệu chỉ lưu trên máy tính này.</p>
+      </div>
+
+      <!-- Phân tích -->
+      <div class="hpanel" id="htab-insights" role="tabpanel" hidden>
+        <article class="card readiness" id="health-readiness">
           <header class="card-head"><h2>Điểm sẵn sàng hôm nay</h2><p class="card-sub" id="rdSub"></p></header>
           <div class="rd-body">
             <div class="rd-hero">
@@ -219,82 +395,25 @@
               <p class="rd-recovery" id="rdRecovery" hidden></p>
             </div>
           </div>
-          <p class="card-sub estimate-note">Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.</p><details class="metric-details"><summary>Thành phần &amp; xu hướng</summary><ul class="rd-parts" id="rdParts"></ul>
-          <div class="chart" id="rdTrend"></div></details>
-        </article>
-        <article class="card wide" id="health-sleep">
-          <header class="card-head"><h2>Giấc ngủ</h2><p class="card-sub" id="slRange"></p></header>
-          <p class="card-value"><span id="slTotal" class="num">—</span></p>
-          <div class="chart" id="slChart"></div>
-          <ul class="legend" id="slLegend"></ul>
+          <ul class="rd-parts" id="rdParts"></ul>
           <h3 class="card-h3">14 ngày gần đây</h3>
-          <div class="chart" id="slHistory"></div>
+          <div class="chart" id="rdTrend"></div>
+          <p class="card-sub estimate-note">Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.</p>
         </article>
-        <article class="card wide" id="health-steps">
-          <header class="card-head"><h2>Bước chân</h2><p class="card-sub" id="stSub"></p></header>
-          <p class="card-value"><span id="stTotal" class="num">—</span> <span class="unit">bước</span></p>
-          <div class="chart" id="stHourly"></div>
-          <h3 class="card-h3">Mọi ngày đã ghi</h3>
-          <div class="chart" id="stHistory"></div>
-          <details class="table-wrap">
-            <summary>Xem dạng bảng</summary>
-            <table class="data-table"><thead><tr><th>Ngày</th><th>Bước chân</th></tr></thead><tbody id="stTable"></tbody></table>
-          </details>
-        </article>
-        <article class="card" id="health-stress">
-          <header class="card-head"><h2>Căng thẳng</h2><p class="card-sub" id="ssSub"></p></header>
-          <dl class="stats" id="ssStats"></dl>
-          <div class="chart" id="ssChart"></div>
-        </article>
-        <article class="card" id="health-pai">
-          <header class="card-head"><h2>PAI</h2><p class="card-sub">Điểm hoạt động cá nhân trong 7 ngày; giữ trên 100 để tốt cho tim mạch.</p></header>
-          <dl class="stats" id="paiStats"></dl>
-          <div class="chart" id="paiChart"></div>
-        </article>
-        <article class="card" id="health-intensity">
-          <header class="card-head"><h2>Cường độ vận động</h2><p class="card-sub" id="aiSub"></p></header>
-          <div class="hero-num"><b id="aiRatio">—</b><span id="aiRatioLabel"></span></div>
-          <div class="chart" id="aiChart"></div>
-          <ul class="legend" id="aiLegend"></ul>
-          <p class="ins-detail" id="aiDetail"></p>
-        </article>
-        <article class="card wide" id="health-workouts">
-          <header class="card-head split-head">
-            <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
-            <div class="head-actions">
-              <button id="woMapAllBtn" class="btn small" type="button" hidden><svg class="ic"><use href="#i-route"/></svg><span>Những nơi đã đến</span></button>
-              <button id="woCloudBtn" class="btn small" type="button"><svg class="ic"><use href="#i-cloud"/></svg><span>Lấy lịch sử từ Mi Fitness</span></button>
-            </div>
-          </header>
-          <p class="card-sub wo-note">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
-          <div class="table-scroll"><table class="data-table wo-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th class="wo-map-col"><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table></div>
-        </article>
-        <article class="card wide analysis" id="health-analysis">
-          <header class="card-head"><h2>Phân tích sức khỏe</h2><p class="card-sub" id="anSub"></p></header><details class="metric-details"><summary>Xem phân tích</summary>
+        <article class="card analysis" id="health-analysis">
+          <header class="card-head"><h2>Phân tích sức khỏe</h2><p class="card-sub" id="anSub"></p></header>
           <div class="insights" id="anList"></div>
           <p class="card-sub disclaimer">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
-        </details></article>
+        </article>
         <article class="card" id="health-mind">
-          <header class="card-head"><h2>Trạng thái tinh thần</h2><p class="card-sub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header><details class="metric-details"><summary>Xem phân tích</summary>
+          <header class="card-head"><h2>Trạng thái tinh thần</h2><p class="card-sub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header>
           <div class="md-state" id="mdState"></div>
           <div class="md-meters" id="mdMeters"></div>
           <ul class="md-factors" id="mdFactors"></ul>
           <p class="md-note">Nếu buồn chán, lo âu hoặc mất ngủ kéo dài trên hai tuần, hãy trò chuyện với người thân hoặc chuyên gia sức khỏe tâm thần.</p>
-        </details></article>
-        <article class="card wide" id="health-circadian">
-          <header class="card-head"><h2>Nhịp sinh học</h2><p class="card-sub" id="ciSub"></p></header><details class="metric-details"><summary>Xem phân tích</summary>
-          <dl class="stats" id="ciStats"></dl>
-          <div class="chart" id="ciChart"></div>
-          <ul class="legend" id="ciLegend"></ul>
-          <ul class="ci-notes" id="ciNotes"></ul>
-        </details></article>
-        <article class="card wide" id="health-measure">
-          <header class="card-head"><h2>Đo tự động</h2></header>
-          <dl class="facts" id="measureFacts"></dl>
-          <p class="card-sub">Mi Band 6 chỉ đo SpO2 khi bạn mở mục SpO2 trên vòng tay và bấm đo (ứng dụng không bật đo SpO2 từ xa được); kết quả hiện ở thẻ SpO2 sau lần đồng bộ kế tiếp. Nhịp tim và căng thẳng thì vòng tay tự đo theo cài đặt.</p>
-          <div class="tile-actions"><a class="btn" href="#settings/health">Mở cài đặt đo</a></div>
         </article>
       </div>
+      <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
     </section>
 
     <!-- ============================================================ Cài đặt -->
@@ -639,6 +758,12 @@
             <label class="row"><span class="row-label">Chờ tối đa giữa hai lần thử</span><select id="syncRetry"></select></label>
           </div>
           <div class="group-foot"><button id="reconnectNowBtn" class="btn" type="button">Kết nối lại ngay</button></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Nhịp tim trực tiếp</h2><p>Bật thì mỗi lần ứng dụng kết nối với vòng tay (kể cả tự kết nối lại), vòng tay đo nhịp tim liên tục và trang Hôm nay hiện nhịp tim theo thời gian thực. Vẫn tắt được ở thẻ Đo nhịp tim. Đo liên tục làm vòng tay tốn pin hơn.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Tự bật theo dõi liên tục khi kết nối</span><input type="checkbox" class="switch" id="liveHrAuto"></label>
+          </div>
         </div>
         <div class="group" id="weatherGroup">
           <div class="group-head"><h2>Thời tiết</h2><p>Mỗi lần kết nối và mỗi giờ, ứng dụng gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm và giờ mặt trời mọc, lặn. Dữ liệu từ Open-Meteo.</p></div>

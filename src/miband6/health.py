@@ -498,6 +498,30 @@ GOOD, OK, WATCH, ALERT, NONE = "good", "ok", "watch", "alert", "none"
 BRISK_STEPS = 100        # bước/phút: đi bộ nhanh trở lên được tính là vận động vừa
 
 
+def body_mass_index(height_cm: float | None, weight_kg: float | None) -> float | None:
+    try:
+        h, w = float(height_cm) / 100, float(weight_kg)
+    except (TypeError, ValueError):
+        return None
+    return round(w / (h * h), 1) if 1.0 <= h <= 2.5 and 20 <= w <= 300 else None
+
+
+def bmi_class(bmi: float) -> tuple[str, str]:
+    """(trạng thái, nhãn) theo ngưỡng BMI cho người châu Á của WHO (Lancet 2004): người Việt có nguy cơ tim mạch,
+    tiểu đường ở BMI thấp hơn ngưỡng 25/30 chung."""
+    from .i18n import tr
+
+    if bmi < 18.5:
+        return WATCH, tr('thiếu cân')
+    if bmi < 23:
+        return GOOD, tr('bình thường')
+    if bmi < 25:
+        return OK, tr('thừa cân')
+    if bmi < 30:
+        return WATCH, tr('béo phì độ I')
+    return ALERT, tr('béo phì độ II')
+
+
 def _avg(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
@@ -520,6 +544,14 @@ def _clock_spread(starts: list[int]) -> float:
     return (sum((m - mean) ** 2 for m in mins) / len(mins)) ** 0.5
 
 
+def group_dec(x: float, digits: int = 1) -> str:
+    """Số thập phân theo ngôn ngữ giao diện: 22,4 (tiếng Việt), 22.4 (tiếng Anh)."""
+    from .i18n import get_lang
+
+    text = f"{x:.{digits}f}"
+    return text if get_lang() == "en" else text.replace(".", ",")
+
+
 def group_int(n: float) -> str:
     """Số nguyên có dấu tách nghìn theo ngôn ngữ giao diện: 21.430 (tiếng Việt), 21,430 (tiếng Anh)."""
     from .i18n import get_lang
@@ -530,12 +562,13 @@ def group_int(n: float) -> str:
 
 def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | None,
             spo2: list[tuple], stress: list[int], active_minutes: int, workouts: int, last_data: int | None,
-            now: float | None = None) -> dict:
+            now: float | None = None, sleep_need: int = 450, body: dict | None = None) -> dict:
     """Nhận xét sức khỏe từ dữ liệu gần đây, theo khuyến nghị chung cho người lớn (không phải chẩn đoán).
 
     nights: các đêm gần nhất (cũ tới mới) {date, minutes, deep, awake, start, hr};
     steps_days: tổng bước các ngày đã trọn (cũ tới mới); spo2: [(ts, %)] 30 ngày; stress: các số đo 7 ngày;
-    active_minutes: phút vận động vừa/mạnh 7 ngày; workouts: số buổi tập 7 ngày."""
+    active_minutes: phút vận động vừa/mạnh 7 ngày; workouts: số buổi tập 7 ngày; sleep_need: nhu cầu ngủ theo tuổi
+    (phút, insights.sleep_need); body: {age, height (cm), weight (kg)} từ hồ sơ, cho BMI."""
     from .i18n import tr
 
     now = now or dt.datetime.now().timestamp()
@@ -548,13 +581,18 @@ def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | N
     recent = [n for n in nights if n["minutes"]][-7:]
     if recent:
         avg = _avg([n["minutes"] for n in recent])
-        short = sum(1 for n in recent if n["minutes"] < 360)
-        status = GOOD if 420 <= avg <= 570 else WATCH if avg >= 360 else ALERT
-        detail = tr('Trung bình {n} đêm gần nhất. Người lớn nên ngủ 7–9 giờ mỗi đêm.', n=len(recent))
-        if avg > 570:
+        lo, hi = sleep_need - 30, sleep_need + 120   # người lớn: 7–9 giờ (khoảng khuyến nghị theo tuổi)
+        short = sum(1 for n in recent if n["minutes"] < lo - 60)
+        status = GOOD if lo <= avg <= hi else WATCH if avg >= lo - 60 else ALERT
+        if sleep_need == 450:
+            detail = tr('Trung bình {n} đêm gần nhất. Người lớn nên ngủ 7–9 giờ mỗi đêm.', n=len(recent))
+        else:
+            detail = tr('Trung bình {n} đêm gần nhất. Ở tuổi của bạn nên ngủ {lo}–{hi} giờ mỗi đêm.', n=len(recent),
+                        lo=lo // 60, hi=hi // 60)
+        if avg > hi:
             detail += " " + tr('Ngủ nhiều hơn khuyến nghị.')
         if short:
-            detail += " " + tr('{k} đêm ngủ dưới 6 giờ.', k=short)
+            detail += " " + tr('{k} đêm ngủ dưới {h} giờ.', k=short, h=(lo - 60) // 60)
         add("sleep", status, tr('Thời gian ngủ'), _hm(avg), detail)
         deep = _avg([n["deep"] / n["minutes"] * 100 for n in recent])
         add("deep", GOOD if deep >= 13 else OK if deep >= 10 else WATCH, tr('Ngủ sâu'), f"{deep:.0f}%",
@@ -624,6 +662,12 @@ def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | N
         add("stress", status, tr('Căng thẳng'), f"{avg:.0f}",
             tr('Trung bình 7 ngày (0–39 thư giãn, 40–59 bình thường, 60–79 trung bình, 80+ cao); {p}% số đo ở mức cao.',
                p=int(round(high))))
+
+    bmi = body_mass_index((body or {}).get("height"), (body or {}).get("weight"))
+    if bmi is not None and ((body or {}).get("age") or 18) >= 18:   # dưới 18 tuổi BMI phải so theo bách phân vị tuổi
+        status, label = bmi_class(bmi)
+        add("bmi", status, tr('Chỉ số BMI'), f"{group_dec(bmi)} · {label}",
+            tr('Cân nặng / chiều cao² theo hồ sơ. Ngưỡng cho người châu Á (WHO 2004): 18,5–22,9 là bình thường, từ 23 là thừa cân, từ 25 là béo phì. BMI không phân biệt cơ và mỡ.'))
 
     if last_data and now - last_data > 2 * 86400:
         add("fresh", WATCH, tr('Dữ liệu'), tr('cũ'), tr('Dữ liệu mới nhất đã hơn 2 ngày; kết nối và đồng bộ để phân tích chính xác.'))

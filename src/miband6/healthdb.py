@@ -14,6 +14,7 @@ import sqlite3
 from pathlib import Path
 
 from . import health as H
+from . import personal as PS
 from . import telemetry as T
 
 SCHEMA = """
@@ -27,7 +28,11 @@ CREATE TABLE IF NOT EXISTS workouts (start INTEGER PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS sync (name TEXT PRIMARY KEY, value INTEGER);
 CREATE TABLE IF NOT EXISTS tracks (start INTEGER PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS places (key TEXT PRIMARY KEY, data TEXT);
+CREATE TABLE IF NOT EXISTS journal (date TEXT NOT NULL, kind TEXT NOT NULL, value INTEGER NOT NULL DEFAULT 1,
+                                    PRIMARY KEY (date, kind));
 """
+
+JOURNAL_KINDS = ("period", "ejaculation")   # nhật ký người dùng tự ghi (personal.py); chỉ lưu trên máy
 
 
 def db_path(base: Path, address: str) -> Path:
@@ -135,6 +140,23 @@ class HealthDB:
         with self.db:
             self.db.execute("INSERT OR REPLACE INTO places VALUES (?, ?)", (key, json.dumps(place)))
 
+    # ------------------------------------------------------------ nhật ký cá nhân (người dùng tự ghi)
+    def journal(self, kind: str) -> dict[str, int]:
+        """{ngày: giá trị} của một loại nhật ký (period: 1 = có kinh; ejaculation: số lần trong ngày)."""
+        return dict(self.db.execute("SELECT date, value FROM journal WHERE kind = ? AND value > 0 ORDER BY date", (kind,)))
+
+    def set_journal(self, kind: str, date: str, value: int) -> None:
+        """Ghi (value > 0) hoặc xóa (value = 0) một ngày; đánh dấu mốc "journal" để tính lại các chỉ số."""
+        if kind not in JOURNAL_KINDS:
+            raise ValueError(kind)
+        dt.date.fromisoformat(date)
+        with self.db:
+            if value > 0:
+                self.db.execute("INSERT OR REPLACE INTO journal VALUES (?, ?, ?)", (date, kind, int(value)))
+            else:
+                self.db.execute("DELETE FROM journal WHERE date = ? AND kind = ?", (date, kind))
+            self.db.execute("INSERT OR REPLACE INTO sync VALUES ('journal', ?)", (time.time_ns() // 1000,))
+
     def track(self, start: int) -> list | None:
         row = self.db.execute("SELECT data FROM tracks WHERE start = ?", (start,)).fetchone()
         return json.loads(row[0]) if row else None
@@ -186,10 +208,13 @@ class HealthDB:
         ).fetchall()
         return [{"date": d, "steps": s or 0, "minutes": n, "worn": w or 0} for d, s, n, w in rows]
 
-    def analysis(self, goal: int = 8000, today: str | None = None, rem: bool = False) -> dict:
-        """Nhận xét tình trạng hiện tại từ 14 ngày gần nhất (xem health.analyze)."""
+    def analysis(self, goal: int = 8000, today: str | None = None, rem: bool = False, profile: dict | None = None) -> dict:
+        """Nhận xét tình trạng hiện tại từ 14 ngày gần nhất (xem health.analyze); hồ sơ cho nhu cầu ngủ theo tuổi và BMI."""
+        from . import insights as I
+
         today = today or dt.date.today().isoformat()
         d0 = dt.date.fromisoformat(today)
+        age = PS.age_of(profile, d0)
         first = d0 - dt.timedelta(days=13)
         w0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
         _, t1 = H.day_bounds(today)
@@ -221,8 +246,10 @@ class HealthDB:
         spo2 = [r for r in spo2 if T.assess("spo2", r[1])["usable"]]
         stress = [v for v in stress if T.assess("stress", v)["usable"]]
         last = self.db.execute("SELECT MAX(ts) FROM activity").fetchone()[0]
+        body = {"age": age, "height": (profile or {}).get("height"), "weight": (profile or {}).get("weight")}
         return H.analyze(sorted(nights.values(), key=lambda n: n["date"]), steps, goal,
-                         {"total": pai[0]} if pai else None, spo2, stress, len(active), len(workouts), last)
+                         {"total": pai[0]} if pai else None, spo2, stress, len(active), len(workouts), last,
+                         sleep_need=I.sleep_need(age), body=body)
 
     INSIGHT_DAYS = 60   # ngày dữ liệu dùng cho mức sẵn sàng, nhịp sinh học… (mức nền nhiều tuần)
 
@@ -252,16 +279,14 @@ class HealthDB:
                 mains[day] = sess
         nights = [self._night(mains[day], by_ts, day) for day in sorted(mains)]
 
+        # ---- hồ sơ: tuổi, giới tính (nhịp tim tối đa, nhu cầu ngủ) và nhật ký chu kỳ (nhịp tim nghỉ pha hoàng thể)
+        age, sex = PS.age_of(profile, d0), PS.sex_of(profile)
+        need = I.sleep_need(age)
+        period_days = list(self.journal("period")) if sex == PS.SEX_FEMALE else []
+        PS.adjust_luteal_hr(nights, period_days)
+
         # ---- mỗi ngày
-        age = None
-        birth = (profile or {}).get("birth")
-        if birth:
-            try:
-                b = dt.date.fromisoformat(str(birth))
-                age = (d0 - b).days / 365.25
-            except ValueError:
-                age = None
-        hrmax = I.hr_max(age)
+        hrmax = I.hr_max(age, sex)
         rests = [n["hr"] for n in nights[-14:] if n.get("hr")]
         rest = sorted(rests)[len(rests) // 2] if rests else 60
         workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts WHERE start >= ? AND start < ?", (t0, t1))]
@@ -341,7 +366,7 @@ class HealthDB:
             day = nights[k]["date"]
             now = time.time() if day == today else H.day_bounds(day)[0] + 8 * 3600
             return I.readiness(nights[:k + 1], [d for d in day_list if d["date"] < day], chronotype,
-                               fatigue={"hours": hours, "now": now}, hrmax=hrmax)
+                               fatigue={"hours": hours, "now": now}, hrmax=hrmax, need=need)
 
         has_night = bool(nights and nights[-1]["date"] == date)
         ready = ready_on(len(nights) - 1) if has_night else None
@@ -354,8 +379,13 @@ class HealthDB:
             "readiness": ready, "readiness_history": history,
             "readiness_progress": None if ready else I.readiness_progress(nights),
             "readiness_night": has_night,
-            "last_night": self._last_night(nights, chronotype) if has_night else None,
-            "mental": I.mental_state(nights, day_list, circ),
+            "last_night": self._last_night(nights, chronotype, need) if has_night else None,
+            "mental": I.mental_state(nights, day_list, circ, need),
+            "profile": {"age": None if age is None else int(age), "sex": sex, "hr_max": round(hrmax),
+                        "sleep_need": need},
+            "cycle": PS.cycle_status(period_days, d0, nights) if sex == PS.SEX_FEMALE else None,
+            "ejaculation": (PS.ejaculation_stats(self.journal("ejaculation"), nights, d0)
+                            if sex == PS.SEX_MALE else None),
             "intensity": I.activity_intensity([d for d in day_list if d["date"] <= date]),
             "circadian": circ,
             "rem_estimated": any(s.get("rem_estimated") for s in mains.values()),
@@ -365,13 +395,13 @@ class HealthDB:
         }
 
     @staticmethod
-    def _last_night(nights: list[dict], chronotype: float | None) -> dict:
+    def _last_night(nights: list[dict], chronotype: float | None, need: int) -> dict:
         """Đêm của ngày đang xem: điểm giấc ngủ (cùng cách tính với thành phần "Giấc ngủ đêm qua" của mức sẵn sàng) và
         nhịp tim khi ngủ so với mức nền, có cả khi chưa đủ dữ liệu để tính mức sẵn sàng."""
         from . import insights as I
 
         night = nights[-1]
-        score, notes = I.sleep_score(night, chronotype)
+        score, notes = I.sleep_score(night, chronotype, need)
         base = [n["hr"] for n in nights[-I.BASELINE_NIGHTS - 1:-1] if n.get("hr")]
         baseline = round(sum(base) / len(base)) if len(base) >= I.MIN_BASELINE else None
         return {"date": night["date"], "score": int(round(score)), "notes": notes, "hr": night.get("hr"),
