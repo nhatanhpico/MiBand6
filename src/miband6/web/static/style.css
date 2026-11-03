@@ -122,8 +122,68 @@ a { color: inherit; }
 .app-settings { display: grid; gap: 16px; }
 .nav .ic { width: 20px; height: 20px; }
 
-.rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 8px; }
-.rail-note { font-size: 12.5px; color: var(--faint); }
+.rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 8px; min-height: 24px; justify-content: flex-end; }
+.corner-dot {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin: 6px 4px;
+  flex-shrink: 0;
+  transition: opacity .3s var(--ease), transform .3s var(--ease);
+}
+.corner-dot[hidden] { display: none; }
+.corner-dot[data-mode="sync"] {
+  --dot-color: #f59e0b;
+  --dot-glow: rgba(245, 158, 11, .55);
+  --dot-ring: rgba(245, 158, 11, .25);
+  background: var(--dot-color);
+  box-shadow: 0 0 10px var(--dot-glow);
+  animation: md-dot-pulse 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.corner-dot[data-mode="connecting"] {
+  --dot-color: #f97316;
+  --dot-glow: rgba(249, 115, 22, .6);
+  --dot-ring: rgba(249, 115, 22, .25);
+  background: var(--dot-color);
+  box-shadow: 0 0 10px var(--dot-glow);
+  animation: md-dot-pulse 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.corner-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--dot-ring);
+  animation: md-dot-halo 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.corner-dot[data-mode="connecting"]::after {
+  animation-duration: 1.2s;
+}
+@keyframes md-dot-pulse {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+}
+@keyframes md-dot-halo {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
 
 .lang { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); align-self: flex-start; }
 .lang button { border: 0; background: transparent; color: var(--muted); font: 600 12.5px var(--font); padding: 5px 10px; border-radius: 7px; cursor: pointer; }
@@ -447,7 +507,7 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .app { grid-template-columns: 84px minmax(0, 1fr); }
   .rail { padding: 22px 12px 16px; align-items: center; }
   .brand { padding: 0; }
-  .brand-name, .nav a span, .status-text, .status-bat, .rail-note { display: none; }
+  .brand-name, .nav a span, .status-text, .status-bat { display: none; }
   .status { padding: 10px; margin: 0; justify-content: center; }
   .nav { width: 100%; }
   .nav a { justify-content: center; padding: 12px; }
@@ -474,7 +534,6 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .brand-name { font-size: 16px; white-space: nowrap; }
   .status { margin: 0 0 0 auto; padding: 6px 10px; flex: 0 1 auto; min-width: 0; }
   .rail-foot { margin: 0; padding: 0; }
-  .rail-note { display: none; }
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
     flex-direction: row; justify-content: space-around; gap: 0;
@@ -915,10 +974,7 @@ select:invalid, select.unknown { color: var(--muted); }
 .sleep-segments { display: flex; gap: 3px; height: 12px; border-radius: 5px; overflow: hidden; background: var(--surface-3); }
 .sleep-segments span { min-width: 2px; }
 .sleep-glance .legend { font-size: 11px; gap: 10px; margin: 12px 0; }
-.device-details { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
-.device-details > summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 8px 0; }
-.device-details[open] > summary { margin-bottom: 16px; }
-.device-details .tiles { margin-top: 0; }
+#overviewBody > .tiles { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 #deviceHero { margin-bottom: 24px; }
 .metric-details { margin-top: 15px; }
 .metric-details > summary { cursor: pointer; font-size: 13px; color: var(--muted); min-height: 36px; padding-block: 8px; }

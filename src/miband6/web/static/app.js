@@ -118,6 +118,39 @@ const fmtDec = (n, d = 2) => Number(n).toLocaleString(LOCALE, { minimumFractionD
 let META = null;
 let STATE = { connected: false, busy: false, settings: {}, profile: {}, saved_devices: [] };
 let formsFilled = false;
+let activeSyncs = 0;
+let isScanning = false;
+let isConnecting = false;
+
+function setSyncActive(active) {
+  if (active) activeSyncs++;
+  else activeSyncs = Math.max(0, activeSyncs - 1);
+  updateCornerDot();
+}
+
+function updateCornerDot() {
+  const el = $("#cornerDot");
+  if (!el) return;
+  const isHealthRunning = STATE.health?.state === "running";
+  const isCloudRunning = STATE.cloud?.state === "checking" || STATE.cloud?.state === "fetching";
+  const isSyncing = activeSyncs > 0 || isHealthRunning || isCloudRunning;
+  const isLookingForBand = !STATE.connected && (isScanning || isConnecting || STATE.busy || STATE.reconnect);
+
+  if (isSyncing) {
+    el.hidden = false;
+    el.dataset.mode = "sync";
+    el.title = t("Đang đồng bộ…");
+    el.setAttribute("aria-label", t("Đang đồng bộ…"));
+  } else if (isLookingForBand) {
+    el.hidden = false;
+    el.dataset.mode = "connecting";
+    el.title = t("Đang tìm vòng tay…");
+    el.setAttribute("aria-label", t("Đang tìm vòng tay…"));
+  } else {
+    el.hidden = true;
+    delete el.dataset.mode;
+  }
+}
 
 async function api(path, data) {
   const opts = data === undefined ? {} : {
@@ -432,6 +465,7 @@ function applyState(st) {
   for (const [kind, data] of Object.entries(st.live || {})) render(kind, data);
   updateGoal();
   drawBand();
+  updateCornerDot();
   if (on !== wasConnected && !location.hash) route();
 }
 
@@ -571,12 +605,16 @@ function pickDevice(i) {
 }
 
 $("#scanBtn").onclick = async () => {
+  isScanning = true;
+  updateCornerDot();
   $("#scanLabel").textContent = t("Đang quét…");
   try {
     const r = await run($("#scanBtn"), () => api("/api/scan", { show_all: $("#showAll").checked }));
     renderDevices(r.devices);
     if (r.devices.length) toast(t("Tìm thấy {n} thiết bị.", { n: r.devices.length }));
   } catch { /* đã báo */ } finally {
+    isScanning = false;
+    updateCornerDot();
     $("#scanLabel").textContent = t("Quét lại");
   }
 };
@@ -599,6 +637,8 @@ $("#connectBtn").onclick = async () => {
   }
   status.textContent = t("Đang kết nối và xác thực…");
   $("#connectBtn").disabled = true;
+  isConnecting = true;
+  updateCornerDot();
   try {
     const r = await api("/api/connect", { address: selected.address, key: $("#keyInput").value, protocol: radio("proto") || "auto" });
     status.textContent = t("Đã kết nối ({proto}). Giờ trên vòng tay đã được đồng bộ.", { proto: PROTO[r.protocol]().toLowerCase() });
@@ -611,6 +651,9 @@ $("#connectBtn").onclick = async () => {
     status.textContent = t("Không kết nối được: {error}", { error: e.message });
     status.classList.add("error");
     $("#connectBtn").disabled = STATE.connected || STATE.busy;
+  } finally {
+    isConnecting = false;
+    updateCornerDot();
   }
 };
 
@@ -632,7 +675,12 @@ $("#keepConn").onchange = () => quiet(run(null, async () => {
 
 $("#refreshBtn").onclick = () => quiet(run($("#refreshBtn"), () => api("/api/refresh", {}), t("Đã đọc dữ liệu mới nhất từ vòng tay.")));
 $("#syncTimeBtn").onclick = () => quiet(run($("#syncTimeBtn"), async () => {
-  render("band_time", (await api("/api/time/sync", {})).band_time);
+  setSyncActive(true);
+  try {
+    render("band_time", (await api("/api/time/sync", {})).band_time);
+  } finally {
+    setSyncActive(false);
+  }
 }, t("Đã đồng bộ giờ với máy tính.")));
 
 $("#hrMeasureBtn").onclick = async () => {
@@ -1515,8 +1563,13 @@ $$('input[name="remMode"]').forEach((el) => el.addEventListener("change", () => 
   applyState((await api("/api/prefs", { rem_mode: el.value })).state);
 }, el.value === "off" ? t("Đã tắt REM.") : t("Đã bật ước tính REM.")))));
 $("#syncNowBtn").onclick = () => quiet(run($("#syncNowBtn"), async () => {
-  if (STATE.connected) renderHealthStatus((await api("/api/health/sync", {})).status);
-  if (STATE.account?.logged_in) await api("/api/cloud/sync", { job: "workouts" });
+  setSyncActive(true);
+  try {
+    if (STATE.connected) renderHealthStatus((await api("/api/health/sync", {})).status);
+    if (STATE.account?.logged_in) await api("/api/cloud/sync", { job: "workouts" });
+  } finally {
+    setSyncActive(false);
+  }
 }, t("Đang đồng bộ ở nền…")));
 $("#acctRenewBtn").onclick = () => quiet(run($("#acctRenewBtn"), async () => {
   await api("/api/cloud/renew", {});
@@ -1575,9 +1628,14 @@ $("#wxCity").addEventListener("change", () => {
   $("#wxQuery").focus();
 });
 $("#wxSyncBtn").onclick = () => quiet(run($("#wxSyncBtn"), async () => {
-  const r = await api("/api/weather/sync", {});
-  STATE.weather = r.weather;
-  renderWeather(r.weather);
+  setSyncActive(true);
+  try {
+    const r = await api("/api/weather/sync", {});
+    STATE.weather = r.weather;
+    renderWeather(r.weather);
+  } finally {
+    setSyncActive(false);
+  }
 }, t("Đã gửi thời tiết tới vòng tay.")));
 (() => {
   let timer = null, seq = 0;
@@ -1673,6 +1731,7 @@ function renderHealthStatus(st) {
   $("#hSyncBtn").disabled = !STATE.connected || st.state === "running";
   $("#ovSyncBtn").disabled = !STATE.connected || st.state === "running";
   $("#ovSync").textContent = line.textContent;
+  updateCornerDot();
 }
 
 async function loadHealth() {
@@ -1787,14 +1846,19 @@ function renderOverview() {
       parts: [{ value: d.date === todayISO() ? v.steps ?? d.steps : d.steps, color: "var(--c-steps)" }],
       tip: () => [[fmtInt(d.steps), longDate(d.date)]],
     })), { height: 100, label: t("Bước chân 7 ngày đã ghi gần nhất"), empty: t("Chưa có lịch sử bước chân."), valueFmt: fmtInt });
+    drawSpark();
   }
 }
 
 $("#ovSyncBtn").onclick = () => quiet(run($("#ovSyncBtn"), async () => {
-  renderHealthStatus((await api("/api/health/sync", {})).status);
+  setSyncActive(true);
+  try {
+    renderHealthStatus((await api("/api/health/sync", {})).status);
+  } finally {
+    setSyncActive(false);
+  }
 }));
 $("#ovMeasureBtn").onclick = () => {
-  $(".device-details").open = true;
   $("#hrMeasureBtn").click();
   $(".tile-hr").scrollIntoView({ block: "center", behavior: "smooth" });
 };
@@ -1804,7 +1868,6 @@ $("#ovFindBtn").onclick = () => quiet(run($("#ovFindBtn"), () => api("/api/find"
 $$(".metric-details").forEach((el) => el.addEventListener("toggle", () => {
   if (el.open && healthData && !$("#page-health").hidden) renderHealth();
 }));
-$(".device-details").addEventListener("toggle", () => { if ($(".device-details").open) drawSpark(); });
 
 /* ---- chọn ngày */
 
@@ -1886,7 +1949,14 @@ document.addEventListener("keydown", (e) => {
 });
 $("#hPrev").onclick = () => { healthDate = shiftDate(healthDate, -1); quiet(loadHealth()); };
 $("#hNext").onclick = () => { if (healthDate < todayISO()) { healthDate = shiftDate(healthDate, 1); quiet(loadHealth()); } };
-$("#hSyncBtn").onclick = () => quiet(run($("#hSyncBtn"), async () => renderHealthStatus((await api("/api/health/sync", {})).status)));
+$("#hSyncBtn").onclick = () => quiet(run($("#hSyncBtn"), async () => {
+  setSyncActive(true);
+  try {
+    renderHealthStatus((await api("/api/health/sync", {})).status);
+  } finally {
+    setSyncActive(false);
+  }
+}));
 // đổi cỡ cửa sổ (hoặc thanh bên thu gọn): vẽ lại biểu đồ của trang đang mở theo bề rộng mới
 let resizeTimer, mainWidth = 0;
 new ResizeObserver(([entry]) => {
@@ -2936,6 +3006,7 @@ function renderCloud(st) {
     cloudSeq = st.seq;
   }
   STATE.cloud = st;
+  updateCornerDot();
   const s = st.state || "idle";
   if (s === "done") {
     if (st.job === "workouts") quiet(loadHealth());
