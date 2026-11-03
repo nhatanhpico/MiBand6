@@ -320,23 +320,37 @@ class DemoHealth:
         rnd = random.Random(6)
         self.activity = bytearray()
         self.stress = bytearray()
+        # Như Mi Band 6 thật: 4 bit thấp của byte đầu là mốc trạng thái (9 ngủ nông, 11 ngủ sâu, 12 thức dậy,
+        # 1 hoạt động), chỉ ghi khi đổi trạng thái và trễ chừng 11 phút; các phút khác mang 0 (không đổi).
+        # Byte thứ 6 ("ngủ") tăng lúc thiếp đi và tụt khi tỉnh dậy. Giấc thật: 23:20 tới 06:50.
+        fall, wake = 23 * 60 + 20, 6 * 60 + 50
         t = self.start
+        state = None
         while t < now:
-            minute_of_day = t.hour * 60 + t.minute
-            asleep = minute_of_day >= 23 * 60 + 20 or minute_of_day < 6 * 60 + 50
-            if asleep:
-                into = (minute_of_day - (23 * 60 + 20)) % 1440   # phút kể từ lúc ngủ
-                cycle = into % 90
-                deep = 60 if cycle < 25 and into < 300 else 10
-                rem = 70 if cycle >= 70 else 10
-                self.activity += bytes([120, 20, 0, 52 + rnd.randint(0, 8), 0, 40, deep, rem])
+            m = t.hour * 60 + t.minute
+            since_fall = (m - fall) % 1440   # phút kể từ lúc thiếp đi (đêm qua)
+            asleep = since_fall < (wake - fall) % 1440
+            lag = (m - 11 - fall) % 1440 < (wake - fall) % 1440   # trạng thái vòng tay ghi (trễ 11 phút)
+            cycle = since_fall % 90
+            deep = lag and cycle < 25 and since_fall < 300
+            want = (11 if deep else 9) if lag else 1
+            marker = want != state
+            state = want
+            if asleep or lag:
+                level = 55 if asleep else 38 if m == wake else max(0, 25 - 3 * ((m - wake) % 1440))   # byte "ngủ"
+                kind = (0xF0 | want) if marker else 0xF0
+                hr = 52 + rnd.randint(0, 8)
+                self.activity += bytes([kind if lag else 0x50, 0, 0, hr, 0, level, 0x80 | (60 if deep else 35), 0])
                 self.stress.append(0xFF)
             else:
-                walking = (minute_of_day // 20) % 4 == 0 and 7 * 60 < minute_of_day < 21 * 60
+                onset = (fall - m) % 1440 <= 10   # 10 phút trước khi ngủ: byte "ngủ" bắt đầu tăng
+                walking = (m // 20) % 4 == 0 and 7 * 60 < m < 21 * 60
                 steps = rnd.randint(70, 115) if walking else rnd.choice([0, 0, 0, rnd.randint(1, 30)])
                 hr = rnd.randint(95, 120) if walking else rnd.randint(62, 82)
-                self.activity += bytes([1 if steps else 0, min(255, steps * 2), steps, hr, 0, 0, 0, 0])
-                self.stress.append(rnd.randint(15, 70) if minute_of_day % 5 == 0 else 0xFF)
+                kind = (0x10 | (12 if (m - wake) % 1440 == 11 else 1)) if marker else 0x50
+                level = max(0, 9 - (fall - m) % 1440) if onset else 0   # dưới ngưỡng thiếp đi
+                self.activity += bytes([kind, min(255, steps * 2), steps, hr, 0, level, 0x80, 0])
+                self.stress.append(rnd.randint(15, 70) if m % 5 == 0 else 0xFF)
             t += dt.timedelta(minutes=1)
         days = [(self.start + dt.timedelta(days=i)) for i in range(self.DAYS + 1)]
         self.pai = b""

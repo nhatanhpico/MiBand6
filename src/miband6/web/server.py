@@ -442,7 +442,11 @@ class BandService:
 
     def health_summary(self, date: str) -> dict | None:
         db = self.health_db()
-        return db.summary(date) if db else None
+        if not db:
+            return None
+        summary = db.summary(date)
+        summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000))
+        return summary
 
     # ------------------------------------------------------------ mặt đồng hồ
     @property

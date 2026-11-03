@@ -45,6 +45,9 @@
   --sky: #6cc6ff;
   --orange: #ff9157;
   --mint: #46e0a4;
+  /* màu biểu đồ (đã kiểm tra tương phản và mù màu trên nền tối) */
+  --c-deep: #3987e5; --c-light: #199e70; --c-rem: #9085e9; --c-awake: #d95926;
+  --c-steps: #c98500; --c-hr: #e66767; --c-stress: #9085e9; --c-pai: #199e70;
   --danger: #ff7b7b;
   --font: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -552,8 +555,6 @@ select:invalid, select.unknown { color: var(--muted); }
 .day-nav .btn { width: 34px; padding: 0; font-size: 18px; }
 .hnote { color: var(--muted); font-size: 13.5px; margin: -12px 0 18px; }
 .hgrid {
-  --c-deep: #3987e5; --c-light: #199e70; --c-rem: #9085e9; --c-awake: #d95926;
-  --c-steps: #c98500; --c-hr: #e66767; --c-stress: #9085e9; --c-pai: #199e70;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
 }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 22px 20px; min-width: 0; }
@@ -566,7 +567,21 @@ select:invalid, select.unknown { color: var(--muted); }
 .chart { position: relative; width: 100%; min-height: 40px; margin-top: 6px; }
 .chart svg { display: block; width: 100%; overflow: visible; }
 .chart .grid { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
-.chart .axis { fill: var(--muted); font: 400 11px var(--font); font-variant-numeric: tabular-nums; }
+.chart .axis { fill: var(--muted); font: 400 11.5px var(--font); font-variant-numeric: tabular-nums; }
+.chart .axis.strong { fill: var(--text); font-weight: 600; }
+.chart .baseline { stroke: var(--line-strong); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .ref { stroke: var(--muted); stroke-width: 1; opacity: .75; shape-rendering: crispEdges; }
+.chart .ref-label { fill: var(--text); font: 600 11.5px var(--font); font-variant-numeric: tabular-nums; }
+.chart .ref-name { fill: var(--muted); font: 500 10.5px var(--font); }
+.chart .band, .chart .zone { fill: rgba(255, 255, 255, .045); }
+.chart .band-key { fill: rgba(255, 255, 255, .18); }
+.chart .shade { fill: rgba(144, 133, 233, .10); }
+.chart .band-label { fill: var(--muted); font: 500 11px var(--font); }
+.chart .area { opacity: .13; }
+.chart .value-label { fill: var(--text); font: 600 11.5px var(--font); font-variant-numeric: tabular-nums; stroke: var(--surface); stroke-width: 4px; paint-order: stroke; }
+.chart .value-label.big { font-size: 15px; font-weight: 700; }
+.chart .row-bg { fill: rgba(255, 255, 255, .03); }
+.chart .step-line { fill: none; stroke: rgba(255, 255, 255, .3); stroke-width: 1.5; stroke-linejoin: round; }
 .chart .hit { fill: transparent; cursor: default; }
 .chart .hit:focus { outline: none; }
 .chart .hit:focus-visible { stroke: var(--amber); stroke-width: 1.5; }
@@ -651,3 +666,20 @@ select:invalid, select.unknown { color: var(--muted); }
   .sim { position: static; }
   .wp-stage { height: 380px; }
 }
+
+/* ================================================================ phân tích sức khỏe */
+.insights { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.insight { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 15px; display: flex; flex-direction: column; gap: 4px; }
+.insight h3 { font-size: 13.5px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+.ins-value { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ins-detail { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.ins-status { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--surface-3); }
+.ins-status b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 999px; font-size: 11px; color: var(--bg); background: var(--muted); }
+.insight[data-status="good"] .ins-status { color: #a6efd2; } .insight[data-status="good"] .ins-status b { background: var(--mint); }
+.insight[data-status="ok"] .ins-status { color: #b2e1ff; } .insight[data-status="ok"] .ins-status b { background: var(--sky); }
+.insight[data-status="watch"] .ins-status { color: #ffd79a; } .insight[data-status="watch"] .ins-status b { background: var(--amber); }
+.insight[data-status="alert"] .ins-status { color: #ffbcbc; } .insight[data-status="alert"] .ins-status b { background: var(--danger); }
+.insight[data-status="watch"] { border-color: rgba(255, 181, 71, .35); }
+.insight[data-status="alert"] { border-color: rgba(255, 123, 123, .45); }
+.disclaimer { margin-top: 12px; font-size: 12.5px; }
+.hr-live { margin-top: 4px; }

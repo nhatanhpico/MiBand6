@@ -186,14 +186,24 @@ function renderWatchface(info) {
 }
 setInterval(drawBand, 15000);
 
+/** Nhịp tim các lần đo gần nhất (trang Tổng quan): trục số, giờ đo, giá trị mới nhất. */
 function drawSpark() {
   const pts = live.hrHistory;
-  const line = $("#hrLine");
-  if (pts.length < 2) { line.setAttribute("points", ""); return; }
-  const lo = Math.min(...pts) - 4;
-  const hi = Math.max(...pts) + 4;
-  const step = 200 / (pts.length - 1);
-  line.setAttribute("points", pts.map((v, i) => `${(i * step).toFixed(1)},${(46 - ((v - lo) / (hi - lo)) * 44).toFixed(1)}`).join(" "));
+  const el = $("#hrLive");
+  if (pts.length < 2) {
+    emptyChart(el, 72, pts.length ? t("Đang chờ thêm số đo…") : t("Bấm Đo ngay hoặc Theo dõi liên tục để xem nhịp tim."));
+    return;
+  }
+  const t0 = pts[0][0];
+  const t1 = Math.max(pts[pts.length - 1][0], t0 + 30);
+  const hms = (ts) => { const d = new Date(ts * 1000); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+  const v = pts.map((p) => p[1]);
+  lineChart(el, pts, {
+    t0, t1, color: "var(--c-hr)", unit: t("nhịp/phút"), height: 150, last: true, gap: 120, timeFmt: hms,
+    yMin: Math.max(30, Math.floor((Math.min(...v) - 8) / 10) * 10), xTicks: [[t0, hms(t0)], [t1, hms(t1)]],
+    label: t("Nhịp tim các lần đo gần nhất"),
+  });
+  $("#hrRange").textContent = t("Thấp nhất {lo} · cao nhất {hi} nhịp/phút trong {n} lần đo", { lo: Math.min(...v), hi: Math.max(...v), n: v.length });
 }
 
 function updateGoal() {
@@ -234,8 +244,8 @@ function render(kind, d) {
       break;
     case "heart_rate":
       live.hr = d;
-      live.hrHistory.push(d);
-      if (live.hrHistory.length > 40) live.hrHistory.shift();
+      live.hrHistory.push([Date.now() / 1000, d]);
+      if (live.hrHistory.length > 120) live.hrHistory.shift();
       $("#hr").textContent = d;
       drawSpark();
       break;
@@ -1372,6 +1382,11 @@ function sv(tag, attrs, parent) {
   parent?.append(el);
   return el;
 }
+function svText(parent, x, y, text, cls = "axis", anchor = "start") {
+  const el = sv("text", { x, y, class: cls, "text-anchor": anchor }, parent);
+  el.textContent = text;
+  return el;
+}
 const tip = document.createElement("div");
 tip.className = "chart-tip";
 tip.hidden = true;
@@ -1404,13 +1419,13 @@ function hoverable(el, rows) {
 
 function chartBox(el, height, label) {
   el.textContent = "";
-  const w = Math.max(260, Math.floor(el.clientWidth || 600));
+  const w = Math.max(240, Math.floor(el.clientWidth || 600));
   const svg = sv("svg", { viewBox: `0 0 ${w} ${height}`, width: w, height, role: "img", "aria-label": label }, el);
   return { svg, w, h: height };
 }
 function emptyChart(el, height, text) {
   const { svg, w } = chartBox(el, height, text);
-  sv("text", { x: w / 2, y: height / 2, class: "empty-msg" }, svg).textContent = text;
+  svText(svg, w / 2, height / 2 + 4, text, "empty-msg", "middle");
 }
 function niceScale(maxValue, ticks = 3) {
   if (!(maxValue > 0)) return { max: 1, step: 1 };
@@ -1425,29 +1440,46 @@ function colPath(x, y, w, h, r = 4) {
   r = Math.min(r, w / 2, h);
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
 }
+/** Đường mốc ngang (mục tiêu, trung bình); nhãn hai dòng nằm ở lề phải, ngoài vùng cột. */
+function refLine(svg, x0, x1, y, name, value) {
+  sv("line", { x1: x0, x2: x1 + 4, y1: y, y2: y, class: "ref" }, svg);
+  svText(svg, x1 + 8, y - 2, name, "ref-name");
+  svText(svg, x1 + 8, y + 11, value, "ref-label");
+}
 
-/** Biểu đồ cột (một chuỗi, hoặc chồng nhiều phần). items: {key, label, parts: [{value, color}], tip: () => rows}. */
+/** Biểu đồ cột (một chuỗi, hoặc chồng nhiều phần).
+    items: {key, label, parts: [{value, color}], tip: () => rows}; o: height, label, empty, yFmt, selected, onPick,
+    refs: [{value, name, text}], band: {from, to, label}, valueFmt (nhãn số trên cột được chọn / cao nhất). */
 function columnChart(el, items, o) {
-  const H = o.height || 150;
+  const H = o.height || 190;
   const total = (it) => it.parts.reduce((a, p) => a + p.value, 0);
-  const maxV = Math.max(0, ...items.map(total));
-  if (!items.length || maxV <= 0) { emptyChart(el, H, o.empty); return; }
+  const maxV = Math.max(0, ...items.map(total), ...(o.refs || []).map((r) => r.value * 1.08), o.band ? o.band.to * 1.05 : 0);
+  if (!items.length || items.every((it) => total(it) <= 0)) { emptyChart(el, Math.min(H, 120), o.empty); return; }
   const { svg, w } = chartBox(el, H, o.label);
-  const padL = 40, padR = 4, padT = 8, padB = 22;
+  const padL = 44, padR = o.refs?.length ? 92 : 8, padT = 18, padB = 26;
   const iw = w - padL - padR, ih = H - padT - padB;
-  const { max, step } = niceScale(maxV, 3);
+  const { max, step } = niceScale(maxV, 4);
+  const Y = (v) => padT + ih - (v / max) * ih;
+  if (o.band) {
+    sv("rect", { x: padL, y: Y(o.band.to), width: iw, height: Y(o.band.from) - Y(o.band.to), class: "band" }, svg);
+    // nhãn của vùng khuyến nghị nằm phía trên biểu đồ (chú giải), không bị cột che
+    sv("rect", { x: padL, y: 2, width: 12, height: 10, rx: 2, class: "band band-key" }, svg);
+    svText(svg, padL + 18, 11, o.band.label, "band-label");
+  }
   for (let v = 0; v <= max + 1e-9; v += step) {
-    const y = Math.round(padT + ih - (v / max) * ih) + 0.5;
-    sv("line", { x1: padL, x2: w - padR, y1: y, y2: y, class: "grid" }, svg);
-    sv("text", { x: padL - 6, y: y + 4, "text-anchor": "end", class: "axis" }, svg).textContent = (o.yFmt || compact)(v);
+    const y = Math.round(Y(v)) + 0.5;
+    sv("line", { x1: padL, x2: w - padR, y1: y, y2: y, class: v === 0 ? "baseline" : "grid" }, svg);
+    svText(svg, padL - 8, y + 4, (o.yFmt || compact)(v), "axis", "end");
   }
   const slot = iw / items.length;
-  const bw = Math.max(2, Math.min(24, slot - 2));
-  const every = Math.max(1, Math.ceil(items.length / Math.max(2, Math.floor(iw / 46))));
+  const bw = Math.max(3, Math.min(24, slot * 0.62));
+  const every = Math.max(1, Math.ceil(items.length / Math.max(2, Math.floor(iw / 52))));
+  const highest = items.reduce((a, it) => (total(it) > total(a) ? it : a), items[0]);
   items.forEach((it, i) => {
     const g = sv("g", {}, svg);
     const sx = padL + i * slot;
-    if (o.selected != null && it.key === o.selected) sv("rect", { x: sx, y: padT, width: slot, height: ih, class: "sel" }, g);
+    const isSel = o.selected != null && it.key === o.selected;
+    if (isSel) sv("rect", { x: sx, y: padT, width: slot, height: ih, class: "sel" }, g);
     const x = sx + (slot - bw) / 2;
     let y0 = padT + ih;
     const visible = it.parts.filter((p) => p.value > 0);
@@ -1460,49 +1492,88 @@ function columnChart(el, items, o) {
       if (hh > 0) sv("path", { d: top ? colPath(x, y, bw, hh) : `M${x},${y}h${bw}v${hh}h${-bw}Z`, class: "mark", style: `fill:${p.color}` }, g);
       y0 = y;
     });
-    if (it.label && i % every === 0) {
-      sv("text", { x: sx + slot / 2, y: H - 6, "text-anchor": "middle", class: "axis" }, svg).textContent = it.label;
+    if (o.valueFmt && total(it) > 0 && (isSel || (it === highest && !o.refs?.length))) {
+      svText(g, sx + slot / 2, Math.max(12, y0 - 6), o.valueFmt(total(it)), "value-label", "middle");
     }
+    if (it.label && (i % every === 0 || isSel)) svText(svg, sx + slot / 2, H - 8, it.label, isSel ? "axis strong" : "axis", "middle");
     const hit = sv("rect", { x: sx, y: padT, width: slot, height: ih, class: "hit" }, g);
     hoverable(hit, it.tip);
     if (o.onPick) hit.addEventListener("click", () => o.onPick(it.key));
   });
+  for (const r of o.refs || []) refLine(svg, padL, w - padR, Math.round(Y(r.value)) + 0.5, r.name, r.text);
 }
 
-/** Đường theo thời gian trong ngày, có thước dọc theo con trỏ. points: [[ts, value]]. */
+/** Đường theo thời gian, có vùng tô nhạt, thước dọc theo con trỏ.
+    points: [[ts, value]]; o: t0, t1, color, unit, label, empty, height, yMin, yMax, gap (giây),
+    dots: [[ts, value]] (đo tay), zones: [{from, to, label}], shade: [{from, to, label}] (khoảng thời gian),
+    xTicks: [[ts, nhãn]], extremes (đánh dấu cao/thấp nhất), last (ghi giá trị điểm cuối), timeFmt. */
 function lineChart(el, points, o) {
-  const H = o.height || 170;
-  if (!points.length) { emptyChart(el, H, o.empty); return; }
+  const H = o.height || 230;
+  if (!points.length && !(o.dots || []).length) { emptyChart(el, Math.min(H, 120), o.empty); return; }
   const { svg, w } = chartBox(el, H, o.label);
-  const padL = 40, padR = 8, padT = 10, padB = 22;
+  const padL = 40, padR = o.last ? 46 : 10, padT = 14, padB = 26;
   const iw = w - padL - padR, ih = H - padT - padB;
-  const vals = points.map((p) => p[1]).concat((o.dots || []).map((p) => p[1]));
-  const lo = o.yMin ?? Math.max(0, Math.floor((Math.min(...vals) - 5) / 10) * 10);
-  const { max: span, step } = niceScale(Math.max(...vals) - lo, 3);
-  const hi = lo + span;
+  const all = points.concat(o.dots || []).sort((a, b) => a[0] - b[0]);
+  const vals = all.map((p) => p[1]);
+  let lo = o.yMin ?? Math.max(0, Math.floor((Math.min(...vals) - 6) / 10) * 10);
+  const { max: span, step } = niceScale(Math.max((o.yMax ?? Math.max(...vals) + 4) - lo, 10), 4);
+  const hi = o.yMax ?? lo + span;
   const X = (ts) => padL + ((ts - o.t0) / (o.t1 - o.t0)) * iw;
   const Y = (v) => padT + ih - ((v - lo) / (hi - lo)) * ih;
-  for (let v = lo; v <= hi + 1e-9; v += step) {
+  for (const s of o.shade || []) {
+    const x0 = Math.max(padL, X(s.from)), x1 = Math.min(padL + iw, X(s.to));
+    if (x1 <= x0) continue;
+    sv("rect", { x: x0, y: padT, width: x1 - x0, height: ih, class: "shade" }, svg);
+    svText(svg, x0 + 6, padT + 13, s.label, "band-label");
+  }
+  for (const z of o.zones || []) {
+    const y0 = Y(Math.min(z.to, hi)), y1 = Y(Math.max(z.from, lo));
+    if (z.tint) sv("rect", { x: padL, y: y0, width: iw, height: y1 - y0, class: "zone" }, svg);
+    svText(svg, padL + iw - 6, y0 + 13, z.label, "band-label", "end");
+  }
+  const stepY = o.yStep || step;
+  for (let v = lo; v <= hi + 1e-9; v += stepY) {
     const y = Math.round(Y(v)) + 0.5;
-    sv("line", { x1: padL, x2: w - padR, y1: y, y2: y, class: "grid" }, svg);
-    sv("text", { x: padL - 6, y: y + 4, "text-anchor": "end", class: "axis" }, svg).textContent = fmtInt(v);
+    sv("line", { x1: padL, x2: padL + iw, y1: y, y2: y, class: "grid" }, svg);
+    svText(svg, padL - 8, y + 4, fmtInt(v), "axis", "end");
   }
-  for (let hr = 0; hr <= 24; hr += 6) {
-    sv("text", { x: X(o.t0 + hr * 3600), y: H - 6, "text-anchor": hr === 0 ? "start" : hr === 24 ? "end" : "middle", class: "axis" }, svg).textContent = `${pad(hr % 24)}:00`;
+  for (const [ts, text] of o.xTicks || []) {
+    const x = X(ts);
+    svText(svg, x, H - 8, text, "axis", x < padL + 20 ? "start" : x > padL + iw - 20 ? "end" : "middle");
   }
-  let d = "";
-  points.forEach(([ts, v], i) => {
-    const gap = i === 0 || ts - points[i - 1][0] > (o.gap || 900);
-    d += `${gap ? "M" : "L"}${X(ts).toFixed(1)},${Y(v).toFixed(1)}`;
+  // đường + vùng tô (tách đoạn khi mất dữ liệu lâu)
+  const segs = [];
+  points.forEach((p, i) => {
+    if (i === 0 || p[0] - points[i - 1][0] > (o.gap || 900)) segs.push([]);
+    segs[segs.length - 1].push(p);
   });
-  sv("path", { d, fill: "none", style: `stroke:${o.color}`, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
-  for (const [ts, v] of o.dots || []) {
-    sv("circle", { cx: X(ts), cy: Y(v), r: 4, style: `fill:${o.color}`, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+  for (const seg of segs) {
+    const d = seg.map(([ts, v], i) => `${i ? "L" : "M"}${X(ts).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+    if (seg.length > 1) {
+      sv("path", { d: `${d}L${X(seg[seg.length - 1][0]).toFixed(1)},${padT + ih}L${X(seg[0][0]).toFixed(1)},${padT + ih}Z`, class: "area", style: `fill:${o.color}` }, svg);
+    }
+    sv("path", { d, fill: "none", style: `stroke:${o.color}`, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+  }
+  const dot = (ts, v, r = 4) => sv("circle", { cx: X(ts), cy: Y(v), r, style: `fill:${o.color}`, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+  for (const [ts, v] of o.dots || []) dot(ts, v);
+  if (o.extremes && points.length > 2) {
+    const hiP = points.reduce((a, p) => (p[1] > a[1] ? p : a));
+    const loP = points.reduce((a, p) => (p[1] < a[1] ? p : a));
+    for (const [p, above] of [[hiP, true], [loP, false]]) {
+      dot(p[0], p[1], 3.5);
+      const x = Math.min(padL + iw - 18, Math.max(padL + 18, X(p[0])));
+      svText(svg, x, above ? Y(p[1]) - 9 : Y(p[1]) + 18, String(p[1]), "value-label", "middle");
+    }
+  }
+  if (o.last && points.length) {
+    const p = points[points.length - 1];
+    dot(p[0], p[1], 4.5);
+    svText(svg, X(p[0]) + 9, Y(p[1]) + 5, String(p[1]), "value-label big");
   }
   const cross = sv("line", { y1: padT, y2: padT + ih, class: "crosshair", visibility: "hidden" }, svg);
-  const dot = sv("circle", { r: 4, style: `fill:${o.color}`, stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" }, svg);
+  const mark = sv("circle", { r: 4.5, style: `fill:${o.color}`, stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" }, svg);
   const hit = sv("rect", { x: padL, y: padT, width: iw, height: ih, class: "hit" }, svg);
-  const all = points.concat(o.dots || []).sort((a, b) => a[0] - b[0]);
+  const fmtT = o.timeFmt || hhmm;
   hit.addEventListener("pointermove", (e) => {
     const box = svg.getBoundingClientRect();
     const ts = o.t0 + ((e.clientX - box.left - padL) / iw) * (o.t1 - o.t0);
@@ -1510,38 +1581,47 @@ function lineChart(el, points, o) {
     for (const p of all) if (Math.abs(p[0] - ts) < Math.abs(best[0] - ts)) best = p;
     const x = X(best[0]);
     cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
-    dot.setAttribute("cx", x); dot.setAttribute("cy", Y(best[1])); dot.setAttribute("visibility", "visible");
-    showTip(e.clientX, e.clientY, [[`${best[1]} ${o.unit}`, hhmm(best[0]), o.color]]);
+    mark.setAttribute("cx", x); mark.setAttribute("cy", Y(best[1])); mark.setAttribute("visibility", "visible");
+    showTip(e.clientX, e.clientY, [[`${best[1]}${o.unit ? ` ${o.unit}` : ""}`, fmtT(best[0]), o.color]]);
   });
-  hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); hideTip(); });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); mark.setAttribute("visibility", "hidden"); hideTip(); });
 }
+const dayTicks = (t0) => [0, 6, 12, 18, 24].map((h) => [t0 + h * 3600, `${pad(h % 24)}:00`]);
 
-/** Các giai đoạn của một giấc ngủ, mỗi giai đoạn một hàng. */
-function sleepChart(el, sess) {
-  const rowH = 18, rowGap = 6, padL = 74, padR = 8, padT = 4, padB = 22;
-  const H = padT + STAGES.length * (rowH + rowGap) + padB;
+/** Các giai đoạn của một giấc ngủ: mỗi giai đoạn một hàng, nối bằng đường bậc thang. */
+function sleepChart(el, sess, rows = STAGES) {
+  const rowH = 22, rowGap = 10, padL = 78, padR = 10, padT = 6, padB = 26;
+  const H = padT + rows.length * (rowH + rowGap) + padB;
   const { svg, w } = chartBox(el, H, t("Các giai đoạn giấc ngủ"));
   const iw = w - padL - padR;
   const X = (ts) => padL + ((ts - sess.start) / (sess.end - sess.start)) * iw;
-  STAGES.forEach(([key, name], i) => {
-    const y = padT + i * (rowH + rowGap);
-    sv("line", { x1: padL, x2: w - padR, y1: y + rowH + rowGap / 2, y2: y + rowH + rowGap / 2, class: "grid" }, svg);
-    sv("text", { x: padL - 8, y: y + rowH - 4, "text-anchor": "end", class: "axis" }, svg).textContent = name();
+  const rowY = (i) => padT + i * (rowH + rowGap);
+  rows.forEach(([, name], i) => {
+    sv("rect", { x: padL, y: rowY(i), width: iw, height: rowH, rx: 4, class: "row-bg" }, svg);
+    svText(svg, padL - 10, rowY(i) + rowH / 2 + 4, name(), "axis", "end");
   });
+  // đường bậc thang nối các giai đoạn liên tiếp
+  let path = "";
+  sess.stages.forEach(([a, , stage], k) => {
+    const i = rows.findIndex((s) => s[0] === stage);
+    const y = rowY(i) + rowH / 2;
+    path += `${k ? "L" : "M"}${X(a).toFixed(1)},${y}`;
+  });
+  sv("path", { d: path, class: "step-line" }, svg);
   for (const [a, b, stage] of sess.stages) {
-    const i = STAGES.findIndex((s) => s[0] === stage);
-    const [, name, color] = STAGES[i];
+    const i = rows.findIndex((s) => s[0] === stage);
+    const [, name, color] = rows[i];
     const x = X(a);
-    const rect = sv("rect", { x, y: padT + i * (rowH + rowGap), width: Math.max(1.5, X(b) - x), height: rowH, rx: 2, class: "mark", style: `fill:${color}` }, svg);
+    const rect = sv("rect", { x, y: rowY(i), width: Math.max(2, X(b) - x), height: rowH, rx: 3, class: "mark", style: `fill:${color}` }, svg);
     hoverable(rect, () => [[fmtMinutes((b - a) / 60), `${name()} · ${hhmm(a)}–${hhmm(b)}`, color]]);
   }
-  const first = Math.ceil(sess.start / 3600) * 3600;
-  sv("text", { x: padL, y: H - 6, class: "axis" }, svg).textContent = hhmm(sess.start);
-  sv("text", { x: w - padR, y: H - 6, "text-anchor": "end", class: "axis" }, svg).textContent = hhmm(sess.end);
-  const stepH = (sess.end - sess.start) > 6 * 3600 ? 2 : 1;
-  for (let ts = first; ts < sess.end - 1800; ts += 3600 * stepH) {
-    if (ts - sess.start < 1800) continue;
-    sv("text", { x: X(ts), y: H - 6, "text-anchor": "middle", class: "axis" }, svg).textContent = hhmm(ts);
+  svText(svg, padL, H - 8, hhmm(sess.start), "axis strong");
+  svText(svg, w - padR, H - 8, hhmm(sess.end), "axis strong", "end");
+  const span = sess.end - sess.start;
+  const stepH = span > 8 * 3600 ? 2 : 1;
+  for (let ts = Math.ceil(sess.start / 3600) * 3600; ts < sess.end; ts += 3600 * stepH) {
+    if (ts - sess.start < 2400 || sess.end - ts < 2400) continue;
+    svText(svg, X(ts), H - 8, hhmm(ts), "axis", "middle");
   }
 }
 
@@ -1578,12 +1658,53 @@ function tableRows(tbody, rows, emptyText, cols) {
 }
 const pick = (date) => { healthDate = date; quiet(loadHealth()); };
 
+const STATUS = {
+  good: [() => t("Tốt"), "✓"],
+  ok: [() => t("Ổn"), "•"],
+  watch: [() => t("Nên chú ý"), "!"],
+  alert: [() => t("Cần lưu ý"), "!!"],
+  none: [() => t("Chưa đủ dữ liệu"), "–"],
+};
+
+function renderAnalysis(a) {
+  const list = $("#anList");
+  list.textContent = "";
+  if (!a || !a.items.length) {
+    $("#anSub").textContent = t("Chưa đủ dữ liệu để phân tích. Kết nối vòng tay rồi bấm Đồng bộ.");
+    return;
+  }
+  const c = a.counts;
+  $("#anSub").textContent = t("Dựa trên dữ liệu 7–30 ngày gần nhất: {good} mục tốt, {ok} mục ổn, {watch} mục nên chú ý, {alert} mục cần lưu ý.", c);
+  for (const it of a.items) {
+    const card = document.createElement("div");
+    card.className = "insight";
+    card.dataset.status = it.status;
+    const [label, icon] = STATUS[it.status] || STATUS.none;
+    const chip = document.createElement("span");
+    chip.className = "ins-status";
+    const ic = document.createElement("b");
+    ic.textContent = icon;
+    chip.append(ic, label());
+    const h = document.createElement("h3");
+    h.textContent = it.title;
+    const v = document.createElement("p");
+    v.className = "ins-value";
+    v.textContent = it.value;
+    const d = document.createElement("p");
+    d.className = "ins-detail";
+    d.textContent = it.detail;
+    card.append(chip, h, v, d);
+    list.append(card);
+  }
+}
+
 function renderHealth() {
   const H = healthData;
   $("#hDate").value = healthDate;
   $("#hDate").max = todayISO();
   $("#hNext").disabled = healthDate >= todayISO();
   $("#hEmpty").hidden = !!H?.has_data;
+  renderAnalysis(H?.analysis);
   if (!H) {
     $$(".hgrid .chart").forEach((el) => emptyChart(el, 80, t("Chưa có dữ liệu")));
     return;
@@ -1591,17 +1712,20 @@ function renderHealth() {
   const day = H.day;
   const isToday = healthDate === todayISO();
   const dayLabel = isToday ? t("Hôm nay") : longDate(healthDate);
-  const [t0] = [new Date(`${healthDate}T00:00:00`).getTime() / 1000];
+  const t0 = new Date(`${healthDate}T00:00:00`).getTime() / 1000;
   const t1 = t0 + 86400;
 
   // giấc ngủ
   const sl = day.sleep;
   $("#slTotal").textContent = sl ? fmtMinutes(sl.minutes) : "—";
-  $("#slRange").textContent = sl ? t("{start} – {end}, thức dậy {day}", { start: hhmm(sl.start), end: hhmm(sl.end), day: dayLabel.toLowerCase() }) : t("Không có giấc ngủ kết thúc vào {day}.", { day: dayLabel.toLowerCase() });
-  if (sl) sleepChart($("#slChart"), sl); else emptyChart($("#slChart"), 60, t("Chưa có dữ liệu giấc ngủ cho ngày này."));
+  $("#slRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) }) : t("Không có giấc ngủ kết thúc vào {day}.", { day: dayLabel.toLowerCase() });
+  const hasRem = H.sleep_days.some((d) => d.rem > 0);   // Mi Band 6 thường không ghi REM
+  const rows = STAGES.filter(([key]) => key !== "rem" || hasRem);
+  if (sl) sleepChart($("#slChart"), sl, rows); else emptyChart($("#slChart"), 60, t("Chưa có dữ liệu giấc ngủ cho ngày này."));
   const legend = $("#slLegend");
   legend.textContent = "";
   for (const [key, name, color] of STAGES) {
+    if (key === "rem" && !hasRem) continue;   // Mi Band 6 thường không ghi REM
     const li = document.createElement("li");
     const sw = document.createElement("i");
     sw.style.background = color;
@@ -1610,21 +1734,29 @@ function renderHealth() {
     li.append(sw, `${name()} `, b);
     legend.append(li);
   }
+  const slept = H.sleep_days.filter((d) => d.minutes);
+  const avgSleep = slept.length ? slept.reduce((a, d) => a + d.minutes, 0) / slept.length : 0;
   columnChart($("#slHistory"), H.sleep_days.map((d) => ({
     key: d.date, label: shortDate(d.date),
     parts: [["deep", d.deep], ["light", d.light], ["rem", d.rem]].map(([k, v]) => ({ value: v / 60, color: stageInfo(k)[2] })),
-    tip: () => [[fmtMinutes(d.minutes), longDate(d.date)], ...["deep", "light", "rem", "awake"].map((k) => [fmtMinutes(d[k]), stageInfo(k)[1](), stageInfo(k)[2]])],
-  })), { height: 140, label: t("Thời gian ngủ 14 ngày gần đây"), empty: t("Chưa có dữ liệu giấc ngủ."), yFmt: (v) => `${v}h`, selected: healthDate, onPick: pick });
+    tip: () => [[fmtMinutes(d.minutes), longDate(d.date)], ...["deep", "light", "rem", "awake"].filter((k) => k !== "rem" || hasRem).map((k) => [fmtMinutes(d[k]), stageInfo(k)[1](), stageInfo(k)[2]])],
+  })), {
+    height: 210, label: t("Thời gian ngủ 14 ngày gần đây"), empty: t("Chưa có dữ liệu giấc ngủ."), yFmt: (v) => `${v}h`,
+    selected: healthDate, onPick: pick, valueFmt: (v) => fmtMinutes(v * 60),
+    band: { from: 7, to: 9, label: t("Khuyến nghị 7–9 giờ") },
+    refs: avgSleep ? [{ value: avgSleep / 60, name: t("Trung bình"), text: fmtMinutes(avgSleep) }] : [],
+  });
 
   // bước chân (hôm nay: số trực tiếp từ vòng tay mới hơn dữ liệu đã đồng bộ)
+  const goal = Number(STATE.profile?.goal || 8000);
   const liveSteps = isToday && STATE.connected ? STATE.live?.activity?.steps : null;
   const steps = Math.max(day.steps, liveSteps ?? 0);
   $("#stTotal").textContent = fmtInt(steps);
-  $("#stSub").textContent = dayLabel;
+  $("#stSub").textContent = t("{day} · {p}% mục tiêu {goal} bước", { day: dayLabel, p: Math.round((steps / goal) * 100), goal: fmtInt(goal) });
   columnChart($("#stHourly"), day.steps_hourly.map((v, h) => ({
-    key: h, label: h % 3 === 0 ? `${pad(h)}h` : "", parts: [{ value: v, color: "var(--c-steps)" }],
+    key: h, label: h % 3 === 0 ? `${pad(h)}:00` : "", parts: [{ value: v, color: "var(--c-steps)" }],
     tip: () => [[t("{n} bước", { n: fmtInt(v) }), `${pad(h)}:00–${pad((h + 1) % 24)}:00`]],
-  })), { height: 140, label: t("Bước chân theo giờ"), empty: t("Không có bước chân nào được ghi trong ngày này.") });
+  })), { height: 180, label: t("Bước chân theo giờ"), empty: t("Không có bước chân nào được ghi trong ngày này."), valueFmt: fmtInt });
   const days = H.steps_days.slice();
   if (liveSteps != null) {
     const today = days.find((d) => d.date === healthDate);
@@ -1632,20 +1764,27 @@ function renderHealth() {
   }
   columnChart($("#stHistory"), days.map((d) => ({
     key: d.date, label: shortDate(d.date), parts: [{ value: d.steps, color: "var(--c-steps)" }],
-    tip: () => [[t("{n} bước", { n: fmtInt(d.steps) }), longDate(d.date)]],
-  })), { height: 150, label: t("Bước chân mỗi ngày"), empty: t("Chưa có lịch sử bước chân."), selected: healthDate, onPick: pick });
+    tip: () => [[t("{n} bước", { n: fmtInt(d.steps) }), longDate(d.date)], [d.steps >= goal ? t("Đạt mục tiêu") : t("Chưa đạt mục tiêu"), ""]],
+  })), {
+    height: 210, label: t("Bước chân mỗi ngày"), empty: t("Chưa có lịch sử bước chân."), selected: healthDate, onPick: pick,
+    valueFmt: fmtInt, refs: [{ value: goal, name: t("Mục tiêu"), text: fmtInt(goal) }],
+  });
   tableRows($("#stTable"), days.slice().reverse().map((d) => [longDate(d.date), fmtInt(d.steps)]), t("Chưa có dữ liệu"), 2);
 
-  // nhịp tim
+  // nhịp tim (vùng tô: lúc ngủ)
   const hr = day.hr;
   $("#hrSub").textContent = dayLabel;
   if (hr.length) {
     const v = hr.map((p) => p[1]);
     statsList($("#hrStats"), [[t("Thấp nhất"), fmtInt(Math.min(...v)), t("nhịp/phút")], [t("Trung bình"), fmtInt(Math.round(v.reduce((a, b) => a + b, 0) / v.length)), t("nhịp/phút")], [t("Cao nhất"), fmtInt(Math.max(...v)), t("nhịp/phút")]]);
   } else statsList($("#hrStats"), []);
-  lineChart($("#hrChart"), hr, { t0, t1, color: "var(--c-hr)", unit: t("nhịp/phút"), label: t("Nhịp tim trong ngày"), empty: t("Không có số đo nhịp tim trong ngày này.") });
+  lineChart($("#hrChart"), hr, {
+    t0, t1, color: "var(--c-hr)", unit: t("nhịp/phút"), label: t("Nhịp tim trong ngày"), xTicks: dayTicks(t0), extremes: true,
+    shade: [sl, ...(day.naps || [])].filter(Boolean).map((s) => ({ from: s.start, to: s.end, label: t("Ngủ") })),
+    empty: t("Không có số đo nhịp tim trong ngày này."),
+  });
 
-  // căng thẳng
+  // căng thẳng (nền chia theo mức)
   const autoS = day.stress.filter((s) => s[2]).map((s) => [s[0], s[1]]);
   const manualS = day.stress.filter((s) => !s[2]).map((s) => [s[0], s[1]]);
   $("#ssSub").textContent = dayLabel;
@@ -1654,7 +1793,13 @@ function renderHealth() {
     const avg = Math.round(sv_.reduce((a, b) => a + b, 0) / sv_.length);
     statsList($("#ssStats"), [[t("Trung bình"), String(avg), stressLabel(avg)], [t("Cao nhất"), String(Math.max(...sv_)), ""]]);
   } else statsList($("#ssStats"), []);
-  lineChart($("#ssChart"), autoS, { t0, t1, yMin: 0, color: "var(--c-stress)", unit: "", dots: manualS, gap: 1800, label: t("Mức căng thẳng trong ngày"), empty: manualS.length ? t("Chỉ có lần đo tay.") : t("Không có số đo căng thẳng. Bật Theo dõi căng thẳng trong Cài đặt → Sức khỏe.") });
+  lineChart($("#ssChart"), autoS, {
+    t0, t1, yMin: 0, yMax: 100, yStep: 20, color: "var(--c-stress)", unit: "", dots: manualS, gap: 1800, xTicks: dayTicks(t0),
+    zones: [{ from: 80, to: 100, label: t("Cao"), tint: true }, { from: 60, to: 80, label: t("Trung bình") },
+      { from: 40, to: 60, label: t("Bình thường"), tint: true }, { from: 0, to: 40, label: t("Thư giãn") }],
+    label: t("Mức căng thẳng trong ngày"),
+    empty: manualS.length ? t("Chỉ có lần đo tay.") : t("Không có số đo căng thẳng. Bật Theo dõi căng thẳng trong Cài đặt → Sức khỏe."),
+  });
 
   // PAI
   const pai = H.pai;
@@ -1663,7 +1808,10 @@ function renderHealth() {
   columnChart($("#paiChart"), pai.days.map((d) => ({
     key: d.date, label: shortDate(d.date), parts: [{ value: d.total, color: "var(--c-pai)" }],
     tip: () => [[`${fmtInt(Math.round(d.total))} PAI`, longDate(d.date)], [`+${fmtInt(Math.round(d.today))}`, t("trong ngày")]],
-  })), { height: 140, label: t("PAI các ngày gần đây"), empty: t("Chưa có dữ liệu PAI.") });
+  })), {
+    height: 200, label: t("PAI các ngày gần đây"), empty: t("Chưa có dữ liệu PAI."), valueFmt: (v) => fmtInt(Math.round(v)),
+    refs: [{ value: 100, name: t("Mục tiêu"), text: "100" }],
+  });
 
   // SpO2
   const sp = H.spo2_recent;
@@ -1711,6 +1859,7 @@ async function init() {
   alarms = blankAlarms();
   renderAlarms();
   drawBand();
+  drawSpark();
   route();
   connectEvents();
 }

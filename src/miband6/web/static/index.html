@@ -125,7 +125,8 @@
           <article class="tile tile-hr">
             <header class="tile-head"><svg class="ic"><use href="#i-heart"/></svg><h2>Nhịp tim</h2></header>
             <p class="tile-value"><span id="hr" class="num">—</span> <span class="unit">nhịp/phút</span></p>
-            <svg class="spark" id="hrSpark" viewBox="0 0 200 48" preserveAspectRatio="none" aria-hidden="true"><polyline id="hrLine" points=""/></svg>
+            <div class="chart hr-live" id="hrLive"></div>
+            <p class="tile-note muted" id="hrRange"></p>
             <p class="tile-note" id="hrNote">Đeo vòng sát cổ tay rồi bấm Đo ngay.</p>
             <div class="tile-actions">
               <button id="hrLiveBtn" class="btn" data-conn aria-pressed="false">Theo dõi liên tục</button>
@@ -176,6 +177,11 @@
       <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
 
       <div class="hgrid">
+        <article class="card wide analysis" id="health-analysis">
+          <header class="card-head"><h2>Phân tích sức khỏe</h2><p class="card-sub" id="anSub"></p></header>
+          <div class="insights" id="anList"></div>
+          <p class="card-sub disclaimer">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
+        </article>
         <article class="card wide" id="health-sleep">
           <header class="card-head"><h2>Giấc ngủ</h2><p class="card-sub" id="slRange"></p></header>
           <p class="card-value"><span id="slTotal" class="num">—</span></p>

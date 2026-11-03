@@ -44,8 +44,10 @@ def test_fetch_commands():
 
 def test_decoders():
     start = dt.datetime(2026, 11, 3, 0, 0, tzinfo=TZ)
-    rows = H.decode_activity(start, bytes([1, 50, 30, 80, 0, 0, 0, 0, 120, 10, 0, 55, 0, 40, 60, 10]))
-    assert rows[1][0] - rows[0][0] == 60 and rows[0][3] == 30 and H.sleep_stage(rows[1]) == "deep"
+    rows = H.decode_activity(start, bytes([1, 50, 30, 80, 0, 0, 0, 0, 0xFB, 10, 0, 55, 0, 40, 60, 10]))
+    assert rows[1][0] - rows[0][0] == 60 and rows[0][3] == 30 and rows[0][4] == 80
+    assert H.effective_kinds(rows) == [H.KIND_ACTIVITY, H.KIND_DEEP_SLEEP]
+    assert H.sleep_stage(rows[1], H.KIND_DEEP_SLEEP) == "deep" and H.sleep_stage(rows[0], H.KIND_ACTIVITY) is None
     with pytest.raises(ValueError):
         H.decode_activity(start, bytes(7))
     assert H.decode_stress_auto(start, bytes([0xFF, 30, 0xFF, 70])) == [(int(start.timestamp()) + 60, 30),
@@ -71,15 +73,59 @@ def test_sport_summary_v2():
     assert (w["avg_hr"], w["max_hr"]) == (141, 170)
 
 
-def test_sleep_sessions_merge_short_wakes():
-    base = 1_800_000_000
-    s = lambda m, deep=0, rem=0: (base + 60 * m, 120, 0, 0, 55, 40, deep, rem)  # noqa: E731
-    awake = lambda m: (base + 60 * m, 1, 0, 10, 70, 0, 0, 0)  # noqa: E731
-    samples = [s(m, deep=60) for m in range(30)] + [awake(m) for m in range(30, 40)] \
-        + [s(m, rem=70) for m in range(40, 70)] + [awake(m) for m in range(70, 200)] + [s(m) for m in range(200, 210)]
+BASE = 1_800_000_000
+
+
+def minute(m, kind, level=0, deep=0x80, rem=0, hr=60):
+    """Một phút dữ liệu kiểu Mi Band 6: (ts, loại, cường độ, bước, nhịp tim, byte "ngủ", ngủ sâu, REM)."""
+    return (BASE + 60 * m, kind, 0, 0, hr, level, deep, rem)
+
+
+def test_sleep_uses_state_markers_like_gadgetbridge():
+    # mốc chỉ ở phút đổi trạng thái; 0xF0 / 0x50 (4 bit thấp = 0) là "không đổi", 0xFA là "bỏ qua"
+    samples = [minute(0, 0x11)] + [minute(m, 0x50) for m in range(1, 10)] \
+        + [minute(10, 0xFB)] + [minute(m, 0xF0) for m in range(11, 40)] \
+        + [minute(40, 0x11)] + [minute(m, 0x50) for m in range(41, 50)] \
+        + [minute(50, 0xF9)] + [minute(m, 0xFA if m % 7 == 0 else 0xF0) for m in range(51, 80)] \
+        + [minute(80, 0x6C)] + [minute(m, 0x50) for m in range(81, 200)] + [minute(m, 0xF9) for m in range(200, 210)]
     (sess,) = H.sleep_sessions(samples)   # giấc 10 phút ở cuối quá ngắn nên bị bỏ
-    assert (sess["deep"], sess["rem"], sess["awake"], sess["minutes"]) == (30, 30, 10, 60)
-    assert [st[2] for st in sess["stages"]] == ["deep", "awake", "rem"]
+    assert (sess["deep"], sess["light"], sess["awake"], sess["minutes"]) == (30, 30, 10, 60)
+    assert [st[2] for st in sess["stages"]] == ["deep", "awake", "light"]
+    # phút "không đổi" ở đầu khoảng: dùng trạng thái trước khoảng đó
+    assert H.sleep_sessions([minute(m, 0xF0) for m in range(40)], previous=H.KIND_LIGHT_SLEEP)[0]["light"] == 40
+
+
+def test_sleep_edges_follow_sleep_level_not_late_markers():
+    """Mẫu giống một đêm thật: vòng tay ghi mốc ngủ / thức trễ ~11 phút; byte "ngủ" cho thấy giờ thật
+    (vòng tay hiện "ngủ lúc 1:34, dậy 7:42, 6 giờ 8 phút")."""
+    fall, wake = 94, 462   # phút kể từ 00:00: 01:34 và 07:42
+    rows = []
+    for m in range(60, 500):
+        if m < fall:
+            rows.append(minute(m, 0x50, level=max(0, 9 - (fall - m))))
+        elif m < fall + 11:
+            rows.append(minute(m, 0x50 if m < fall + 9 else 0xD0, level=10 + 4 * (m - fall)))
+        elif m == fall + 11:
+            rows.append(minute(m, 0xDB, level=56))              # mốc ngủ sâu trễ 11 phút
+        elif m < wake:
+            marker = m == fall + 63
+            rows.append(minute(m, 0xF9 if marker else 0xF0, level=55, deep=0x80 | 40))
+        elif m == wake:
+            rows.append(minute(m, 0xF0, level=38))              # phút chuyển tiếp: đang tỉnh
+        elif m < wake + 12:
+            rows.append(minute(m, 0xF0 if m < wake + 3 else 0x70, level=max(0, 24 - 3 * (m - wake))))
+        elif m == wake + 12:
+            rows.append(minute(m, 0x6C))                        # mốc thức dậy trễ 12 phút
+        else:
+            rows.append(minute(m, 0x11 if m == wake + 13 else 0x50))
+    (sess,) = H.sleep_sessions(rows, previous=H.KIND_ACTIVITY)
+    assert sess["start"] == BASE + 60 * fall and sess["end"] == BASE + 60 * wake
+    assert sess["minutes"] == wake - fall == 368 and sess["deep"] + sess["light"] == 368
+    assert sess["deep"] == 52 and sess["stages"][0][2] == "light"   # 11 phút đầu (trước mốc trễ) là ngủ nông
+    # vòng tay không có byte "ngủ" (toàn 0): giữ nguyên mốc
+    plain = [(t, k, i, s, hr, 0, d, r) for (t, k, i, s, hr, _l, d, r) in rows]
+    (sess,) = H.sleep_sessions(plain, previous=H.KIND_ACTIVITY)
+    assert sess["start"] == BASE + 60 * (fall + 11) and sess["end"] == BASE + 60 * (wake + 12)
 
 
 # ---------------------------------------------------------------- lấy dữ liệu từ vòng tay
@@ -276,3 +322,30 @@ async def test_inspect_and_auto_preview(client):
     assert (await r.json())["state"]["watchface"]["preview"] and fake.installed_watchface == face
     shot = await (await client.get("/api/watchface/preview")).read()
     assert shot == WF.preview_png(face)
+
+
+def test_analysis_rules():
+    now = BASE + 20 * 86400
+    nights = [{"date": f"d{i}", "minutes": 300, "deep": 30, "awake": 0, "start": BASE + i * 86400 - 3600,
+               "hr": 60 if i < 7 else 68} for i in range(14)]
+    a = H.analyze(nights, [{"date": f"d{i}", "steps": 3000} for i in range(7)], 8000, {"total": 120},
+                  [(1, 88), (2, 97)], [70] * 10, 40, 1, last_data=now - 3600, now=now)
+    status = {i["key"]: i["status"] for i in a["items"]}
+    assert status == {"sleep": "alert", "deep": "ok", "bedtime": "good", "rhr": "watch", "steps": "watch",
+                      "active": "watch", "pai": "good", "spo2": "alert", "stress": "watch"}
+    assert sum(a["counts"].values()) == len(a["items"])
+    good = H.analyze([{"date": "d", "minutes": 480, "deep": 90, "awake": 5, "start": BASE, "hr": 55}],
+                     [{"date": "d", "steps": 9000}], 8000, None, [], [], 200, 3, last_data=now - 10 * 86400, now=now)
+    status = {i["key"]: i["status"] for i in good["items"]}
+    assert status["sleep"] == status["steps"] == status["active"] == status["rhr"] == "good"
+    assert status["fresh"] == "watch" and "pai" not in status   # dữ liệu cũ; chưa có PAI thì không nhận xét
+
+
+async def test_health_api_includes_analysis(client):
+    await connected(client)
+    await wait_sync(client.service)
+    h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
+    keys = {i["key"] for i in h["analysis"]["items"]}
+    assert {"sleep", "deep", "rhr", "steps", "active", "pai", "spo2", "stress"} <= keys
+    sleep = next(i for i in h["analysis"]["items"] if i["key"] == "sleep")
+    assert sleep["status"] == "good"   # giả lập ngủ 23:20–06:50 mỗi đêm

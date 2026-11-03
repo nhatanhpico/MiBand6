@@ -24,14 +24,15 @@
 - 10 báo thức: đọc từ vòng tay, chỉnh sửa, lưu lại
 - Đồng bộ giờ với máy tính (tự làm mỗi lần kết nối)
 
-**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness)
-- Giấc ngủ: tổng thời gian, ngủ sâu / nông / REM / thức theo từng giờ, 14 ngày gần đây
+**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
+- **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
+- Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim)
 - Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
 - Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
 
-**Mặt đồng hồ và ảnh nền** (**Cài đặt → Mặt đồng hồ**)
+**Mặt đồng hồ và ảnh nền** (**Cài đặt → Mặt đồng hồ**; hướng dẫn chi tiết: [docs/mat-dong-ho.md](docs/mat-dong-ho.md))
 - Khung **mô phỏng Mi Band 6** (màn hình 152 × 486, bo góc như thật) hiện đúng thứ sẽ lên vòng tay trước khi cài
 - **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Chọn vị trí và màu giờ rồi **Cài lên vòng tay**: ứng dụng tự dựng một mặt đồng hồ từ ảnh đó
 - **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); ảnh xem trước có trong tệp được đọc ra và hiện ở khung mô phỏng
@@ -295,6 +296,7 @@ src/miband6/
 macos/          Ứng dụng macOS: vỏ Swift (thanh menu, cửa sổ WKWebView) chạy server ở trên làm tiến trình con
   Sources/      Mã Swift; build.sh đóng gói thành dist/Mi Band 6.app
 tools/mifitness_key.py  Lấy auth key từ tài khoản Mi Fitness
+docs/           Hướng dẫn: trang Sức khỏe (suc-khoe.md), mặt đồng hồ và ảnh nền (mat-dong-ho.md)
 tests/          Kiểm thử giao thức, mã hóa, toàn bộ luồng kết nối và giao diện
 ```
 

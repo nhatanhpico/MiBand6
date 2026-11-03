@@ -74,12 +74,55 @@ class HealthDB:
         self.db.commit()
 
     def add_workout(self, w: dict) -> None:
-        self.db.execute("INSERT OR REPLACE INTO workouts VALUES (?, ?)", (w["start"], json.dumps(w)))
+        """Buổi tập lấy từ vòng tay; nếu đã có bản từ Mi Fitness cùng lúc bắt đầu thì thay bằng bản này."""
+        old = self._workout_near(w["start"])
+        if old is not None:
+            self.db.execute("DELETE FROM workouts WHERE start = ?", (old["start"],))
+            if old.get("mf_type") is not None:
+                w = {**w, "mf_type": old["mf_type"]}
+        self.db.execute("INSERT OR REPLACE INTO workouts VALUES (?, ?)", (w["start"], json.dumps({"source": "band", **w})))
         self.db.commit()
+
+    def _workout_near(self, start: int, slack: int = 180) -> dict | None:
+        row = self.db.execute("SELECT data FROM workouts WHERE start BETWEEN ? AND ? ORDER BY ABS(start - ?) LIMIT 1",
+                              (start - slack, start + slack, start)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def add_cloud_workouts(self, rows: list[dict]) -> int:
+        """Buổi tập lấy từ tài khoản Mi Fitness. Trùng giờ bắt đầu (±3 phút) với buổi vòng tay đã ghi thì giữ bản
+        của vòng tay, chỉ ghi thêm mã loại bài tập của Mi Fitness. Trả về số buổi mới."""
+        added = 0
+        for w in rows:
+            old = self._workout_near(w["start"])
+            if old is None:
+                self.db.execute("INSERT OR REPLACE INTO workouts VALUES (?, ?)", (w["start"], json.dumps(w)))
+                added += 1
+            elif old.get("source") == "mifitness":
+                self.db.execute("UPDATE workouts SET data = ? WHERE start = ?", (json.dumps({**old, **w, "start": old["start"]}), old["start"]))
+            else:
+                self.db.execute("UPDATE workouts SET data = ? WHERE start = ?",
+                                (json.dumps({**old, "mf_type": w.get("mf_type")}), old["start"]))
+        self.db.commit()
+        return added
+
+    def first(self, name: str) -> int | None:
+        """Thời điểm cũ nhất đã lưu của một loại dữ liệu (để lấy bù phần cũ hơn)."""
+        query = {
+            "activity": "SELECT MIN(ts) FROM activity", "stress_auto": "SELECT MIN(ts) FROM stress WHERE auto = 1",
+            "stress_manual": "SELECT MIN(ts) FROM stress WHERE auto = 0", "spo2": "SELECT MIN(ts) FROM spo2",
+            "pai": "SELECT MIN(ts) FROM pai", "workouts": "SELECT MIN(start) FROM workouts WHERE data LIKE '%\"band\"%'",
+        }.get(name)
+        return self.db.execute(query).fetchone()[0] if query else None
 
     # ------------------------------------------------------------ đọc
     def samples(self, t0: int, t1: int) -> list[tuple]:
         return self.db.execute("SELECT * FROM activity WHERE ts >= ? AND ts < ? ORDER BY ts", (t0, t1)).fetchall()
+
+    def kind_before(self, ts: int) -> int | None:
+        """Loại hoạt động (4 bit thấp) của mốc trạng thái gần nhất trước `ts`."""
+        row = self.db.execute("SELECT kind & 15 FROM activity WHERE ts < ? AND (kind & 15) NOT IN (0, 10) "
+                              "ORDER BY ts DESC LIMIT 1", (ts,)).fetchone()
+        return row[0] if row else None
 
     def daily_steps(self) -> list[dict]:
         """Tổng bước mỗi ngày có dữ liệu (theo giờ địa phương), cũ tới mới."""
@@ -87,6 +130,42 @@ class HealthDB:
             "SELECT date(ts, 'unixepoch', 'localtime') AS d, SUM(steps), COUNT(*) FROM activity GROUP BY d ORDER BY d"
         ).fetchall()
         return [{"date": d, "steps": s or 0, "minutes": n} for d, s, n in rows]
+
+    def analysis(self, goal: int = 8000, today: str | None = None) -> dict:
+        """Nhận xét tình trạng hiện tại từ 14 ngày gần nhất (xem health.analyze)."""
+        today = today or dt.date.today().isoformat()
+        d0 = dt.date.fromisoformat(today)
+        first = d0 - dt.timedelta(days=13)
+        w0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
+        _, t1 = H.day_bounds(today)
+        samples = self.samples(w0, t1)
+        sessions = H.sleep_sessions(samples, self.kind_before(w0))
+        by_ts = {s[0]: s for s in samples}
+        nights: dict[str, dict] = {}
+        hrs: dict[str, list[int]] = {}
+        for sess in sessions:   # mọi giấc kết thúc trong một ngày cộng lại, như biểu đồ giấc ngủ
+            day = H.local_date(sess["end"])
+            n = nights.setdefault(day, {"date": day, "minutes": 0, "deep": 0, "awake": 0, "start": sess["start"]})
+            for k in ("minutes", "deep", "awake"):
+                n[k] += sess[k]
+            n["start"] = min(n["start"], sess["start"])
+            hrs.setdefault(day, []).extend(by_ts[ts][4] for ts in range(sess["start"], sess["end"], 60)
+                                           if ts in by_ts and H.valid_hr(by_ts[ts][4]))
+        for day, n in nights.items():
+            v = sorted(hrs.get(day, []))
+            n["hr"] = v[len(v) // 2] if v else None
+        steps = [d for d in self.daily_steps() if first.isoformat() <= d["date"] < today and d["minutes"] >= 600]
+        week0 = H.day_bounds((d0 - dt.timedelta(days=7)).isoformat())[0]
+        workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts WHERE start >= ?", (week0,))]
+        active = {s[0] for s in samples if s[0] >= week0 and s[3] >= H.BRISK_STEPS}
+        for w in workouts:
+            active.update(range(w["start"] - w["start"] % 60, w["end"], 60))
+        pai = self.db.execute("SELECT total FROM pai ORDER BY ts DESC LIMIT 1").fetchone()
+        spo2 = self.db.execute("SELECT ts, value FROM spo2 WHERE ts >= ? ORDER BY ts", (t1 - 30 * 86400,)).fetchall()
+        stress = [r[0] for r in self.db.execute("SELECT value FROM stress WHERE ts >= ? AND auto = 1", (week0,))]
+        last = self.db.execute("SELECT MAX(ts) FROM activity").fetchone()[0]
+        return H.analyze(sorted(nights.values(), key=lambda n: n["date"]), steps, goal,
+                         {"total": pai[0]} if pai else None, spo2, stress, len(active), len(workouts), last)
 
     def summary(self, date: str, sleep_days: int = 14) -> dict:
         """Mọi số liệu trang Sức khỏe cần cho ngày `date` (YYYY-MM-DD) và các ngày gần đó."""
@@ -100,7 +179,7 @@ class HealthDB:
         # giấc ngủ: tính trên khoảng rộng rồi gán mỗi giấc cho ngày thức dậy (như Mi Fitness)
         first = dt.date.fromisoformat(date) - dt.timedelta(days=sleep_days - 1)
         w0, _ = H.day_bounds((first - dt.timedelta(days=1)).isoformat())
-        sessions = H.sleep_sessions(self.samples(w0 + 12 * 3600, t1))
+        sessions = H.sleep_sessions(self.samples(w0 + 12 * 3600, t1), self.kind_before(w0 + 12 * 3600))
         by_day: dict[str, list[dict]] = {}
         for sess in sessions:
             by_day.setdefault(H.local_date(sess["end"]), []).append(sess)
@@ -125,8 +204,12 @@ class HealthDB:
                                             "total": round(total, 1), "time_low": tl, "time_moderate": tm,
                                             "time_high": th}
         pai_days = list(pai_by_day.values())[-14:]
-        workouts = [json.loads(r[0]) for r in
-                    self.db.execute("SELECT data FROM workouts ORDER BY start DESC LIMIT 100").fetchall()]
+        workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts ORDER BY start DESC").fetchall()]
+        # loại bài tập của Mi Fitness dùng mã khác vòng tay: học cách đổi mã từ các buổi có cả hai
+        mf_to_band = {w["mf_type"]: w["type"] for w in workouts if w.get("type") is not None and w.get("mf_type") is not None}
+        for w in workouts:
+            if w.get("type") is None and w.get("mf_type") in mf_to_band:
+                w["type"] = mf_to_band[w["mf_type"]]
         return {
             "date": date,
             "has_data": bool(self.db.execute("SELECT 1 FROM activity LIMIT 1").fetchone()),

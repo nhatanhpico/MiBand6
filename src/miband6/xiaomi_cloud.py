@@ -587,6 +587,60 @@ def fetch_profile(login: XiaomiLogin, regions: list[str] | None = None) -> tuple
     return None, trail
 
 
+SPORT_RECORDS_PATH = "/app/v1/data/get_sport_records_by_time"
+
+
+def fetch_sport_records(login: XiaomiLogin, start_s: int, end_s: int, regions: list[str] | None = None,
+                        max_pages: int = 60) -> tuple[list[dict], list[str]]:
+    """Các buổi tập lưu trên tài khoản Mi Fitness bắt đầu trong [start_s, end_s] (mới tới cũ).
+
+    Mỗi phần tử là trường "value" đã giải mã của một bản ghi. Định dạng yêu cầu theo mô tả của dự án mifit
+    (GET ký như các API khác, phân trang bằng next_key). Ném SessionExpired nếu vùng đầu tiên trả 401."""
+    trail: list[str] = []
+    for n, region in enumerate(regions or REGIONS):
+        host = f"{region}.hlth.io.mi.com" if region else "hlth.io.mi.com"
+        records: list[dict] = []
+        next_key = None
+        answered = False
+        for page in range(max_pages):
+            req = {"start_time": start_s - 1, "end_time": end_s, "reverse": True, "limit": 50}
+            if next_key:
+                req["next_key"] = next_key
+            try:
+                status, res = login.request(host, SPORT_RECORDS_PATH, {"data": json.dumps(req, separators=(",", ":"))},
+                                            method="GET", region=region)
+            except login.requests.exceptions.RequestException as e:
+                trail.append(f"{host} {SPORT_RECORDS_PATH}: {type(e).__name__}")
+                break
+            if status == 401 and n == 0 and page == 0:
+                raise SessionExpired(tr('Phiên đăng nhập Xiaomi đã hết hạn.'))
+            if not isinstance(res, dict) or res.get("code", 0) != 0:
+                detail = f"HTTP {status}" if res is None else f"code {res.get('code')} {str(res.get('message') or '')[:50]}"
+                trail.append(f"{host} {SPORT_RECORDS_PATH}: {detail}")
+                break
+            answered = True
+            body = res["result"] if isinstance(res.get("result"), dict) else res
+            for entry in body.get("sport_records") or []:
+                if not isinstance(entry, dict) or entry.get("deleted"):
+                    continue
+                value = entry.get("value")
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        continue
+                if isinstance(value, dict):
+                    records.append(value)
+            if not body.get("has_more") or not body.get("next_key") or body.get("next_key") == next_key:
+                break
+            next_key = body["next_key"]
+        if answered:
+            trail.append(f"{host} {SPORT_RECORDS_PATH}: {len(records)}")
+        if records:
+            return records, trail
+    return [], trail
+
+
 def _date(value) -> dt.date | None:
     if isinstance(value, (int, float)) and value > 0:
         if 19000101 <= value <= 21001231:  # dạng yyyymmdd

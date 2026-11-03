@@ -11,11 +11,26 @@ import datetime as dt
 import struct
 
 SAMPLE_SIZE = 8          # Mi Band 6: mỗi phút 8 byte
-KIND_SLEEP = 120         # vòng tay đánh dấu phút đang ngủ
-KIND_NOT_WORN = 115
-KIND_CHARGING = 118
+
+# Loại hoạt động: chỉ 4 bit thấp của byte đầu có nghĩa (Gadgetbridge: MiBand2SampleProvider, HuamiConst).
+# Vòng tay chỉ ghi khi trạng thái đổi; các phút giữa mang 0 (không đổi) hoặc 10 (bỏ qua).
+KIND_NO_CHANGE = 0
+KIND_ACTIVITY = 1
+KIND_RUNNING = 2
+KIND_NOT_WORN = 3
+KIND_BIKE = 4
+KIND_CHARGING = 6
+KIND_LIGHT_SLEEP = 9
+KIND_IGNORE = 10
+KIND_DEEP_SLEEP = 11
+KIND_WAKE_UP = 12
+
 SLEEP_GAP_MINUTES = 45   # thức giấc ngắn hơn ngần này vẫn tính là cùng một giấc
 MIN_SLEEP_MINUTES = 20   # giấc ngắn hơn ngần này bỏ qua (thường là ngồi yên)
+# Vòng tay ghi mốc ngủ / thức trễ chừng 10 phút; byte "ngủ" (byte thứ 6) cho thấy lúc thật sự ngủ / dậy:
+ONSET_LEVEL = 10         # phút trước mốc ngủ có byte "ngủ" từ ngần này trở lên: đã ngủ
+WAKE_LEVEL = 30          # phút cuối giấc có byte "ngủ" dưới ngần này: đã dậy
+EDGE_MINUTES = 30        # chỉ chỉnh mỗi đầu giấc tối đa ngần này phút
 
 
 def _ts(t: dt.datetime) -> int:
@@ -126,46 +141,109 @@ def decode_sport_summary(data: bytes, start: dt.datetime) -> dict:
     return out
 
 
+def workout_from_cloud(v: dict) -> dict | None:
+    """Một buổi tập từ tài khoản Mi Fitness (trường "value" đã giải mã) theo dạng của decode_sport_summary.
+
+    Tên trường theo mô tả của dự án mifit; mã loại bài tập (sport_type) của Mi Fitness khác mã của vòng tay."""
+    def num(key: str) -> int | None:
+        try:
+            x = int(float(v.get(key) or 0))
+        except (TypeError, ValueError):
+            return None
+        return x if x > 0 else None
+
+    start = num("start_time")
+    if not start:
+        return None
+    duration = num("duration")
+    return {"source": "mifitness", "mf_type": num("sport_type"), "start": start,
+            "end": num("end_time") or start + (duration or 0), "active_seconds": duration,
+            "distance": num("distance"), "calories": num("calories"), "steps": num("steps"),
+            "avg_hr": num("avg_hrm") if valid_hr(num("avg_hrm") or 0) else None,
+            "max_hr": num("max_hrm") if valid_hr(num("max_hrm") or 0) else None}
+
+
 # ---------------------------------------------------------------- giấc ngủ
 
 
-def sleep_stage(sample: tuple) -> str | None:
-    """'deep' | 'rem' | 'light' cho phút đang ngủ, None nếu thức (ngưỡng như Gadgetbridge)."""
-    _ts_, kind, _i, _s, _hr, _sleep, deep, rem = sample
-    if kind != KIND_SLEEP:
+def effective_kinds(samples: list[tuple], previous: int | None = None) -> list[int | None]:
+    """Loại hoạt động thật của từng phút: 4 bit thấp; phút "không đổi"/"bỏ qua" giữ loại của phút trước."""
+    out: list[int | None] = []
+    last = previous
+    for s in samples:
+        k = s[1] & 0x0F
+        if k not in (KIND_NO_CHANGE, KIND_IGNORE):
+            last = k
+        out.append(last)
+    return out
+
+
+def sleep_stage(sample: tuple, kind: int | None) -> str | None:
+    """'deep' | 'light' | 'rem' cho phút đang ngủ (theo loại hoạt động đã tính), None nếu thức."""
+    if kind not in (KIND_LIGHT_SLEEP, KIND_DEEP_SLEEP):
         return None
-    if rem & 127 > 55:
+    if sample[7] & 127 > 55:   # vòng tay nào ghi REM thì dùng (Mi Band 6 thường để 0)
         return "rem"
-    if deep & 127 > 42:
-        return "deep"
-    return "light"
+    return "deep" if kind == KIND_DEEP_SLEEP else "light"
 
 
-def sleep_sessions(samples: list[tuple]) -> list[dict]:
-    """Gom các phút ngủ liền nhau thành từng giấc; khoảng thức ngắn ở giữa tính là 'thức'."""
+def sleep_sessions(samples: list[tuple], previous: int | None = None) -> list[dict]:
+    """Gom các phút ngủ thành từng giấc; khoảng thức ngắn ở giữa tính là 'thức'.
+
+    samples liền nhau theo phút (ts tăng dần); previous: loại hoạt động trước mẫu đầu tiên."""
+    kinds = effective_kinds(samples, previous)
+    stages = [sleep_stage(s, k) for s, k in zip(samples, kinds)]
+
+    # chỉnh hai đầu theo byte "ngủ": lùi lúc bắt đầu, cắt phần cuối đã tỉnh (vòng tay ghi mốc trễ)
+    i = 0
+    while i < len(samples):
+        if stages[i] is None or (i and stages[i - 1] is not None):
+            i += 1
+            continue
+        j = i   # i: phút ngủ đầu tiên của một đoạn
+        while i - j < EDGE_MINUTES and j > 0 and stages[j - 1] is None \
+                and samples[j - 1][0] == samples[j][0] - 60 and samples[j - 1][5] >= ONSET_LEVEL:
+            j -= 1
+        for k in range(j, i):
+            stages[k] = "light"
+        i += 1
+    for i in range(len(samples) - 1, -1, -1):
+        if stages[i] is None or (i + 1 < len(samples) and stages[i + 1] is not None):
+            continue
+        j = i   # i: phút ngủ cuối cùng của một đoạn; j lùi về đầu đoạn
+        while j > 0 and stages[j - 1] is not None:
+            j -= 1
+        levels = sorted(samples[k][5] for k in range(j, i + 1))
+        if levels[len(levels) // 2] < WAKE_LEVEL:
+            continue   # vòng tay không ghi byte "ngủ" cho giấc này: giữ nguyên mốc
+        k = i
+        while i - k < EDGE_MINUTES and stages[k] is not None and samples[k][5] < WAKE_LEVEL:
+            stages[k] = None
+            k -= 1
+        if k < i and k > j:
+            stages[k] = None   # phút chuyển tiếp (byte "ngủ" đang tụt) tính là đã dậy, như vòng tay hiển thị
+
     sessions: list[dict] = []
     cur: dict | None = None
-    last_sleep_ts = None
-    for s in samples:
-        stage = sleep_stage(s)
+    last_ts = None
+    for s, stage in zip(samples, stages):
         if stage is None:
             continue
         ts = s[0]
-        if cur is None or ts - last_sleep_ts > SLEEP_GAP_MINUTES * 60:
+        if cur is None or ts - last_ts > SLEEP_GAP_MINUTES * 60:
             cur = {"start": ts, "end": ts + 60, "deep": 0, "light": 0, "rem": 0, "awake": 0, "stages": []}
             sessions.append(cur)
-        elif ts - last_sleep_ts > 60:
-            gap = (ts - last_sleep_ts) // 60 - 1
-            cur["awake"] += gap
-            cur["stages"].append([last_sleep_ts + 60, ts, "awake"])
+        elif ts - last_ts > 60:
+            cur["awake"] += (ts - last_ts) // 60 - 1
+            cur["stages"].append([last_ts + 60, ts, "awake"])
         cur[stage] += 1
         cur["end"] = ts + 60
-        stages = cur["stages"]
-        if stages and stages[-1][2] == stage and stages[-1][1] == ts:
-            stages[-1][1] = ts + 60
+        st = cur["stages"]
+        if st and st[-1][2] == stage and st[-1][1] == ts:
+            st[-1][1] = ts + 60
         else:
-            stages.append([ts, ts + 60, stage])
-        last_sleep_ts = ts
+            st.append([ts, ts + 60, stage])
+        last_ts = ts
     out = []
     for sess in sessions:
         sess["minutes"] = sess["deep"] + sess["light"] + sess["rem"]
@@ -183,3 +261,135 @@ def day_bounds(date: str) -> tuple[int, int]:
     start = dt.datetime.combine(d, dt.time()).astimezone()
     end = dt.datetime.combine(d + dt.timedelta(days=1), dt.time()).astimezone()
     return int(start.timestamp()), int(end.timestamp())
+
+
+# ---------------------------------------------------------------- phân tích sức khỏe
+
+GOOD, OK, WATCH, ALERT, NONE = "good", "ok", "watch", "alert", "none"
+BRISK_STEPS = 100        # bước/phút: đi bộ nhanh trở lên được tính là vận động vừa
+
+
+def _avg(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _hm(minutes: float) -> str:
+    from .i18n import tr
+
+    minutes = int(round(minutes))
+    return tr('{h} giờ {m} phút', h=minutes // 60, m=minutes % 60)
+
+
+def _clock_spread(starts: list[int]) -> float:
+    """Độ lệch chuẩn (phút) của giờ đi ngủ, tính quanh nửa đêm (23:30 và 00:30 cách nhau 60 phút)."""
+    mins = []
+    for ts in starts:
+        t = dt.datetime.fromtimestamp(ts)
+        m = t.hour * 60 + t.minute
+        mins.append(m - 1440 if m >= 12 * 60 else m)
+    mean = sum(mins) / len(mins)
+    return (sum((m - mean) ** 2 for m in mins) / len(mins)) ** 0.5
+
+
+def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | None,
+            spo2: list[tuple], stress: list[int], active_minutes: int, workouts: int, last_data: int | None,
+            now: float | None = None) -> dict:
+    """Nhận xét sức khỏe từ dữ liệu gần đây, theo khuyến nghị chung cho người lớn (không phải chẩn đoán).
+
+    nights: các đêm gần nhất (cũ tới mới) {date, minutes, deep, awake, start, hr};
+    steps_days: tổng bước các ngày đã trọn (cũ tới mới); spo2: [(ts, %)] 30 ngày; stress: các số đo 7 ngày;
+    active_minutes: phút vận động vừa/mạnh 7 ngày; workouts: số buổi tập 7 ngày."""
+    from .i18n import tr
+
+    now = now or dt.datetime.now().timestamp()
+    items: list[dict] = []
+
+    def add(key: str, status: str, title: str, value: str, detail: str) -> None:
+        items.append({"key": key, "status": status, "title": title, "value": value, "detail": detail})
+
+    # giấc ngủ: 7 đêm gần nhất có dữ liệu
+    recent = [n for n in nights if n["minutes"]][-7:]
+    if recent:
+        avg = _avg([n["minutes"] for n in recent])
+        short = sum(1 for n in recent if n["minutes"] < 360)
+        status = GOOD if 420 <= avg <= 570 else WATCH if avg >= 360 else ALERT
+        detail = tr('Trung bình {n} đêm gần nhất. Người lớn nên ngủ 7–9 giờ mỗi đêm.', n=len(recent))
+        if avg > 570:
+            detail += " " + tr('Ngủ nhiều hơn khuyến nghị.')
+        if short:
+            detail += " " + tr('{k} đêm ngủ dưới 6 giờ.', k=short)
+        add("sleep", status, tr('Thời gian ngủ'), _hm(avg), detail)
+        deep = _avg([n["deep"] / n["minutes"] * 100 for n in recent])
+        add("deep", GOOD if deep >= 13 else OK if deep >= 10 else WATCH, tr('Ngủ sâu'), f"{deep:.0f}%",
+            tr('Phần giấc ngủ là ngủ sâu; thường khoảng 13–23%. Ngủ đủ giờ, đều đặn giúp tăng ngủ sâu.'))
+        if len(recent) >= 3:
+            spread = _clock_spread([n["start"] for n in recent])
+            add("bedtime", GOOD if spread <= 45 else OK if spread <= 90 else WATCH, tr('Giờ đi ngủ đều đặn'),
+                tr('lệch ±{m} phút', m=int(round(spread))),
+                tr('Giờ đi ngủ chênh nhau càng ít thì nhịp sinh học càng ổn định; nên giữ trong khoảng ±45 phút.'))
+    else:
+        add("sleep", NONE, tr('Thời gian ngủ'), "—", tr('Chưa có dữ liệu giấc ngủ. Đeo vòng khi ngủ rồi đồng bộ.'))
+
+    # nhịp tim khi ngủ (gần với nhịp tim nghỉ)
+    hrs = [n["hr"] for n in nights if n.get("hr")]
+    if hrs:
+        cur = _avg(hrs[-7:])
+        prev = _avg(hrs[-14:-7])
+        status = GOOD if 40 <= cur <= 75 else OK if cur <= 80 else WATCH
+        detail = tr('Nhịp tim trung bình khi ngủ, gần với nhịp tim nghỉ; thường 40–75 nhịp/phút ở người khỏe.')
+        if prev and cur - prev >= 5:
+            status = WATCH
+            detail += " " + tr('Cao hơn tuần trước {d} nhịp/phút; có thể do mệt, thiếu ngủ, căng thẳng hoặc sắp ốm.',
+                               d=int(round(cur - prev)))
+        add("rhr", status, tr('Nhịp tim nghỉ'), tr('{n} nhịp/phút', n=int(round(cur))), detail)
+
+    # bước chân: 7 ngày đã trọn gần nhất
+    week = steps_days[-7:]
+    if week:
+        avg = _avg([d["steps"] for d in week])
+        met = sum(1 for d in week if d["steps"] >= goal)
+        prev = _avg([d["steps"] for d in steps_days[-14:-7]])
+        status = GOOD if avg >= goal else OK if avg >= goal * 0.6 else WATCH
+        detail = tr('Trung bình {n} ngày; đạt mục tiêu {goal} bước {met}/{n} ngày.', n=len(week),
+                    goal=f"{goal:,}".replace(",", "."), met=met)
+        if prev:
+            change = (avg - prev) / prev * 100
+            if abs(change) >= 10:
+                detail += " " + (tr('Tăng {p}% so với tuần trước.', p=int(round(change))) if change > 0
+                                 else tr('Giảm {p}% so với tuần trước.', p=int(round(-change))))
+        add("steps", status, tr('Bước chân'), tr('{n} bước/ngày', n=f"{int(round(avg)):,}".replace(",", ".")), detail)
+
+    # vận động vừa/mạnh: WHO khuyến nghị 150 phút mỗi tuần
+    add("active", GOOD if active_minutes >= 150 else OK if active_minutes >= 75 else WATCH, tr('Vận động'),
+        tr('{n} phút/tuần', n=active_minutes),
+        tr('Phút đi bộ nhanh (từ {s} bước/phút) và tập luyện trong 7 ngày; nên đạt 150 phút mỗi tuần. {w} buổi tập.',
+           s=BRISK_STEPS, w=workouts))
+
+    if pai:
+        total = pai["total"]
+        add("pai", GOOD if total >= 100 else OK if total >= 50 else WATCH, "PAI", f"{total:.0f}",
+            tr('Giữ PAI từ 100 trở lên giúp giảm nguy cơ bệnh tim mạch; tăng bằng các hoạt động làm tim đập nhanh.'))
+
+    if spo2:
+        values = [v for _ts, v in spo2]
+        low = min(values)
+        status = GOOD if low >= 95 else OK if low >= 92 else WATCH if low >= 90 else ALERT
+        detail = tr('Trung bình {avg}%, thấp nhất {low}% trong {n} lần đo 30 ngày qua; bình thường từ 95% trở lên.',
+                    avg=int(round(_avg(values))), low=low, n=len(values))
+        if low < 90:
+            detail += " " + tr('Có lần đo dưới 90%: đo lại khi ngồi yên, đeo vòng sát tay; nếu thường thấp hoặc khó thở, hãy hỏi ý kiến bác sĩ.')
+        add("spo2", status, "SpO2", f"{int(round(_avg(values)))}%", detail)
+
+    if stress:
+        avg = _avg(stress)
+        high = sum(1 for v in stress if v >= 80) * 100 / len(stress)
+        status = GOOD if avg < 40 else OK if avg < 60 else WATCH
+        add("stress", status, tr('Căng thẳng'), f"{avg:.0f}",
+            tr('Trung bình 7 ngày (0–39 thư giãn, 40–59 bình thường, 60–79 trung bình, 80+ cao); {p}% số đo ở mức cao.',
+               p=int(round(high))))
+
+    if last_data and now - last_data > 2 * 86400:
+        add("fresh", WATCH, tr('Dữ liệu'), tr('cũ'), tr('Dữ liệu mới nhất đã hơn 2 ngày; kết nối và đồng bộ để phân tích chính xác.'))
+
+    counts = {s: sum(1 for i in items if i["status"] == s) for s in (GOOD, OK, WATCH, ALERT)}
+    return {"items": items, "counts": counts}
