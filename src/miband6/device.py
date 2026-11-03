@@ -20,7 +20,16 @@ LogCallback = Callable[[str], None]
 
 
 class AuthError(Exception):
-    """Vòng tay từ chối auth key hoặc không phản hồi bước xác thực."""
+    """Xác thực thất bại. rejected: vòng tay trả lời rằng auth key sai, thử lại với cùng key là vô ích."""
+
+    def __init__(self, message: str = "", rejected: bool = False):
+        super().__init__(message)
+        self.rejected = rejected
+
+
+class AuthTimeout(AuthError):
+    """Vòng tay không trả lời bước xác thực, thường vì đang nối với điện thoại (Mi Fitness) hoặc vừa khởi động lại.
+    Không phải key sai: tự kết nối lại vẫn nên thử tiếp."""
 
 
 class MiBandError(Exception):
@@ -29,6 +38,25 @@ class MiBandError(Exception):
 
 def _hex(b: bytes) -> str:
     return bytes(b).hex(" ")
+
+
+def explain_ble_error(e: BaseException) -> tuple[str, int] | None:
+    """Lời giải thích dễ hiểu (và mã HTTP) cho lỗi Bluetooth thường gặp của bleak, hoặc None nếu không nhận ra.
+
+    Nhận theo tên lớp và thuộc tính reason để không phải import bleak (chế độ giả lập, kiểm thử)."""
+    name = type(e).__name__
+    if name == "BleakBluetoothNotAvailableError":
+        reason = getattr(getattr(e, "reason", None), "name", "")
+        if reason == "POWERED_OFF":
+            return tr('Bluetooth trên máy Mac đang tắt. Bật Bluetooth rồi thử lại.'), 503
+        if reason.startswith("DENIED"):
+            return tr('Ứng dụng chưa có quyền dùng Bluetooth. Mở Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Bluetooth rồi bật cho Mi Band 6 (hoặc Terminal khi chạy bằng dòng lệnh).'), 503
+        if reason == "NO_BLUETOOTH":
+            return tr('Máy này không có Bluetooth.'), 503
+        return tr('Bluetooth trên máy Mac chưa sẵn sàng. Đợi vài giây rồi thử lại.'), 503
+    if name == "BleakDeviceNotFoundError":
+        return tr('Không thấy vòng tay ở gần. Chạm cho vòng tay sáng màn hình, để gần máy Mac, tắt Bluetooth trên điện thoại rồi thử lại.'), 502
+    return None
 
 
 async def scan(timeout: float = 8.0, show_all: bool = False):
@@ -258,7 +286,7 @@ class MiBand6:
             PROTOCOL_2021: [PROTOCOL_2021],
         }.get(self.protocol_pref, [PROTOCOL_CLASSIC, PROTOCOL_2021] if has_2021 else [PROTOCOL_CLASSIC])
 
-        last_err: Exception | None = None
+        errors: list[Exception] = []
         for i, proto in enumerate(order):
             if i > 0:
                 self.log(tr('Thử lại bằng giao thức xác thực mới (2021)…'))
@@ -275,13 +303,17 @@ class MiBand6:
                 self.authenticated = True
                 break
             except (AuthError, asyncio.TimeoutError) as e:
-                last_err = e
+                errors.append(e)
                 self.log(tr('Xác thực {proto} thất bại: {e}', proto=proto, e=e or tr('hết thời gian chờ')))
         if not self.authenticated:
             await self.disconnect()
-            if isinstance(last_err, asyncio.TimeoutError):
-                raise AuthError(tr('Vòng tay không phản hồi bước xác thực. Kiểm tra vòng tay có đang kết nối với điện thoại không.'))
-            raise AuthError(str(last_err) if last_err else tr('Xác thực thất bại'))
+            # key sai chỉ khi vòng tay nói vậy; không trả lời (đang nối với điện thoại…) thì để tự kết nối lại thử tiếp
+            rejected = next((e for e in errors if isinstance(e, AuthError) and e.rejected), None)
+            if rejected:
+                raise rejected
+            if errors and all(isinstance(e, asyncio.TimeoutError) for e in errors):
+                raise AuthTimeout(tr('Vòng tay không phản hồi bước xác thực. Kiểm tra vòng tay có đang kết nối với điện thoại không.'))
+            raise AuthError(str(errors[-1]) if errors else tr('Xác thực thất bại'))
 
         self.log(tr('Xác thực thành công (giao thức {protocol_used}).', protocol_used=self.protocol_used))
         await self._after_auth()
@@ -327,7 +359,7 @@ class MiBand6:
             elif step == P.AUTH_SEND_ENCRYPTED:
                 if v[2] == P.AUTH_SUCCESS:
                     return
-                raise AuthError(tr('Auth key không đúng (vòng tay từ chối).'))
+                raise AuthError(tr('Auth key không đúng (vòng tay từ chối).'), rejected=True)
 
     async def _auth_2021(self, timeout: float) -> None:
         self._drain_auth_queue()
@@ -362,7 +394,7 @@ class MiBand6:
             elif p[1] == 0x05:
                 if p[2] == 0x01:
                     return
-                raise AuthError(tr('Auth key không đúng (vòng tay từ chối, mã {code:#04x}).', code=p[2]))
+                raise AuthError(tr('Auth key không đúng (vòng tay từ chối, mã {code:#04x}).', code=p[2]), rejected=True)
 
     def _on_chunked_2021(self, data: bytes) -> None:
         needs_ack, result = self._dec.decode(data)

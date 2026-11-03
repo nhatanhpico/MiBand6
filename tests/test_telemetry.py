@@ -91,8 +91,12 @@ def test_recovery_minimum_requires_five_contiguous_minutes():
     assert HealthDB._night(sess, dense, "2026-01-10")["hr_low_at"] == pytest.approx(2 / 60)
 
 
-@pytest.mark.parametrize("minutes", [[0, 1, 2], [0, 5, 10], [0, 1, 40]])
-def test_training_load_never_fills_unobserved_minutes(tmp_path, monkeypatch, minutes):
+@pytest.mark.parametrize(("minutes", "weights"), [
+    ([0, 1, 2], [1, 1, 1]),        # đo mỗi phút: mỗi số đo một phút
+    ([0, 5, 10], [5, 5, 1]),       # đo mỗi 5 phút: mỗi số đo đại diện tới số đo kế tiếp; số đo cuối một phút
+    ([0, 1, 40], [1, 10, 1]),      # khoảng trống dài: giữ tối đa 10 phút (HR_HOLD), không lấp cả 39 phút
+])
+def test_training_load_is_time_weighted_and_capped(tmp_path, monkeypatch, minutes, weights):
     from miband6 import insights as I
     db = HealthDB(tmp_path / "health.db")
     date = "2026-01-10"
@@ -102,7 +106,44 @@ def test_training_load_never_fills_unobserved_minutes(tmp_path, monkeypatch, min
     monkeypatch.setattr(I, "activity_intensity", lambda days: captured.extend(days))
     result = db.insights(date)
     day = next(d for d in captured if d["date"] == date)
-    assert day["trimp"] == len(minutes) * I.edwards_trimp(160, I.hr_max(None))
-    assert result["sampling"]["load_method"] == "observed_minutes_only"
-    assert result["sampling"]["expected_hr_interval_seconds"] is None
+    assert day["trimp"] == sum(weights) * I.edwards_trimp(160, I.hr_max(None))
+    assert day["hr_minutes"] == sum(weights)
+    assert result["sampling"]["load_method"] == "time_weighted"
+    assert result["sampling"]["hr_hold_seconds"] == I.HR_HOLD == 600
     db.close()
+
+
+def test_training_load_does_not_hold_across_off_wrist_minutes(tmp_path, monkeypatch):
+    """Tháo vòng ngay sau một số đo: tải không kéo dài qua lúc không đeo; phút không đeo không tính là đeo."""
+    from miband6 import insights as I
+    db = HealthDB(tmp_path / "health.db")
+    date = "2026-01-10"
+    t0, _ = H.day_bounds(date)
+    rows = [(t0, 1, 0, 0, 160, 0, 0, 0)] + [(t0 + i * 60, H.KIND_NOT_WORN, 0, 0, 255, 0, 0, 0) for i in range(2, 9)]
+    rows.append((t0 + 9 * 60, 1, 0, 0, 160, 0, 0, 0))
+    db.add_activity(rows)
+    captured = []
+    monkeypatch.setattr(I, "activity_intensity", lambda days: captured.extend(days))
+    db.insights(date)
+    day = next(d for d in captured if d["date"] == date)
+    assert day["hr_minutes"] == 2 + 1          # 2 phút trước khi tháo (phút 0, 1) + số đo cuối
+    assert day["wear"] == 2                    # phút 0 và 9; 7 phút "không đeo" bị loại, phút 1 không có bản ghi
+    db.close()
+
+
+def test_daily_steps_counts_worn_minutes_not_records(tmp_path):
+    db = HealthDB(tmp_path / "health.db")
+    t0, _ = H.day_bounds("2026-01-10")
+    off = [(t0 + i * 60, H.KIND_NOT_WORN, 0, 0, 255, 0, 0, 0) for i in range(1000)]
+    on = [(t0 + i * 60, 1, 10, 5, 255, 0, 0, 0) for i in range(1000, 1440)]
+    db.add_activity(off + on)
+    (row,) = db.daily_steps()
+    assert row["minutes"] == 1440 and row["worn"] == 440 and row["steps"] == 2200
+    db.close()
+
+
+def test_unworn_days_do_not_enter_load_baseline():
+    from miband6 import insights as I
+    assert I._load_day({"wear": 900, "hr_coverage": 0.95})
+    assert not I._load_day({"wear": 300, "hr_coverage": 1.0})      # tháo vòng gần cả ngày
+    assert not I._load_day({"wear": 900, "hr_coverage": 0.3})      # đo nhịp tim mỗi 30 phút / tắt đo: tải bị đếm thiếu

@@ -41,6 +41,17 @@ def valid_hr(bpm: int) -> bool:
     return 30 <= bpm <= 220   # 0 và 255: phút đó không đo
 
 
+OFF_WRIST = (KIND_NOT_WORN, KIND_CHARGING)
+
+
+def worn(sample: tuple, kind: int | None) -> bool:
+    """Phút có đeo vòng: loại hoạt động thật (effective_kinds) không phải "không đeo" / "đang sạc", hoặc có nhịp tim
+    hợp lệ (vòng tay chỉ đo được nhịp tim khi đang đeo).
+
+    Vòng tay ghi một bản ghi cho mọi phút, kể cả khi tháo ra: đếm bản ghi không cho biết có đeo hay không."""
+    return valid_hr(sample[4]) or kind not in OFF_WRIST
+
+
 # ---------------------------------------------------------------- giải mã
 
 

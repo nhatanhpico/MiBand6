@@ -5,7 +5,7 @@ import pytest
 
 from miband6.simulator import FakeBand
 from miband6 import protocol as P
-from miband6.device import AuthError, MiBand6, PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC
+from miband6.device import AuthError, AuthTimeout, MiBand6, PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC
 
 KEY = bytes.fromhex("8f2b1c0a77d94e3fa5c1b2e3d4f50617")
 
@@ -36,9 +36,46 @@ async def test_classic_auth_and_reads():
 async def test_classic_wrong_key():
     band = FakeBand(KEY, "classic", with_2021_chars=False)
     dev, _, _ = make(band, key=os.urandom(16))
-    with pytest.raises(AuthError):
+    with pytest.raises(AuthError) as err:
         await dev.connect()
+    assert err.value.rejected and not isinstance(err.value, AuthTimeout)   # vòng tay nói key sai
     assert not band.is_connected
+
+
+async def test_silent_band_is_auth_timeout_not_wrong_key(monkeypatch):
+    """Vòng tay đang nối với điện thoại không trả lời bước xác thực: báo AuthTimeout (thử lại được), không phải key sai."""
+    band = FakeBand(KEY, "both")
+    dev, _, _ = make(band, PROTOCOL_AUTO)
+
+    async def silent(self, timeout):
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(MiBand6, "_auth_classic", silent)
+    monkeypatch.setattr(MiBand6, "_auth_2021", silent)
+    with pytest.raises(AuthTimeout) as err:
+        await dev.connect()
+    assert not err.value.rejected
+
+
+def test_bluetooth_errors_are_explained():
+    from enum import Enum
+    from miband6.device import explain_ble_error
+
+    Reason = Enum("Reason", "POWERED_OFF DENIED_BY_USER NO_BLUETOOTH UNKNOWN")
+
+    class BleakBluetoothNotAvailableError(Exception):
+        def __init__(self, reason):
+            super().__init__("Bluetooth device is turned off")
+            self.reason = reason
+
+    class BleakDeviceNotFoundError(Exception):
+        pass
+
+    off = explain_ble_error(BleakBluetoothNotAvailableError(Reason.POWERED_OFF))
+    assert off[1] == 503 and "Bluetooth" in off[0] and "tắt" in off[0]
+    assert "quyền" in explain_ble_error(BleakBluetoothNotAvailableError(Reason.DENIED_BY_USER))[0]
+    assert explain_ble_error(BleakDeviceNotFoundError())[1] == 502
+    assert explain_ble_error(ValueError("x")) is None
 
 
 async def test_2021_auth_and_encrypted_config():
@@ -63,8 +100,9 @@ async def test_2021_auth_and_encrypted_config():
 async def test_2021_wrong_key():
     band = FakeBand(KEY, "2021")
     dev, _, _ = make(band, PROTOCOL_2021, key=os.urandom(16))
-    with pytest.raises(AuthError):
+    with pytest.raises(AuthError) as err:
         await dev.connect()
+    assert err.value.rejected
 
 
 async def test_auto_falls_back_to_2021():

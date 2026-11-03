@@ -37,7 +37,8 @@ from .. import weather as W
 from ..config import Store
 from ..envfile import env_settings, load_env
 from ..i18n import get_lang, set_lang, tr
-from ..device import PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError, MiBand6, MiBandError, scan
+from ..device import (PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError, AuthTimeout, MiBand6, MiBandError,
+                      explain_ble_error, scan)
 from ..healthdb import HealthDB, db_path
 from .. import xiaomi_cloud as XC
 from ..xiaomi_cloud import LoginError, SessionExpired, fetch_gps_file
@@ -141,7 +142,8 @@ class BandService:
         self._stop_beep = True
         # Giữ kết nối: True sau khi kết nối thành công, False khi người dùng bấm Ngắt kết nối
         self.want_connected = False
-        self.reconnect: dict | None = None      # {"attempt": n, "at": epoch} khi đang chờ hoặc đang thử nối lại
+        self.reconnect: dict | None = None      # {"attempt": n, "at": epoch, "error"?} khi đang chờ hoặc đang thử nối lại
+        self.reconnect_stopped: dict | None = None   # {"message", "at"}: tự kết nối lại đã dừng (key bị từ chối…)
         self.reconnect_delays = RECONNECT_DELAYS
         self._reconnect_task: asyncio.Task | None = None
         # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
@@ -226,6 +228,7 @@ class BandService:
             "last_device": self.store.data.get("last_device") or self.env_address,
             "env_key": bool(self.env_key),
             "reconnect": None if self.connected else self.reconnect,
+            "reconnect_stopped": None if self.connected else self.reconnect_stopped,
             "health": self.health_status,
             "weather": {**self.weather_status, **self.weather_settings()},
             "sync": {**self.sync_settings(), "cloud_last": self._cloud_last()},
@@ -290,6 +293,8 @@ class BandService:
             try:
                 results = await scan(8.0, show_all)
             except Exception as e:  # noqa: BLE001
+                if known := explain_ble_error(e):
+                    raise ApiError(*known) from e
                 raise ApiError(
                     tr('Không quét được Bluetooth ({e}). Kiểm tra Bluetooth đã bật và Terminal đã có quyền Bluetooth.', e=e), 503
                 ) from e
@@ -302,6 +307,7 @@ class BandService:
         if self.busy:
             raise ApiError(tr('Đang kết nối, chờ một chút.'), 409)
         self._cancel_reconnect()
+        self.reconnect_stopped = None
         self.want_connected = False
         return await self._connect(address, key_text, proto)
 
@@ -336,17 +342,22 @@ class BandService:
                 client.hr_delay = 6.0
             self.band = MiBand6(target, key, proto, on_event=self.on_event, log=self.log, client=client, name=name)
             used = await self.band.connect()
-        except AuthError as e:
-            raise ApiError(str(e), 401) from e
+        except AuthTimeout as e:   # vòng tay không trả lời bước xác thực: thử lại sau, không phải key sai
+            raise ApiError(str(e), 504) from e
+        except AuthError as e:     # 401 chỉ khi vòng tay nói key sai: tự kết nối lại dừng sau MAX_AUTH_FAILURES lần
+            raise ApiError(str(e), 401 if e.rejected else 502) from e
         except (asyncio.TimeoutError, TimeoutError) as e:
             raise ApiError(tr('Không kết nối được: vòng tay không trả lời. Vòng tay có thể đang nối với điện thoại (Mi Fitness), ở xa máy Mac, hoặc đang khởi động lại.'), 502) from e
         except Exception as e:  # noqa: BLE001
+            if known := explain_ble_error(e):
+                raise ApiError(*known) from e
             raise ApiError(tr('Không kết nối được: {e}', e=str(e) or type(e).__name__), 502) from e
         finally:
             self.busy = False
             if used is None:
                 self.push_state()
         self.want_connected = True
+        self.reconnect_stopped = None
         self.device_meta = {"name": name, "address": address, "protocol": used}
         self.live = {}
         # key từ .env không bị chép vào config.json (và xóa key cũ đã lưu ở đó)
@@ -971,12 +982,19 @@ class BandService:
         if self.connected or self.busy or not (self.want_connected and self.keep_connected):
             return False
         self._cancel_reconnect()
+        self.reconnect_stopped = None
         started = self._start_reconnect(first_delay=False)
         self.push_state()
         return started
 
     async def _reconnect_loop(self, first_delay: bool) -> None:
         attempt = auth_failures = 0
+        error: str | None = None   # lý do lần thử trước thất bại, hiện kèm lúc chờ (Bluetooth tắt, vòng tay bận…)
+
+        def stop(message: str) -> None:
+            self.log(tr('Ngừng tự kết nối lại: {e}', e=message))
+            self.reconnect_stopped = {"message": message, "at": int(time.time())}
+
         try:
             while not self.connected:
                 target = self._reconnect_target()
@@ -988,7 +1006,7 @@ class BandService:
                     delays = tuple(d for d in delays if d < cap) + (cap,)
                 delay = delays[min(attempt, len(delays) - 1)] if (attempt or first_delay) else 0
                 attempt += 1
-                self.reconnect = {"attempt": attempt, "at": time.time() + delay}
+                self.reconnect = {"attempt": attempt, "at": time.time() + delay, "error": error}
                 self.push_state()
                 await asyncio.sleep(delay)
                 if self.connected:
@@ -998,12 +1016,14 @@ class BandService:
                     await self._connect(*target)
                 except ApiError as e:
                     if e.status == 400:  # auth key hoặc địa chỉ đã lưu không hợp lệ: thử nữa cũng vô ích
-                        self.log(tr('Ngừng tự kết nối lại: {e}', e=e))
+                        stop(str(e))
                         return
+                    # chỉ đếm lần vòng tay nói key sai (401); không trả lời bước xác thực (504) thì cứ thử tiếp
                     auth_failures = auth_failures + 1 if e.status == 401 else 0
                     if auth_failures >= MAX_AUTH_FAILURES:
-                        self.log(tr('Ngừng tự kết nối lại: vòng tay từ chối xác thực {n} lần liền.', n=auth_failures))
+                        stop(tr('vòng tay từ chối xác thực {n} lần liền.', n=auth_failures))
                         return
+                    error = str(e)
                     self.log(tr('Chưa kết nối lại được: {e}', e=e))
                 else:
                     self.log(tr('Đã tự kết nối lại với vòng tay.'))
@@ -1043,6 +1063,7 @@ class BandService:
     async def disconnect(self) -> None:
         """Người dùng chủ động ngắt: không tự kết nối lại nữa (kể cả khi đang chờ nối lại)."""
         self.want_connected = False
+        self.reconnect_stopped = None
         self._cancel_reconnect()
         self._cancel_health()
         if self.band:

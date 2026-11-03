@@ -67,7 +67,7 @@ Mi Band 6 ghi mỗi phút một mẫu. Byte đầu của mẫu là **mốc trạ
 
 Vòng tay ghi mốc ngủ và mốc dậy trễ chừng 10–12 phút. Để giờ ngủ, giờ dậy khớp với màn hình vòng tay và Mi Fitness, ứng dụng dùng thêm chỉ số "ngủ" vòng tay ghi mỗi phút: lúc thiếp đi là phút chỉ số này bắt đầu tăng, lúc dậy là phút nó tụt xuống. Mỗi đầu chỉ được chỉnh tối đa 30 phút, và bỏ qua nếu vòng tay không ghi chỉ số này.
 
-Các khoảng thức ngắn hơn 45 phút ở giữa đêm vẫn tính là cùng một giấc (hiện ở hàng **Thức**); giấc ngắn hơn 20 phút bị bỏ qua. Mỗi giấc được tính cho ngày bạn thức dậy, như Mi Fitness.
+Các khoảng thức ngắn hơn 45 phút ở giữa đêm vẫn tính là cùng một giấc (hiện ở hàng **Thức**); giấc ngắn hơn 20 phút bị bỏ qua. Mỗi giấc được tính cho ngày bạn thức dậy, như Mi Fitness. Giấc còn đang ngủ (kéo tới phút mới nhất đã đồng bộ, vòng tay chưa ghi lúc thức dậy) chưa được tính là "đêm qua": đồng bộ lúc nửa đêm thì đêm qua không còn bị tính là giấc ngủ chỉ vài chục phút, kéo lệch điểm ngủ, mức sẵn sàng và phân tích.
 
 ### REM (ước tính)
 
@@ -90,7 +90,7 @@ Thẻ đầu trang nhận xét tình trạng hiện tại từ dữ liệu 7–3
 | Ngủ sâu | Phần trăm ngủ sâu trong giấc ngủ | Từ 13% | Ổn: 10–13%; Nên chú ý: dưới 10% |
 | Giờ đi ngủ đều đặn | Độ lệch giờ đi ngủ giữa các đêm | ±45 phút | Ổn: tới ±90 phút; Nên chú ý: hơn nữa |
 | Nhịp tim nghỉ | Trung vị nhịp tim khi ngủ, trung bình 7 đêm | 40–75 nhịp/phút | Ổn: tới 80; Nên chú ý: trên 80, hoặc cao hơn tuần trước từ 5 nhịp/phút |
-| Bước chân | Trung bình 7 ngày đã trọn (ngày có ít nhất 10 giờ dữ liệu) | Đạt mục tiêu bước | Ổn: từ 60% mục tiêu; Nên chú ý: thấp hơn |
+| Bước chân | Trung bình 7 ngày đã trọn (ngày đeo vòng ít nhất 10 giờ; vòng tay vẫn ghi mỗi phút khi tháo ra, nên đếm phút đeo, không đếm bản ghi) | Đạt mục tiêu bước | Ổn: từ 60% mục tiêu; Nên chú ý: thấp hơn |
 | Vận động | Phút đi bộ nhanh (từ 100 bước/phút) và tập luyện trong 7 ngày | Từ 150 phút | Ổn: 75–150; Nên chú ý: dưới 75 |
 | PAI | Tổng PAI mới nhất | Từ 100 | Ổn: 50–100; Nên chú ý: dưới 50 |
 | SpO2 | Các lần đo 30 ngày | Thấp nhất từ 95% | Ổn: 92–94%; Nên chú ý: 90–91%; Cần lưu ý: dưới 90% |
@@ -112,16 +112,18 @@ Thẻ đầu tiên của trang. Điểm 0–100 trả lời câu hỏi **hôm na
 | Giấc ngủ đêm qua (20%) | Thời lượng (50%), tỉ lệ thời gian trên giường là ngủ (15%), phần ngủ sâu (15%), giờ ngủ so với chronotype (20%) | Ngủ 7,5–9 giờ, liền mạch từ 95%, ngủ sâu từ 16%, giữa giấc lệch chronotype dưới 30 phút |
 | Cân bằng giấc ngủ (14%) | Ngủ 14 đêm so với nhu cầu 7,5 giờ (đêm gần nặng hơn), kèm nợ ngủ 7 đêm | Đạt 100% nhu cầu |
 | Thời gian hồi phục (15%) | Mệt mỏi từ tải vận động các giờ gần đây (xem dưới), như "recovery time" của Garmin | Đã hồi phục (12 giờ: 80; 24 giờ: 60; 48 giờ: 35) |
-| Cân bằng vận động (10%) | Tỉ lệ tải cấp/tải mạn (ACWR, Gabbett): TRIMP trung bình 7 ngày / 28 ngày đeo vòng (cần 14 ngày) | Trong khoảng 0,8–1,3 (1,5: 75; 2: 45) |
+| Cân bằng vận động (10%) | Tỉ lệ tải cấp/tải mạn (ACWR, Gabbett): TRIMP trung bình 7 ngày / 28 ngày đủ dữ liệu tải (cần 14 ngày, xem dưới) | Trong khoảng 0,8–1,3 (1,5: 75; 2: 45) |
 | Cân bằng căng thẳng, thay cho HRV (15%) | Chỉ số căng thẳng của vòng tay 2 ngày gần nhất so với mức nền | Không cao hơn mức nền; từ 60 trở lên tối đa 70 điểm |
 
-**Thời gian hồi phục** dùng mô hình thể lực - mệt mỏi kiểu Banister, rút gọn: mỗi giờ có tải (TRIMP) cộng vào "mệt mỏi", mờ dần theo e^(−t/36 giờ). Với tải đều đặn C mỗi ngày (trung bình 28 ngày đeo vòng, tối thiểu 30), mệt mỏi ổn định quanh C × 36/24; thời gian hồi phục còn lại = 36 × ln(mệt mỏi / mức ổn định) giờ, tối đa 96. Tải trong hôm nay cũng được tính, nên điểm hôm nay giảm ngay sau một buổi tập (như Apple Watch). Ví dụ: buổi tập TRIMP 450 với người thường có 100 mỗi ngày, 20 giờ sau còn khoảng 19,5 giờ hồi phục.
+**Thời gian hồi phục** dùng mô hình thể lực - mệt mỏi kiểu Banister, rút gọn: mỗi giờ có tải (TRIMP) cộng vào "mệt mỏi", mờ dần theo e^(−t/36 giờ). Với tải đều đặn C mỗi ngày (trung bình 28 ngày đủ dữ liệu tải, tối thiểu 30), mệt mỏi ổn định quanh C × 36/24; thời gian hồi phục còn lại = 36 × ln(mệt mỏi / mức ổn định) giờ, tối đa 96. Tải trong hôm nay cũng được tính, nên điểm hôm nay giảm ngay sau một buổi tập (như Apple Watch). Ví dụ: buổi tập TRIMP 450 với người thường có 100 mỗi ngày, 20 giờ sau còn khoảng 19,5 giờ hồi phục.
 
 **TRIMP** (tải vận động) theo Edwards: mỗi phút ở 50–60 / 60–70 / 70–80 / 80–90 / 90–100% nhịp tim tối đa tính 1 / 2 / 3 / 4 / 5 điểm; nhịp tim tối đa = 208 − 0,7 × tuổi (Tanaka 2001, tuổi lấy từ hồ sơ).
 
+Vòng tay đo nhịp tim theo chu kỳ đã cài (mỗi phút, 5, 10 hay 30 phút), và chu kỳ có thể đổi giữa các ngày. Mỗi số đo được tính cho khoảng tới số đo kế tiếp, **tối đa 10 phút** và không kéo qua lúc tháo vòng, nên tải một ngày không phụ thuộc chu kỳ đo; nếu chỉ cộng các phút có số đo, ngày đo mỗi 10 phút trông nhẹ hơn chừng 10 lần, mức nền bị kéo thấp và một ngày bình thường bị coi là quá tải. Một ngày chỉ vào **mức nền tải** (thời gian hồi phục, cân bằng vận động) khi đeo vòng ít nhất 10 giờ và có nhịp tim ít nhất 60% thời gian đeo; ngày đo mỗi 30 phút hay tắt đo nhịp tim bị bỏ ra thay vì coi là ngày nghỉ. Phút đeo vòng: vòng tay không ghi "không đeo" / "đang sạc", hoặc có nhịp tim.
+
 **Điểm và lời khuyên**
 
-- Điểm là trung bình có trọng số của các thành phần có dữ liệu (cần ít nhất 3, trong đó có nhịp tim nghỉ hoặc giấc ngủ đêm qua). Nếu một thành phần dưới 40, điểm không vượt 59.
+- Điểm là trung bình có trọng số của các thành phần có dữ liệu (cần ít nhất 3, trong đó có nhịp tim nghỉ hoặc giấc ngủ đêm qua). Nếu một thành phần cơ thể (mọi thành phần trừ Cân bằng vận động) dưới 40, điểm không vượt 59. Cân bằng vận động chỉ góp theo trọng số: nó là xu hướng tải theo tuần, khả năng dự báo chấn thương của ACWR còn tranh cãi (Impellizzeri 2020), và nó nhảy vọt khi lịch đeo vòng thay đổi; một mình nó không biến ngày khỏe thành ngày "nên tập nhẹ".
 - Mức và gợi ý tập (vùng nhịp tim theo % nhịp tim tối đa của bạn):
 
 | Điểm | Lời khuyên | Gợi ý |

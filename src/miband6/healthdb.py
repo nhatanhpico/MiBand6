@@ -162,12 +162,29 @@ class HealthDB:
                               "ORDER BY ts DESC LIMIT 1", (ts,)).fetchone()
         return row[0] if row else None
 
+    def sleep_sessions(self, t0: int, t1: int, rem: bool = False, samples: list[tuple] | None = None) -> list[dict]:
+        """Các giấc ngủ trong [t0, t1), mỗi giấc có "ongoing": còn đang ngủ, tức giấc kéo tới phút mới nhất đã đồng bộ
+        (vòng tay chưa ghi lúc thức dậy). Giấc dở dang không phải "đêm qua": như Mi Fitness, chỉ tính khi đã dậy;
+        đồng bộ lúc nửa đêm mà tính nó thì đêm qua chỉ còn vài chục phút, kéo lệch điểm ngủ, mức sẵn sàng và phân tích.
+        samples: self.samples(t0, t1) nếu đã lấy sẵn."""
+        samples = self.samples(t0, t1) if samples is None else samples
+        sessions = H.sleep_sessions(samples, self.kind_before(t0), rem=rem)
+        last = self.db.execute("SELECT MAX(ts) FROM activity").fetchone()[0]
+        for sess in sessions:
+            sess["ongoing"] = last is not None and sess["end"] >= last + 60
+        return sessions
+
     def daily_steps(self) -> list[dict]:
-        """Tổng bước mỗi ngày có dữ liệu (theo giờ địa phương), cũ tới mới."""
+        """Tổng bước mỗi ngày có dữ liệu (theo giờ địa phương), cũ tới mới.
+
+        minutes: số bản ghi (vòng tay ghi cả khi tháo ra); worn: số phút đeo vòng (health.worn). Vòng tay ghi
+        "không đeo" / "đang sạc" ở từng phút, nên đếm theo loại hoạt động thô là đủ."""
         rows = self.db.execute(
-            "SELECT date(ts, 'unixepoch', 'localtime') AS d, SUM(steps), COUNT(*) FROM activity GROUP BY d ORDER BY d"
+            "SELECT date(ts, 'unixepoch', 'localtime') AS d, SUM(steps), COUNT(*),"
+            " SUM(CASE WHEN (kind & 15) IN (?, ?) AND NOT (hr BETWEEN 30 AND 220) THEN 0 ELSE 1 END)"
+            " FROM activity GROUP BY d ORDER BY d", H.OFF_WRIST
         ).fetchall()
-        return [{"date": d, "steps": s or 0, "minutes": n} for d, s, n in rows]
+        return [{"date": d, "steps": s or 0, "minutes": n, "worn": w or 0} for d, s, n, w in rows]
 
     def analysis(self, goal: int = 8000, today: str | None = None, rem: bool = False) -> dict:
         """Nhận xét tình trạng hiện tại từ 14 ngày gần nhất (xem health.analyze)."""
@@ -177,7 +194,7 @@ class HealthDB:
         w0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
         _, t1 = H.day_bounds(today)
         samples = self.samples(w0, t1)
-        sessions = H.sleep_sessions(samples, self.kind_before(w0), rem=rem)
+        sessions = [s for s in self.sleep_sessions(w0, t1, rem=rem, samples=samples) if not s["ongoing"]]
         by_ts = {s[0]: s for s in samples}
         nights: dict[str, dict] = {}
         hrs: dict[str, list[int]] = {}
@@ -192,7 +209,7 @@ class HealthDB:
         for day, n in nights.items():
             v = sorted(hrs.get(day, []))
             n["hr"] = v[len(v) // 2] if v else None
-        steps = [d for d in self.daily_steps() if first.isoformat() <= d["date"] < today and d["minutes"] >= 600]
+        steps = [d for d in self.daily_steps() if first.isoformat() <= d["date"] < today and d["worn"] >= 600]
         week0 = H.day_bounds((d0 - dt.timedelta(days=7)).isoformat())[0]
         workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts WHERE start >= ?", (week0,))]
         active = {s[0] for s in samples if s[0] >= week0 and s[3] >= H.BRISK_STEPS}
@@ -223,11 +240,13 @@ class HealthDB:
         _, t1 = H.day_bounds(date)
         samples = self.samples(t0, t1)
         by_ts = {s[0]: s for s in samples}
-        sessions = H.sleep_sessions(samples, self.kind_before(t0), rem=rem)
+        sessions = self.sleep_sessions(t0, t1, rem=rem, samples=samples)
 
-        # ---- mỗi đêm: giấc dài nhất kết thúc trong ngày
+        # ---- mỗi đêm: giấc dài nhất kết thúc trong ngày (giấc còn đang ngủ chưa phải một đêm)
         mains: dict[str, dict] = {}
         for sess in sessions:
+            if sess["ongoing"]:
+                continue
             day = H.local_date(sess["end"])
             if first.isoformat() <= day <= date and (day not in mains or sess["minutes"] > mains[day]["minutes"]):
                 mains[day] = sess
@@ -249,23 +268,34 @@ class HealthDB:
         in_workout: set[int] = set()
         for w in workouts:
             in_workout.update(range(w["start"] - w["start"] % 60, int(w.get("end") or w["start"]), 60))
+        kinds = H.effective_kinds(samples, self.kind_before(t0))
+        off_wrist = {s[0] for s, k in zip(samples, kinds) if not H.worn(s, k)}
         days: dict[str, dict] = {}
         hourly: dict[int, float] = {}   # TRIMP theo từng giờ: cho thời gian hồi phục
         hr_points = [(s[0], s[4]) for s in samples if H.valid_hr(s[4])]
-        # Lịch sử không có cấu hình tần suất theo thời điểm: chỉ cộng phút thật sự có HR.
-        # Không coi một mẫu là bằng chứng cho 5–10 phút trống sau đó.
-        for ts, bpm in hr_points:
+        # Tải theo thời gian: mỗi số đo nhịp tim đại diện cho khoảng tới số đo kế tiếp, tối đa I.HR_HOLD giây và không
+        # qua phút đã tháo vòng. Chu kỳ đo trong lịch sử thay đổi (mỗi phút, mỗi 10 phút…): chỉ cộng phút có số đo thì
+        # ngày đo mỗi 10 phút trông nhẹ hơn chừng 10 lần, làm sai mức nền tải và thời gian hồi phục.
+        for i, (ts, bpm) in enumerate(hr_points):
+            span = min((hr_points[i + 1][0] if i + 1 < len(hr_points) else ts + 60) - ts, I.HR_HOLD)
+            hold = 60
+            while hold < span and ts + hold not in off_wrist:
+                hold += 60
+            minutes = hold / 60
             day = H.local_date(ts)
             d = days.setdefault(day, self._blank_day(day))
-            load = I.edwards_trimp(bpm, hrmax)
+            d["hr_minutes"] += minutes
+            load = I.edwards_trimp(bpm, hrmax) * minutes
             d["trimp"] += load
             if load:
                 hourly[ts - ts % 3600 + 1800] = hourly.get(ts - ts % 3600 + 1800, 0) + load
-        for s in samples:
+        for s, kind in zip(samples, kinds):
             ts, steps = s[0], s[3]
             day = H.local_date(ts)
             d = days.setdefault(day, self._blank_day(day))
             d["steps"] += steps
+            if not H.worn(s, kind):
+                continue
             d["wear"] += 1
             level = 0   # 0 nghỉ, 1 nhẹ, 2 vừa, 3 mạnh
             if steps >= 130:
@@ -292,6 +322,7 @@ class HealthDB:
             day = (first + dt.timedelta(days=i)).isoformat()
             d = days.get(day, self._blank_day(day))
             d["stress"] = d["stress_sum"] / d["stress_n"] if d["stress_n"] else None
+            d["hr_coverage"] = round(min(1.0, d["hr_minutes"] / d["wear"]), 3) if d["wear"] else 0.0
             day_list.append(d)
 
         # ---- chỉ số đều đặn giấc ngủ: 14 ngày gần nhất
@@ -312,7 +343,8 @@ class HealthDB:
             return I.readiness(nights[:k + 1], [d for d in day_list if d["date"] < day], chronotype,
                                fatigue={"hours": hours, "now": now}, hrmax=hrmax)
 
-        ready = ready_on(len(nights) - 1) if nights and nights[-1]["date"] == date else None
+        has_night = bool(nights and nights[-1]["date"] == date)
+        ready = ready_on(len(nights) - 1) if has_night else None
         history = []
         for k in range(max(0, len(nights) - 14), len(nights)):
             r = ready_on(k)
@@ -321,20 +353,34 @@ class HealthDB:
         return {
             "readiness": ready, "readiness_history": history,
             "readiness_progress": None if ready else I.readiness_progress(nights),
-            "readiness_night": bool(nights and nights[-1]["date"] == date),
+            "readiness_night": has_night,
+            "last_night": self._last_night(nights, chronotype) if has_night else None,
             "mental": I.mental_state(nights, day_list, circ),
             "intensity": I.activity_intensity([d for d in day_list if d["date"] <= date]),
             "circadian": circ,
             "rem_estimated": any(s.get("rem_estimated") for s in mains.values()),
-            "sampling": {"load_method": "observed_minutes_only", "expected_hr_interval_seconds": None,
-                         "load_limitation": "Sparse HR undercounts load; compare days with similar coverage.",
+            "sampling": {"load_method": "time_weighted", "hr_hold_seconds": I.HR_HOLD,
+                         "load_min_wear_minutes": I.LOAD_MIN_WEAR, "load_min_hr_coverage": I.LOAD_MIN_COVERAGE,
                          "recovery_window_seconds": 300},
         }
 
     @staticmethod
+    def _last_night(nights: list[dict], chronotype: float | None) -> dict:
+        """Đêm của ngày đang xem: điểm giấc ngủ (cùng cách tính với thành phần "Giấc ngủ đêm qua" của mức sẵn sàng) và
+        nhịp tim khi ngủ so với mức nền, có cả khi chưa đủ dữ liệu để tính mức sẵn sàng."""
+        from . import insights as I
+
+        night = nights[-1]
+        score, notes = I.sleep_score(night, chronotype)
+        base = [n["hr"] for n in nights[-I.BASELINE_NIGHTS - 1:-1] if n.get("hr")]
+        baseline = round(sum(base) / len(base)) if len(base) >= I.MIN_BASELINE else None
+        return {"date": night["date"], "score": int(round(score)), "notes": notes, "hr": night.get("hr"),
+                "hr_baseline": baseline}
+
+    @staticmethod
     def _blank_day(day: str) -> dict:
         return {"date": day, "steps": 0, "wear": 0, "light": 0, "moderate": 0, "vigorous": 0, "trimp": 0,
-                "stress_sum": 0, "stress_n": 0, "stress_high": 0}
+                "hr_minutes": 0.0, "stress_sum": 0, "stress_n": 0, "stress_high": 0}
 
     @staticmethod
     def _night(sess: dict, by_ts: dict, day: str) -> dict:
@@ -373,7 +419,7 @@ class HealthDB:
         # giấc ngủ: tính trên khoảng rộng rồi gán mỗi giấc cho ngày thức dậy (như Mi Fitness)
         first = dt.date.fromisoformat(date) - dt.timedelta(days=sleep_days - 1)
         w0, _ = H.day_bounds((first - dt.timedelta(days=1)).isoformat())
-        sessions = H.sleep_sessions(self.samples(w0 + 12 * 3600, t1), self.kind_before(w0 + 12 * 3600), rem=rem)
+        sessions = [s for s in self.sleep_sessions(w0 + 12 * 3600, t1, rem=rem) if not s["ongoing"]]
         by_day: dict[str, list[dict]] = {}
         for sess in sessions:
             by_day.setdefault(H.local_date(sess["end"]), []).append(sess)

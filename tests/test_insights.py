@@ -121,6 +121,38 @@ def test_recovery_time_after_hard_workout():
     assert I.recovery_hours(steady, now, 100) < 1
 
 
+def test_load_spike_alone_does_not_force_an_easy_day():
+    """Tuần qua tải gấp 3 lần thường lệ (ví dụ đổi chu kỳ đo nhịp tim, hay bắt đầu tập lại) nhưng ngủ tốt, nhịp tim nghỉ
+    bình thường: cân bằng vận động thấp chỉ góp theo trọng số, không tự kéo điểm xuống 59 ("nên tập nhẹ")."""
+    nights = _nights([240] * 30, start_date="2026-10-04")
+    for n in nights:
+        n.update(hr=58, hr_low_at=0.4, minutes=460)
+    days = _days(trimp=60)
+    for d in days[-7:]:
+        d["trimp"] = 300
+    r = I.readiness(nights, days, hrmax=190)
+    acwr = next(p for p in r["parts"] if p["key"] == "activity_balance")
+    assert acwr["score"] < 40
+    assert r["score"] > 59 and r["verdict"] in ("train", "train_hard")
+    # còn một thành phần cơ thể rất thấp (nhịp tim nghỉ tăng mạnh) thì vẫn bị giới hạn như trước
+    nights[-1].update(hr=70)
+    assert I.readiness(nights, days, hrmax=190)["score"] <= 59
+
+
+def test_low_coverage_days_are_left_out_of_load_baseline():
+    """Ngày đo nhịp tim thưa (tải bị đếm thiếu) không làm mức nền tải thấp đi, nên một ngày tập bình thường không thành
+    "quá tải" chỉ vì trước đó đo thưa."""
+    days = _days(trimp=100)
+    for d in days[:-7]:
+        d.update(trimp=10, hr_coverage=0.1)      # 3 tuần trước đo mỗi 30 phút: TRIMP chỉ còn 1/10
+    parts = {p["key"]: p for p in I._load_parts(days)}
+    assert parts == {}                            # chỉ còn 7 ngày đủ dữ liệu: chưa đủ mức nền, không đoán
+    for d in days[:-7]:
+        d.update(trimp=100, hr_coverage=0.9)
+    acwr = next(p for p in I._load_parts(days) if p["key"] == "activity_balance")
+    assert acwr["value"] == "1.00" and acwr["score"] == 100
+
+
 def test_activity_intensity_ratio():
     a = I.activity_intensity(_days())
     assert a["ratio"] == round((30 + 10) / 160 * 100) and a["equivalent"] == 7 * (30 + 2 * 10) and a["level"] == "good"

@@ -10,6 +10,8 @@ Phương pháp
   (vòng tay tính nó từ HRV), không có thành phần nhiệt độ.
 - Tải vận động: TRIMP theo vùng nhịp tim của Edwards (phút ở 50-60/60-70/70-80/80-90/90-100% nhịp tim tối đa nhân
   1..5), nhịp tim tối đa 208 - 0,7 x tuổi (Tanaka 2001); tỉ lệ tải cấp 7 ngày / tải mạn 28 ngày (ACWR, Gabbett 2016).
+  Mỗi số đo nhịp tim tính cho khoảng tới số đo kế tiếp (tối đa HR_HOLD), để tải không phụ thuộc chu kỳ đo; mức nền
+  tải chỉ dùng ngày đeo đủ lâu và có nhịp tim gần hết thời gian đeo (_load_day).
 - Cường độ: nhịp bước CADENCE-Adults (>= 100 bước/phút ~ vừa, >= 130 ~ mạnh); trong buổi tập dùng nhịp tim dự trữ
   (ACSM: >= 40% vừa, >= 60% mạnh). Phút mạnh tính gấp đôi khi so với 150 phút/tuần (WHO).
 - Lệch múi giờ xã hội (SJL): |MSF - MSW|, giờ giữa giấc ngày nghỉ / ngày làm (MCTQ; Wittmann 2006, Roenneberg 2012);
@@ -161,6 +163,15 @@ def _sleep_balance_part(nights: list[dict]) -> dict | None:
 
 FATIGUE_TAU = 36.0        # giờ: hằng số suy giảm của mệt mỏi do tập (mô hình thể lực - mệt mỏi kiểu Banister)
 MIN_DAILY_LOAD = 30.0     # TRIMP: sàn của tải thường ngày, để vài phút đi bộ không thành "quá tải" với người ít tập
+HR_HOLD = 600             # giây: một số đo nhịp tim đại diện tối đa 10 phút tới số đo kế tiếp (healthdb.insights)
+LOAD_MIN_WEAR = 600       # phút đeo vòng tối thiểu để một ngày vào mức nền tải vận động
+LOAD_MIN_COVERAGE = 0.6   # phần thời gian đeo vòng có nhịp tim (theo HR_HOLD) tối thiểu cho mức nền tải
+
+
+def _load_day(d: dict) -> bool:
+    """Ngày dùng được cho mức nền tải: đeo đủ lâu và có nhịp tim gần hết thời gian đeo. Ngày đo mỗi 30 phút hay tắt đo
+    nhịp tim bị đếm thiếu tải, nên bỏ ra thay vì coi là ngày nghỉ."""
+    return d.get("wear", 0) >= LOAD_MIN_WEAR and d.get("hr_coverage", 1.0) >= LOAD_MIN_COVERAGE
 
 
 def recovery_hours(hourly: list[tuple[int, float]], now: float, daily_load: float) -> float:
@@ -177,8 +188,8 @@ def recovery_hours(hourly: list[tuple[int, float]], now: float, daily_load: floa
 def _load_parts(days: list[dict], fatigue: dict | None = None) -> list[dict]:
     """Thời gian hồi phục (mệt mỏi từ tải gần đây) và cân bằng vận động (tải cấp / tải mạn) từ TRIMP."""
     out = []
-    worn = lambda span: [d["trimp"] for d in days[-span:] if d.get("wear", 0) >= 600]   # noqa: E731 - chỉ ngày có đeo vòng
-    month, week = worn(28), worn(7)
+    month = [d["trimp"] for d in days[-28:] if _load_day(d)]
+    week = [d["trimp"] for d in days[-7:] if _load_day(d)]
     if len(month) < MIN_BASELINE:
         return out
     chronic = _mean(month) or 0
@@ -191,7 +202,7 @@ def _load_parts(days: list[dict], fatigue: dict | None = None) -> list[dict]:
                         h=int(round(hours)))
         else:
             detail = tr('Đã hồi phục sau các buổi tập gần đây.')
-        y = days[-1] if days and days[-1].get("wear", 0) >= 600 else None
+        y = days[-1] if days and _load_day(days[-1]) else None
         if y and chronic >= 5 and y["trimp"] > 2 * chronic:
             detail += " " + tr('Hôm qua tải gấp {r} lần thường lệ.', r=f"{y['trimp'] / chronic:.1f}")
         value = tr('{h} giờ', h=int(round(hours))) if hours >= 1 else tr('Đã hồi phục')
@@ -251,9 +262,12 @@ def readiness(nights: list[dict], days: list[dict], chronotype: float | None = N
     order = list(READINESS_WEIGHTS)
     parts.sort(key=lambda p: order.index(p["key"]))
     score = sum(p["score"] * READINESS_WEIGHTS[p["key"]] for p in parts) / sum(READINESS_WEIGHTS[p["key"]] for p in parts)
-    low = [p for p in parts if p["score"] < 40]
+    # Như Oura: một thành phần cơ thể rất thấp kéo điểm xuống, không để "sẵn sàng tập". Cân bằng vận động (ACWR) chỉ
+    # góp theo trọng số: nó là xu hướng tải theo tuần, khả năng dự báo còn tranh cãi (Impellizzeri 2020), và nhảy vọt
+    # khi lịch đeo vòng / chu kỳ đo thay đổi, không nên một mình biến ngày khỏe thành ngày "nên tập nhẹ".
+    low = [p for p in parts if p["score"] < 40 and p["key"] != "activity_balance"]
     if low:
-        score = min(score, 59)   # như Oura: một thành phần rất thấp kéo điểm xuống, không để "sẵn sàng tập"
+        score = min(score, 59)
     score = int(round(score))
     verdict = next(v for v in VERDICTS if score >= v[0])
     rec = next((p for p in parts if p["key"] == "recovery_time"), None)

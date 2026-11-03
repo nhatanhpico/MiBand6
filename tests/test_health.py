@@ -235,7 +235,13 @@ async def test_health_sync_and_summary(client):
     assert all(w["source"] == "band" for w in h["workouts"])
     db = client.service.health_db()
     assert db.last("workouts_backfill") and db.last("activity_backfill")
-    assert h["day"]["sleep"]["minutes"] > 300 and h["day"]["hr"]
+    # giả lập ngủ 23:20–06:50: trước lúc dậy, giấc của hôm nay còn đang ngủ nên chưa tính; xem đêm của hôm qua
+    woke = dt.datetime.now().time() >= dt.time(7, 30)
+    night_day = today if woke else (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    night = (await (await client.get(f"/api/health?date={night_day}")).json())["health"]["day"]
+    assert night["sleep"]["minutes"] > 300 and not night["sleep"]["ongoing"] and night["hr"]
+    if not woke:
+        assert h["day"]["sleep"] is None   # giấc đang ngủ dở không thành "đêm qua" chỉ vài phút
     assert sum(h["day"]["steps_hourly"]) == h["day"]["steps"]
     assert any(d["minutes"] > 300 for d in h["sleep_days"])
     assert fake.fetch_acks == 0

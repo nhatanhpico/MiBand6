@@ -261,6 +261,41 @@ async def test_reconnect_gives_up_after_repeated_auth_failures(client):
         simulator.FakeBand = real
     assert not s.connected and s.reconnect is None
     assert any("Ngừng tự kết nối lại" in line for line in s.logs)
+    # lý do dừng hiện trên giao diện; bấm "Thử kết nối lại" thì xóa lý do và thử tiếp
+    st = (await (await client.get("/api/state")).json())["state"]
+    assert st["reconnect_stopped"] and "3" in st["reconnect_stopped"]["message"]
+    r = await post(client, "/api/reconnect")
+    assert (await r.json())["started"] is True
+    assert await wait_for(lambda: s.connected)
+    assert s.reconnect_stopped is None
+
+
+async def test_auth_timeouts_do_not_stop_reconnecting(client, monkeypatch):
+    """Vòng tay đang nối với điện thoại không trả lời bước xác thực: không phải key sai, nên tự kết nối lại không dừng
+    sau MAX_AUTH_FAILURES lần như khi vòng tay từ chối key; lý do lần trước hiện kèm lúc chờ."""
+    from miband6.device import MiBand6
+    from miband6.web.server import MAX_AUTH_FAILURES
+
+    await connect(client)
+    s = client.service
+    s.reconnect_delays = (0.01,)
+    real = MiBand6._auth_classic
+    calls = []
+    seen_errors = []
+
+    async def busy(self, timeout):
+        calls.append(1)
+        if s.reconnect and s.reconnect.get("error"):
+            seen_errors.append(s.reconnect["error"])
+        if len(calls) <= MAX_AUTH_FAILURES + 2:
+            raise asyncio.TimeoutError()
+        return await real(self, timeout)
+
+    monkeypatch.setattr(MiBand6, "_auth_classic", busy)
+    s.band._client.drop()
+    assert await wait_for(lambda: s.connected, 5)
+    assert len(calls) == MAX_AUTH_FAILURES + 3 and s.reconnect_stopped is None
+    assert seen_errors and "xác thực" in seen_errors[-1]
 
 
 async def test_start_connects_to_remembered_band(tmp_path):
