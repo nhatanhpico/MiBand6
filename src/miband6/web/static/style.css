@@ -28,6 +28,7 @@
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 
 :root {
+  --route-run: #ffb547; --route-walk: #46e0a4; --route-ride: #6aa8ff;   /* màu lộ trình trên bản đồ (nền tối) */
   --bg: #101615;
   --rail: #131a19;
   --surface: #182120;
@@ -57,6 +58,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* như một ứng dụng: không bôi đen chữ khi giữ chuột hay bấm ⌘A, không kéo ảnh ra ngoài (ô nhập liệu vẫn chọn được) */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
+img, svg, a { -webkit-user-drag: none; }
 html.i18n-pending body { visibility: hidden; }
 body {
   background: var(--bg);
@@ -745,30 +750,46 @@ select:invalid, select.unknown { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .map-dialog { width: min(920px, calc(100vw - 32px)); }
 .map-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.map {
-  position: relative; height: min(560px, 62vh); border-radius: 14px; overflow: hidden; background: #0e1514;
-  cursor: grab; touch-action: none; user-select: none; outline: none;
-}
-.map.dragging { cursor: grabbing; }
-.map:focus-visible { box-shadow: 0 0 0 2px var(--amber); }
-.map-tiles { position: absolute; inset: 0; }
-.map-tiles img { position: absolute; width: 256px; height: 256px; max-width: none; pointer-events: none;
-  filter: invert(1) hue-rotate(180deg) brightness(.82) contrast(.92) saturate(.6); }
-.map-route { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.map-route .casing { fill: none; stroke: #0b0f0e; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; opacity: .7; }
-.map-route .line { fill: none; stroke: var(--amber); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-.map-route .start { fill: var(--mint); stroke: #0b0f0e; stroke-width: 3; }
-.map-route .end { fill: var(--coral); stroke: #0b0f0e; stroke-width: 3; }
-.map-zoom { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; border: 1px solid var(--line-strong); }
-.map-zoom button { width: 36px; height: 36px; display: grid; place-items: center; background: rgba(21, 28, 27, .92); color: var(--text); border: 0; font: 600 18px var(--font); cursor: pointer; }
-.map-zoom button + button { border-top: 1px solid var(--line-strong); }
-.map-zoom button:hover { background: var(--surface-3); }
-.map-attr { position: absolute; right: 8px; bottom: 6px; margin: 0; padding: 2px 6px; border-radius: 6px; background: rgba(14, 21, 20, .75); font-size: 11px; color: var(--muted); }
-.map-attr a { color: var(--muted); }
+.map { position: relative; height: min(560px, 62vh); border-radius: 14px; overflow: hidden; background: #0e1514; }
+/* trình duyệt: bản đồ Apple Maps chỉ có trong ứng dụng macOS */
+.map-need-app { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px;
+  padding: 28px; text-align: center; color: var(--muted);
+  background: radial-gradient(ellipse at 50% 35%, rgba(255, 181, 71, .08), transparent 60%), #0e1514; }
+.map-need-app .ic { width: 40px; height: 40px; color: var(--amber); }
+.map-need-app h3 { margin: 4px 0 0; color: var(--text); font-size: 17px; }
+.map-need-app p { margin: 0; max-width: 46ch; }
+.map-need-app .btn { margin-top: 6px; text-decoration: none; }
+.map-need-app .map-need-hint { font-size: 12.5px; }
 .map-msg { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: rgba(14, 21, 20, .85); }
 .map-legend { display: flex; gap: 18px; margin: 10px 2px 2px; font-size: 13px; color: var(--muted); }
 .map-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .map-legend .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #0b0f0e; }
 .map-legend .dot.start { background: var(--mint); }
 .map-legend .dot.end { background: var(--coral); }
+.map-legend .legend-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: transparent; color: var(--text); font: 500 13px var(--font); cursor: pointer; }
+.map-legend .legend-toggle[aria-pressed="false"] { color: var(--muted); opacity: .6; }
+.map-legend .legend-toggle[aria-pressed="false"] .swatch { background: transparent !important; }
+.map-legend .swatch { width: 18px; height: 4px; border-radius: 2px; border: 1px solid currentColor; }
+.map-legend .swatch.run { background: var(--route-run); border-color: var(--route-run); }
+.map-legend .swatch.walk { background: var(--route-walk); border-color: var(--route-walk); }
+.map-legend .swatch.ride { background: var(--route-ride); border-color: var(--route-ride); }
+.map-legend { flex-wrap: wrap; align-items: center; }
+.map-legend .legend-hint { margin-left: auto; font-size: 12.5px; }
+.map-back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.map-back .ic { width: 14px; height: 14px; }
 .wo-map { display: inline-flex; align-items: center; gap: 6px; }
+
+/* thời tiết (Cài đặt → Ứng dụng) */
+.wx-search { padding: 4px 22px 12px; display: grid; gap: 8px; max-width: 524px; }
+.wx-search input { width: 100%; }
+.wx-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.wx-results button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px;
+  border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+.wx-results button:hover, .wx-results button:focus-visible { border-color: var(--amber); }
+.wx-results span { color: var(--muted); font-size: 12.5px; }
+.wx-results .wx-empty { color: var(--muted); font-size: 13px; padding: 4px 2px; }
+.wx-now { display: grid; gap: 4px; font-size: 13.5px; color: var(--muted); padding: 12px 22px 14px; border-top: 1px solid var(--line); }
+.wx-now p { margin: 0; }
+.wx-now .wx-sent { color: var(--text); }
+.wx-now .wx-error { color: #ffb3a7; }

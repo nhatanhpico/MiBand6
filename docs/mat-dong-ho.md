@@ -12,15 +12,15 @@ Bên trái là hình Mi Band 6 với màn hình đúng kích thước thật (15
 
 ## Dùng ảnh của bạn
 
-> **Cài ảnh nền lên vòng tay đang tắt.** Trên một Mi Band 6 thật, vòng tay nhận mặt đồng hồ ứng dụng dựng từ ảnh nhưng bị treo khi hiển thị nó (cả khi xem trước trong danh sách mặt đồng hồ trên vòng tay). Ảnh vẫn dùng được để **Chỉ đặt làm ảnh xem trước**. Nút **Cài lên vòng tay** chỉ còn dùng cho tệp `.bin`. Nếu vòng tay của bạn đã bị ảnh hưởng, xem [Khi vòng tay bị treo hoặc mất mặt đồng hồ](#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ).
+> **Đã sửa lỗi làm vòng tay treo.** Bản trước dựng tệp với phần tiêu đề của Mi Band 5 (lấy từ mẫu của watchface-js): Mi Band 6 nhận tệp nhưng treo khi vẽ. Giờ tệp dùng tiêu đề của Mi Band 6 (mã thiết bị 148), giống bộ dựng mặt đồng hồ đã chạy trên Mi Band 6 thật của dự án [pixel-watchface](https://github.com/mishamyrt/pixel-watchface). Nếu vòng tay của bạn từng bị ảnh hưởng, xem [Khi vòng tay bị treo hoặc mất mặt đồng hồ](#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ).
 
 1. Chọn thẻ **Ảnh của bạn**, bấm **Chọn ảnh…**. Ảnh lớn cỡ nào cũng được (ảnh chụp từ điện thoại vẫn được): ứng dụng tự thu nhỏ cho vừa màn hình vòng tay.
 2. Trong khung chỉnh, phần sáng hình viên thuốc là phần hiện trên vòng tay; phần tối sẽ bị cắt. Kéo ảnh để di chuyển, cuộn chuột hoặc dùng thanh **Phóng to**. Bàn phím: phím mũi tên để dịch (giữ Shift để dịch nhanh), `+` / `-` để phóng to, thu nhỏ.
 3. **Cách đặt ảnh**: **Lấp đầy** phủ kín màn hình (cắt bớt mép ảnh); **Trọn ảnh** giữ cả ảnh, chỗ trống để màu đen.
 4. **Giờ**: hiện giờ và phút xếp chồng ở trên, giữa hoặc dưới, hoặc **Ẩn**. **Màu chữ số**: trắng (ảnh tối) hoặc đen (ảnh sáng).
-5. Bấm **Chỉ đặt làm ảnh xem trước** để trang **Tổng quan** hiện ảnh này.
+5. Bấm **Cài lên vòng tay**. Thanh tiến độ cho biết phần đã gửi; vòng tay tự chuyển sang mặt mới khi xong. **Chỉ đặt làm ảnh xem trước** thì không cài gì, chỉ đổi hình ở trang **Tổng quan**.
 
-Ứng dụng dựng tệp mặt đồng hồ Mi Band 6 từ ảnh và các chữ số giờ theo mô tả định dạng của dự án [watchface-js](https://github.com/Nadeflore/watchface-js). Vòng tay chấp nhận tệp (mọi bước gửi đều báo thành công) nhưng không vẽ được, nên tệp sai ở phần nội dung chứ không ở cách gửi. Tính năng chỉ được bật lại khi đã tìm ra chỗ sai.
+Ứng dụng dựng tệp mặt đồng hồ Mi Band 6 từ ảnh nền (24 bit) và các chữ số giờ, theo mô tả định dạng của [watchface-js](https://github.com/Nadeflore/watchface-js) và phần tiêu đề, kiểu ảnh của [pixel-watchface](https://github.com/mishamyrt/pixel-watchface). Mặt đồng hồ này không kèm ảnh xem trước riêng, nên danh sách mặt đồng hồ trên vòng tay có thể hiện ô trống cho nó.
 
 ## Cài tệp .bin
 

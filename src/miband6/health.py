@@ -174,6 +174,30 @@ def has_gps(w: dict) -> bool:
     return w.get("mf_proto") in GPS_PROTOS and bool(w.get("mf_sid")) and bool(w.get("mf_time"))
 
 
+def route_kind(w: dict) -> str:
+    """Loại lộ trình để tô màu trên bản đồ: "run", "walk" hoặc "ride"."""
+    kind, mf = w.get("type"), w.get("mf_type")
+    if w.get("mf_proto") == 23 or kind in (4, 8) or mf == 6:
+        return "ride"
+    if kind in (3, 10, 15) or (kind is None and mf in (2, 3)):
+        return "walk"
+    return "run"
+
+
+def simplify_track(points: list, min_step: float = 8e-5, max_points: int = 600) -> list:
+    """[[ts, lat, lon], …] -> [[lat, lon], …] gọn cho bản đồ tổng (bỏ điểm cách điểm trước dưới ~9 m)."""
+    out: list = []
+    for _ts, lat, lon in points:
+        if not out or abs(lat - out[-1][0]) + abs(lon - out[-1][1]) >= min_step:
+            out.append([lat, lon])
+    if points and out[-1] != [points[-1][1], points[-1][2]]:
+        out.append([points[-1][1], points[-1][2]])
+    if len(out) > max_points:
+        step = len(out) / max_points
+        out = [out[int(i * step)] for i in range(max_points)] + [out[-1]]
+    return out
+
+
 GPS_POINT_SIZE = {1: 12, 2: 18, 3: 26}   # byte mỗi điểm theo phiên bản tệp lộ trình
 
 

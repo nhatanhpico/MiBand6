@@ -30,12 +30,17 @@
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
 - Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Nếu đã đăng nhập Xiaomi, mỗi lần kết nối ứng dụng cũng tự lấy buổi tập mới (và hồ sơ) từ Mi Fitness ở chế độ nền.
-- Bản đồ lộ trình mở bằng **Apple Maps** trong ứng dụng macOS, bằng bản đồ OpenStreetMap trên trình duyệt. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
+- **Bản đồ** của từng buổi chạy, đi bộ, đạp xe ngoài trời và bản đồ **Những nơi đã đến** gom mọi lộ trình (tô màu theo loại), mở ngay trong ứng dụng (ứng dụng macOS dùng **Apple Maps** gắn sẵn, trình duyệt dùng OpenStreetMap); lộ trình được tải sẵn ở nền.
+- Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
 - Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
+
+**Thời tiết** (**Cài đặt → Ứng dụng → Thời tiết**; chi tiết: [docs/thoi-tiet.md](docs/thoi-tiet.md))
+- Mỗi lần kết nối và mỗi giờ, gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm, giờ mặt trời mọc và lặn (dữ liệu Open-Meteo, không cần tài khoản)
+- Vị trí tự động theo mạng đang dùng, hoặc chọn một thành phố
 
 **Mặt đồng hồ và ảnh nền** (**Cài đặt → Mặt đồng hồ**; hướng dẫn chi tiết: [docs/mat-dong-ho.md](docs/mat-dong-ho.md))
 - Khung **mô phỏng Mi Band 6** (màn hình 152 × 486, bo góc như thật) hiện đúng thứ sẽ lên vòng tay trước khi cài
-- **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Hiện chỉ đặt được làm ảnh xem trước: **cài ảnh nền lên vòng tay đã bị tắt** vì mặt đồng hồ ứng dụng dựng từ ảnh làm Mi Band 6 bị treo (cách khôi phục: [docs/mat-dong-ho.md](docs/mat-dong-ho.md#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ))
+- **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Chọn vị trí và màu giờ rồi **Cài lên vòng tay**: ứng dụng dựng một mặt đồng hồ Mi Band 6 từ ảnh đó (nếu vòng tay gặp sự cố, xem [cách khôi phục](docs/mat-dong-ho.md#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ))
 - **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); ảnh xem trước có trong tệp được đọc ra và hiện ở khung mô phỏng
 - Vòng tay không cho đọc mặt đồng hồ đang dùng (kể cả mặt có sẵn), nên hình vòng tay ở Tổng quan hiện mặt đã cài qua ứng dụng. Với mặt có sẵn: chụp ảnh màn hình vòng tay, chọn ở **Ảnh của bạn**, đặt Giờ là **Ẩn**, bấm **Chỉ đặt làm ảnh xem trước**
 

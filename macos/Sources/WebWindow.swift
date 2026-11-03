@@ -3,19 +3,17 @@ import WebKit
 
 /// Cửa sổ chính: hiện giao diện web của server trong WKWebView. Đóng cửa sổ chỉ ẩn nó đi,
 /// ứng dụng (và kết nối Bluetooth) vẫn chạy trên thanh menu.
-final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
-                                  WKDownloadDelegate, WKScriptMessageHandler {
+final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     var onClose: (() -> Void)?
-    private var mapWindows: [RouteMapWindowController] = []
     private let webView: WKWebView
     private var serverURL: URL?
     private var downloads: [ObjectIdentifier: URL] = [:]
+    private var nativeMap: NativeMapController?
+    private var pendingPage: String?   // trang cần mở khi giao diện tải xong (liên kết miband6://)
 
     init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // giữ localStorage (ngôn ngữ đã chọn) giữa các lần mở
-        let contentController = WKUserContentController()
-        config.userContentController = contentController
         webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")   // không chớp nền trắng khi tải trang
         if #available(macOS 13.3, *) { webView.isInspectable = true }
@@ -36,8 +34,10 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
         window.delegate = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        // trang web gọi window.webkit.messageHandlers.routeMap.postMessage(...) để mở bản đồ Apple Maps
-        contentController.add(WeakMessageHandler(self), name: "routeMap")
+        // bản đồ Apple Maps gắn trong hộp thoại lộ trình của trang (window.webkit.messageHandlers.nativeMap)
+        let map = NativeMapController(webView: webView)
+        config.userContentController.add(WeakMessageHandler(map), name: "nativeMap")
+        nativeMap = map
         showMessage(t("Đang khởi động…"))
     }
 
@@ -47,8 +47,26 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
     func load(_ url: URL) {
         let same = serverURL.map { $0.host == url.host && $0.port == url.port } ?? false
         serverURL = url
+        if let page = pendingPage, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            pendingPage = nil
+            parts.fragment = page
+            webView.load(URLRequest(url: parts.url ?? url))
+            return
+        }
         if same, let current = webView.url, isServer(current) { return }
         webView.load(URLRequest(url: url))
+    }
+
+    /// Mở một trang của giao diện, ví dụ "health/map:all" (từ liên kết miband6://open?page=…).
+    func open(page: String) {
+        let safe = String(page.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0) || ":/-_".unicodeScalars.contains($0)
+        }.map(Character.init))
+        guard let current = webView.url, isServer(current) else {
+            pendingPage = safe   // giao diện chưa tải: mở khi server sẵn sàng
+            return
+        }
+        webView.evaluateJavaScript("location.hash = '#\(safe)'")
     }
 
     func reload() {
@@ -66,18 +84,6 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
     private func isServer(_ url: URL) -> Bool {
         guard let serverURL, let host = url.host else { return false }
         return ["127.0.0.1", "localhost"].contains(host) && url.port == serverURL.port
-    }
-
-    // MARK: bản đồ lộ trình (Apple Maps)
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "routeMap", let body = message.body as? [String: Any],
-              let controller = RouteMapWindowController(body: body) else { return }
-        controller.onClose = { [weak self, weak controller] in
-            self?.mapWindows.removeAll { $0 === controller }
-        }
-        mapWindows.append(controller)
-        controller.show()
     }
 
     // MARK: NSWindowDelegate
@@ -105,6 +111,10 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
         }
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        nativeMap?.hide()   // tải lại trang: hộp thoại bản đồ đã mất
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -182,18 +192,5 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloads.removeValue(forKey: ObjectIdentifier(download))
-    }
-}
-
-/// WKUserContentController giữ handler bằng tham chiếu mạnh; lớp trung gian này tránh vòng tham chiếu.
-final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
-    private weak var target: WKScriptMessageHandler?
-
-    init(_ target: WKScriptMessageHandler) {
-        self.target = target
-    }
-
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        target?.userContentController(controller, didReceive: message)
     }
 }

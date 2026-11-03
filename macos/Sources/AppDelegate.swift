@@ -68,6 +68,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         if !launchedAtLogin { showWindow() }
     }
 
+    /// Liên kết miband6://open?page=… (nút "Mở trong ứng dụng" của bản web): mở cửa sổ ở đúng trang.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme?.lowercased() == "miband6" {
+            showWindow()
+            let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "page" }?.value
+            if let page, !page.isEmpty { window.open(page: page) }
+        }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showWindow()   // bấm biểu tượng Dock hoặc mở lại ứng dụng từ Finder
         return true

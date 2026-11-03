@@ -747,6 +747,26 @@ def decrypt_fds(body: bytes, key_b64: str) -> bytes:
     return unpadder.update(padded) + unpadder.finalize()
 
 
+_FDS_SESSION = None
+
+
+def _fds_session():
+    """Phiên HTTP dùng chung để tải tệp từ máy chủ tệp (FDS) của Xiaomi.
+
+    Từ một số mạng, mở kết nối tới máy chủ này mất 30-60 giây; giữ kết nối (keep-alive) và dùng lại cho các
+    lần tải sau nên chỉ lần đầu chậm. Không gửi cookie đăng nhập (đường dẫn tải đã có chữ ký)."""
+    global _FDS_SESSION
+    if _FDS_SESSION is None:
+        import requests
+        from requests.adapters import HTTPAdapter
+
+        s = requests.Session()
+        s.headers.update({"User-Agent": APP_UA})
+        s.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=4))
+        _FDS_SESSION = s
+    return _FDS_SESSION
+
+
 def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, proto: int,
                    region: str = "sg") -> bytes | None:
     """Tệp lộ trình GPS (đã giải mã) của một buổi tập trong tài khoản Mi Fitness; None nếu buổi đó không có.
@@ -766,7 +786,8 @@ def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, pr
     entry = res["result"].get(f"{suffix}_{report_time}")
     if not isinstance(entry, dict) or not entry.get("obj_key") or not isinstance(entry.get("url"), str):
         return None   # buổi tập không có tệp lộ trình
-    r = login.requests.get(entry["url"], timeout=30, allow_redirects=False)
+    # mở kết nối có thể mất tới ~60 giây (xem _fds_session); đọc dữ liệu thì nhanh
+    r = _fds_session().get(entry["url"], timeout=(90, 30), allow_redirects=False)
     if r.status_code != 200:
         raise LoginError(tr('Không tải được tệp lộ trình (HTTP {status}).', status=r.status_code))
     return decrypt_fds(r.content, entry["obj_key"])

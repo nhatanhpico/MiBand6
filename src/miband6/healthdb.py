@@ -109,6 +109,15 @@ class HealthDB:
         row = self.db.execute("SELECT data FROM workouts WHERE start = ?", (start,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def gps_workouts(self) -> list[dict]:
+        """Các buổi tập có lộ trình GPS trong Mi Fitness, mới nhất trước."""
+        rows = self.db.execute("SELECT data FROM workouts ORDER BY start DESC").fetchall()
+        return [w for w in (json.loads(r[0]) for r in rows) if H.has_gps(w)]
+
+    def tracks(self) -> dict[int, list]:
+        """Mọi lộ trình đã lưu trên máy: {giờ bắt đầu buổi tập: điểm}."""
+        return {start: json.loads(data) for start, data in self.db.execute("SELECT start, data FROM tracks")}
+
     def track(self, start: int) -> list | None:
         row = self.db.execute("SELECT data FROM tracks WHERE start = ?", (start,)).fetchone()
         return json.loads(row[0]) if row else None

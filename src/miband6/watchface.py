@@ -1,36 +1,41 @@
 """Dựng tệp mặt đồng hồ Mi Band 6 (.bin dạng UIHH) từ ảnh nền tùy chọn và các chữ số giờ.
 
-Hàm thuần, dễ kiểm thử. Định dạng theo mô tả của cộng đồng (dự án watchface-js, mẫu "UIHH_MIBAND"):
+Hàm thuần, dễ kiểm thử. Định dạng theo mô tả của cộng đồng (watchface-js, mẫu "UIHH_MIBAND") và bộ dựng
+mặt đồng hồ Mi Band 6 đã chạy trên vòng tay thật của dự án pixel-watchface:
 
     tiêu đề 87 byte  |  mục lục tham số  |  tham số  |  bảng vị trí ảnh  |  các ảnh
 
+- Tiêu đề phải là của Mi Band 6: byte 14-17 là 3E 00 3E 00 và byte 22-25 là 1F 22 11 00 (Mi Band 5 dùng
+  3D 00 3D 00 / E0 7F 05 00), byte 12-13 và 18-19 là mã riêng của mặt đồng hồ, rồi mã thiết bị 148 (Mi Band 6)
+  và cỡ mục lục tham số. Tiêu đề mẫu của watchface-js là của Mi Band 5: Mi Band 6 nhận tệp nhưng bị treo khi vẽ.
 - Tham số mã hóa kiểu protobuf: khóa (id << 3, hoặc | 2 nếu là nhóm con) rồi giá trị varint.
-- Mỗi ảnh: "BM" + tiêu đề 16 byte, rồi điểm ảnh 24 bit: 1 byte độ trong suốt (0 = đặc) và
-  màu RGB565 xếp BGR, big-endian.
+- Mỗi ảnh: "BM", 100, rộng, cao, số byte mỗi hàng, số bit, số màu, màu trong suốt (uint16), rồi điểm ảnh
+  24 bit: 1 byte độ trong suốt (0 = đặc) và màu RGB565 xếp BGR, big-endian.
 """
 
 from __future__ import annotations
 
 SCREEN_W, SCREEN_H = 152, 486
-HEADER = bytes.fromhex(
-    "554948480100ffffffffff01b5e53d003d0030270000ab860900ffffffffffff00ff"
-    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-    "ffffffffff0000000000000000"
-)
-PARAM_BUFFER_POS = len(HEADER) - 8     # cỡ tham số lớn nhất (vòng tay bỏ qua tham số lớn hơn)
-PARAM_INFO_SIZE_POS = len(HEADER) - 4  # cỡ phần mục lục tham số
+BAND_ID = 148                # mã thiết bị Mi Band 6 trong tiêu đề (Mi Band 5: 146)
+HEADER_SIZE = 87
+DEVICE_POS = HEADER_SIZE - 8           # mã thiết bị (watchface-js gọi là "cỡ tham số lớn nhất")
+PARAM_INFO_SIZE_POS = HEADER_SIZE - 4  # cỡ phần mục lục tham số
+MAX_PARAM = BAND_ID          # tham số lớn hơn số ở DEVICE_POS bị vòng tay bỏ qua: giữ mỗi tham số nhỏ hơn
+IMAGE_FORMAT = 100           # trường thứ hai của tiêu đề ảnh, như bộ dựng đã chạy trên Mi Band 6
+
+
+def band6_header(face_id: bytes, info_size: int) -> bytes:
+    """Tiêu đề 87 byte của mặt đồng hồ Mi Band 6; face_id: 4 byte mã riêng của mặt đồng hồ."""
+    head = (b"UIHH\x01\x00" + b"\xff" * 5 + b"\x01" + face_id[:2] + bytes.fromhex("3e003e00") + face_id[2:4]
+            + b"\x00\x00" + bytes.fromhex("1f221100") + b"\xff" * 6 + b"\x00")
+    head += b"\xff" * (DEVICE_POS - len(head))
+    return head + BAND_ID.to_bytes(4, "little") + info_size.to_bytes(4, "little")
 
 # id tham số (mẫu UIHH_MIBAND)
 BACKGROUND, TIME = 2, 3
 BG_IMAGE, BG_PREVIEW_EN, BG_PREVIEW_CN, BG_PREVIEW_CN2 = 1, 3, 4, 5
-TIME_HOURS, TIME_MINUTES = 1, 2
+TIME_HOURS, TIME_MINUTES, TIME_DRAWING_ORDER = 1, 2, 11
 DIGIT_TENS, DIGIT_ONES = 1, 2
-
-
-# Cài ảnh nền lên vòng tay đang TẮT: Mi Band 6 thật nhận tệp do wallpaper_face() tạo (d5/d6 trả 01) nhưng treo
-# khi vẽ mặt đồng hồ đó và khi xem trước nó trong danh sách mặt đồng hồ. Chỉ bật lại sau khi tìm ra lỗi định dạng
-# và thử trên vòng tay với sự đồng ý của người dùng.
-WALLPAPER_INSTALL = False
 
 
 def varint(value: int) -> bytes:
@@ -64,7 +69,7 @@ def image_24bit(width: int, height: int, rgba: bytes) -> bytes:
     """Ảnh 24 bit có kênh trong suốt từ điểm ảnh RGBA (mỗi điểm 4 byte, từ trái sang, trên xuống)."""
     if len(rgba) != width * height * 4:
         raise ValueError(f"ảnh {width}x{height} cần {width * height * 4} byte RGBA, nhận {len(rgba)}")
-    head = b"BM" + b"".join(v.to_bytes(2, "little") for v in (0x1B, width, height, width * 3, 24, 0, 0))
+    head = b"BM" + b"".join(v.to_bytes(2, "little") for v in (IMAGE_FORMAT, width, height, width * 3, 24, 0, 0))
     px = bytearray(width * height * 3)
     for i in range(width * height):
         r, g, b, a = rgba[i * 4:i * 4 + 4]
@@ -92,10 +97,13 @@ def build(parameters: dict[int, dict], images: list[bytes]) -> bytes:
     for img in images:
         table += offset.to_bytes(4, "little")
         offset += len(img)
-    header = bytearray(HEADER)
-    header[PARAM_BUFFER_POS:PARAM_BUFFER_POS + 4] = max((len(b) for b in blobs), default=0).to_bytes(4, "little")
-    header[PARAM_INFO_SIZE_POS:PARAM_INFO_SIZE_POS + 4] = len(info_blob).to_bytes(4, "little")
-    return bytes(header) + info_blob + b"".join(blobs) + bytes(table) + b"".join(images)
+    if any(len(b) > MAX_PARAM for b in blobs):
+        raise ValueError(f"tham số dài hơn {MAX_PARAM} byte, vòng tay sẽ bỏ qua")
+    body = info_blob + b"".join(blobs) + bytes(table) + b"".join(images)
+    import hashlib
+
+    face_id = hashlib.sha1(body).digest()[:4]   # mã riêng mỗi mặt đồng hồ (bộ dựng gốc dùng số ngẫu nhiên)
+    return band6_header(face_id, len(info_blob)) + body
 
 
 def wallpaper_face(background: bytes, preview: tuple[int, int, bytes], digits: list[tuple[int, int, bytes]],
@@ -103,14 +111,13 @@ def wallpaper_face(background: bytes, preview: tuple[int, int, bytes], digits: l
     """Mặt đồng hồ "ảnh nền": nền 152x486 (RGBA) và giờ, phút xếp chồng (mỗi hàng hai chữ số).
 
     digits: 10 ảnh chữ số 0-9 cùng cỡ (rộng, cao, RGBA); hours_xy/minutes_xy: góc trên trái của hàng
-    giờ / phút, hoặc None để không hiện giờ."""
+    giờ / phút, hoặc None để không hiện giờ. `preview` không được đưa vào tệp: bộ dựng đã chạy trên Mi Band 6
+    không có ảnh xem trước, và ảnh xem trước cỡ lạ là một chỗ có thể làm vòng tay treo (giữ tham số để tương thích)."""
+    del preview
     if len(background) != SCREEN_W * SCREEN_H * 4:
         raise ValueError("ảnh nền phải đúng 152x486")
-    images = [image_24bit(SCREEN_W, SCREEN_H, background), image_24bit(*preview)]
-    bg_img = {1: 0, 2: 0, 3: 0}
-    pv_img = {1: 0, 2: 0, 3: 1}
-    params: dict[int, dict] = {BACKGROUND: {BG_IMAGE: bg_img, BG_PREVIEW_EN: pv_img, BG_PREVIEW_CN: pv_img,
-                                            BG_PREVIEW_CN2: pv_img}}
+    images = [image_24bit(SCREEN_W, SCREEN_H, background)]
+    params: dict[int, dict] = {BACKGROUND: {BG_IMAGE: {1: 0, 2: 0, 3: 0}}}
     if hours_xy and minutes_xy:
         if len(digits) != 10 or len({(w, h) for w, h, _ in digits}) != 1:
             raise ValueError("cần 10 ảnh chữ số cùng kích thước")
@@ -121,7 +128,7 @@ def wallpaper_face(background: bytes, preview: tuple[int, int, bytes], digits: l
         def row(x: int, y: int) -> dict:
             return {DIGIT_TENS: {1: x, 2: y, 3: first, 4: 10}, DIGIT_ONES: {1: x + w, 2: y, 3: first, 4: 10}}
 
-        params[TIME] = {TIME_HOURS: row(*hours_xy), TIME_MINUTES: row(*minutes_xy)}
+        params[TIME] = {TIME_HOURS: row(*hours_xy), TIME_MINUTES: row(*minutes_xy), TIME_DRAWING_ORDER: 0}
     return build(params, images)
 
 
@@ -163,7 +170,7 @@ def parse(data: bytes) -> tuple[dict, list[bytes]]:
     if not data.startswith(b"UIHH"):
         raise ValueError("không phải tệp UIHH")
     info_size = int.from_bytes(data[PARAM_INFO_SIZE_POS:PARAM_INFO_SIZE_POS + 4], "little")
-    pos = len(HEADER)
+    pos = HEADER_SIZE
     info = decode_params(data[pos:pos + info_size])
     pos += info_size
     meta = info.pop(1)   # {1: cỡ phần tham số, 2: số ảnh}

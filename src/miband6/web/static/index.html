@@ -260,7 +260,10 @@
         <article class="card wide" id="health-workouts">
           <header class="card-head split-head">
             <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
-            <button id="woCloudBtn" class="btn small" type="button"><svg class="ic"><use href="#i-cloud"/></svg><span>Lấy lịch sử từ Mi Fitness</span></button>
+            <div class="head-actions">
+              <button id="woMapAllBtn" class="btn small" type="button" hidden><svg class="ic"><use href="#i-route"/></svg><span>Những nơi đã đến</span></button>
+              <button id="woCloudBtn" class="btn small" type="button"><svg class="ic"><use href="#i-cloud"/></svg><span>Lấy lịch sử từ Mi Fitness</span></button>
+            </div>
           </header>
           <p class="card-sub wo-note">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
           <table class="data-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table>
@@ -412,7 +415,6 @@
 
               <div id="modePhoto" class="face-mode">
                 <p class="face-hint">Dùng ảnh của bạn làm ảnh nền, kèm giờ. Ảnh lớn được tự thu nhỏ cho vừa màn hình vòng tay.</p>
-                <p class="face-warn" role="note"><svg class="ic"><use href="#i-alert"/></svg><span>Tạm thời chỉ đặt được làm ảnh xem trước. Cài ảnh nền lên vòng tay đã bị tắt vì mặt đồng hồ tạo từ ảnh làm Mi Band 6 bị treo.</span></p>
                 <div class="pick">
                   <button class="btn" id="wpPickBtn" type="button"><svg class="ic"><use href="#i-image"/></svg><span>Chọn ảnh…</span></button>
                   <span class="pick-name" id="wpName">Chưa chọn ảnh</span>
@@ -482,6 +484,20 @@
           <div class="group-head"><h2>Phím tắt</h2><p>Các màn hình hiện khi vuốt trái, phải từ mặt đồng hồ. Bật mục muốn dùng và sắp xếp thứ tự.</p></div>
           <ol id="menuShortcuts" class="apps shortcuts"></ol>
           <div class="group-foot"><button class="btn primary" data-save="menu-shortcuts" data-conn>Lưu phím tắt</button></div>
+        </div>
+        <div class="group" id="weatherGroup">
+          <div class="group-head"><h2>Thời tiết</h2><p>Mỗi lần kết nối và mỗi giờ, ứng dụng gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm và giờ mặt trời mọc, lặn. Dữ liệu từ Open-Meteo.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Tự đồng bộ thời tiết</span><input type="checkbox" class="switch" id="wxOn"></label>
+            <div class="row"><span class="row-label">Vị trí</span>
+              <div class="seg"><input type="radio" name="wxMode" id="wxAuto" value="auto"><label for="wxAuto">Tự động</label><input type="radio" name="wxMode" id="wxCity" value="city"><label for="wxCity">Chọn thành phố</label></div></div>
+          </div>
+          <div class="wx-search" id="wxSearch" hidden>
+            <input type="search" id="wxQuery" placeholder="Tên thành phố, ví dụ Hà Nội" aria-label="Tìm thành phố" autocomplete="off">
+            <ul id="wxResults" class="wx-results" aria-live="polite"></ul>
+          </div>
+          <div class="wx-now" id="wxNow" aria-live="polite"></div>
+          <div class="group-foot"><button id="wxSyncBtn" class="btn" type="button" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Gửi thời tiết ngay</span></button></div>
         </div>
       </div>
 
@@ -643,21 +659,23 @@
 
 <dialog id="mapDialog" class="dialog map-dialog" aria-labelledby="mapTitle">
   <header class="map-head">
-    <div><h2 id="mapTitle">Lộ trình</h2><p class="card-sub" id="mapSub"></p></div>
+    <div>
+      <button id="mapBack" class="link-btn map-back" type="button" hidden><svg class="ic"><use href="#i-chev-left"/></svg><span>Tất cả lộ trình</span></button>
+      <h2 id="mapTitle">Lộ trình</h2><p class="card-sub" id="mapSub"></p>
+    </div>
     <button id="mapClose" class="btn ghost small" type="button">Đóng</button>
   </header>
-  <div class="map" id="map" tabindex="0" aria-label="Bản đồ lộ trình; kéo để di chuyển, cuộn để phóng to">
-    <div class="map-tiles" id="mapTiles"></div>
-    <svg class="map-route" id="mapRoute" aria-hidden="true"></svg>
-    <div class="map-zoom">
-      <button id="mapIn" type="button" aria-label="Phóng to">+</button>
-      <button id="mapOut" type="button" aria-label="Thu nhỏ">−</button>
-      <button id="mapFit" type="button" aria-label="Vừa lộ trình"><svg class="ic"><use href="#i-fit"/></svg></button>
+  <div class="map" id="map" aria-label="Bản đồ lộ trình">
+    <div class="map-need-app" id="mapNeedApp" hidden>
+      <svg class="ic"><use href="#i-route"/></svg>
+      <h3>Bản đồ cần ứng dụng Mi Band 6 cho macOS</h3>
+      <p>Bản đồ dùng Apple Maps, chỉ có trong ứng dụng macOS. Mở ứng dụng để xem lộ trình này.</p>
+      <a class="btn primary" id="mapOpenApp" href="miband6://open">Mở trong ứng dụng</a>
+      <p class="map-need-hint">Chưa cài ứng dụng? Xem phần Ứng dụng macOS trong README.</p>
     </div>
-    <p class="map-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>
     <p class="map-msg" id="mapMsg" hidden></p>
   </div>
-  <div class="map-legend"><span><i class="dot start"></i>Bắt đầu</span><span><i class="dot end"></i>Kết thúc</span></div>
+  <div class="map-legend" id="mapLegend"><span><i class="dot start"></i>Bắt đầu</span><span><i class="dot end"></i>Kết thúc</span></div>
   <dl class="stats" id="mapStats"></dl>
 </dialog>
 

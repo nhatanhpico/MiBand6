@@ -171,15 +171,21 @@ def test_wallpaper_face_structure():
     digits = [(40, 60, bytes([255, 255, 255, 128]) * (40 * 60))] * 10
     data = WF.wallpaper_face(bg, (76, 243, bytes(76 * 243 * 4)), digits, (36, 40), (36, 104))
     P.check_watchface(data)
+    # tiêu đề của Mi Band 6 (tiêu đề Mi Band 5 làm Mi Band 6 thật bị treo): dấu 3E 00 3E 00, 1F 22 11 00, mã 148
+    assert len(data) > 87 and data[:6] == b"UIHH\x01\x00" and data[11] == 1
+    assert data[14:18] == bytes.fromhex("3e003e00") and data[20:26] == bytes.fromhex("00001f221100")
+    assert data[32] == 0 and set(data[26:32]) == {0xFF} and set(data[33:79]) == {0xFF}
+    assert int.from_bytes(data[79:83], "little") == 148
     params, images = WF.parse(data)
-    assert params[2][1] == {1: 0, 2: 0, 3: 0} and params[2][3][3] == 1
-    assert params[3][1][2] == {1: 76, 2: 40, 3: 2, 4: 10} and params[3][2][1][2] == 104
-    assert len(images) == 12 and images[0][:2] == b"BM"
-    assert int.from_bytes(images[0][4:6], "little") == 152 and int.from_bytes(images[0][6:8], "little") == 486
-    alpha, color = images[2][16], int.from_bytes(images[2][17:19], "big")
+    assert params[2] == {1: {1: 0, 2: 0, 3: 0}}   # chỉ ảnh nền, không có ảnh xem trước
+    assert params[3][1][2] == {1: 76, 2: 40, 3: 1, 4: 10} and params[3][2][1][2] == 104 and params[3][11] == 0
+    assert len(images) == 11 and images[0][:2] == b"BM"
+    assert [int.from_bytes(images[0][i:i + 2], "little") for i in range(2, 16, 2)] == [100, 152, 486, 456, 24, 0, 0]
+    alpha, color = images[1][16], int.from_bytes(images[1][17:19], "big")
     assert alpha == 127 and color == 0xFFFF   # trắng, trong suốt một nửa (0 = đặc)
     bare = WF.wallpaper_face(bg, (10, 10, bytes(400)), [], None, None)
     assert 3 not in WF.parse(bare)[0]
+    assert bare[12:14] + bare[18:20] != data[12:14] + data[18:20]   # mỗi mặt đồng hồ một mã riêng
     with pytest.raises(ValueError):
         WF.wallpaper_face(bytes(10), (10, 10, bytes(400)), [], None, None)
 
@@ -282,18 +288,7 @@ async def test_install_watchface_and_preview(client):
     assert (await client.get("/api/watchface/preview")).status == 404
 
 
-async def test_wallpaper_install_disabled(client):
-    """Cài ảnh nền đang tắt: không gửi gì tới vòng tay (mặt đồng hồ tạo ra làm Mi Band 6 thật bị treo)."""
-    fake = await connected(client)
-    b64 = lambda raw: base64.b64encode(raw).decode()  # noqa: E731
-    img = lambda w, h: {"w": w, "h": h, "rgba": b64(bytes([30, 60, 90, 255]) * (w * h))}  # noqa: E731
-    r = await post(client, "/api/wallpaper", {"background": img(152, 486), "preview": img(76, 243)})
-    assert r.status == 410
-    assert getattr(fake, "installed_watchface", None) is None
-
-
-async def test_wallpaper_endpoint(client, monkeypatch):
-    monkeypatch.setattr(WF, "WALLPAPER_INSTALL", True)
+async def test_wallpaper_endpoint(client):
     fake = await connected(client)
     b64 = lambda raw: base64.b64encode(raw).decode()  # noqa: E731
     img = lambda w, h: {"w": w, "h": h, "rgba": b64(bytes([30, 60, 90, 255]) * (w * h))}  # noqa: E731
@@ -304,7 +299,7 @@ async def test_wallpaper_endpoint(client, monkeypatch):
     assert r.status == 200, await r.text()
     params, images = WF.parse(fake.installed_watchface)
     assert (params[3][2][1][1], params[3][2][1][2]) == (32, 108)   # hàng phút, chữ số hàng chục
-    assert len(images) == 12
+    assert len(images) == 11
     r = await post(client, "/api/wallpaper", {"background": img(100, 100), "preview": img(10, 10)})
     assert r.status == 400
 
@@ -314,8 +309,8 @@ def test_preview_extracted_from_bin():
     data = WF.wallpaper_face(bg, (76, 243, bytes([250, 20, 20, 255]) * (76 * 243)), [], None, None)
     shot = WF.preview_png(data)
     assert shot.startswith(b"\x89PNG")
-    w, h, rgba = WF.decode_image(WF.parse(data)[1][1])
-    assert (w, h) == (76, 243) and rgba[:4] == bytes([248, 20, 16, 255])
+    w, h, rgba = WF.decode_image(WF.parse(data)[1][0])   # không có ảnh xem trước riêng: dùng ảnh nền
+    assert (w, h) == (152, 486) and rgba[:4] == bytes([8, 120, 200, 255])
     # ảnh 8 bit có bảng màu, màu số 2 là màu trong suốt
     indexed = b"BM" + b"".join(v.to_bytes(2, "little") for v in (0x64, 2, 1, 2, 8, 2, 2)) \
         + bytes([255, 0, 0, 0, 0, 0, 255, 0]) + bytes([0, 1])
@@ -503,3 +498,89 @@ async def test_workout_track_endpoint_demo(client):
     no_gps = next(w for w in h["workouts"] if not w["gps"])
     assert (await client.get(f"/api/workouts/{no_gps['start']}/track")).status == 404
     assert (await client.get("/api/workouts/123/track")).status == 404
+
+
+async def test_all_tracks_prefetched_in_background(client):
+    """Bản đồ "những nơi đã đến": lấy lịch sử xong thì lộ trình được tải sẵn ở nền; /api/tracks trả mọi lộ trình."""
+    await connected(client)
+    await wait_sync(client.service)
+    await post(client, "/api/cloud/sync", {"job": "workouts"})
+    for _ in range(200):
+        await asyncio.sleep(0.05)
+        body = await (await client.get("/api/tracks")).json()
+        if body["routes"] and not body["pending"]:
+            break
+    assert len(body["routes"]) == 3 and body["pending"] == 0
+    kinds = sorted(r["kind"] for r in body["routes"])
+    assert set(kinds) <= {"run", "ride"} and "ride" in kinds
+    assert all(2 <= len(r["points"]) <= 601 and len(r["points"][0]) == 2 for r in body["routes"])
+
+
+def test_route_kind_and_simplify():
+    assert H.route_kind({"type": 1}) == "run" and H.route_kind({"type": 3}) == "walk"
+    assert H.route_kind({"type": 4}) == "ride" and H.route_kind({"mf_type": 6, "mf_proto": 23}) == "ride"
+    assert H.route_kind({"mf_type": 1, "mf_proto": 22}) == "run"
+    pts = [[i, 10.0 + i * 1e-6, 106.0] for i in range(1000)]   # 1000 điểm cách nhau ~0,1 m
+    short = H.simplify_track(pts)
+    assert short[0] == [10.0, 106.0] and short[-1] == [pts[-1][1], 106.0] and len(short) < 20
+    long = H.simplify_track([[i, 10.0 + i * 1e-3, 106.0] for i in range(5000)])
+    assert len(long) <= 601
+
+
+# ---------------------------------------------------------------- thời tiết
+
+
+def test_weather_packets():
+    from miband6 import weather as W
+
+    w = W.demo()
+    pk = W.packets(w, "en")
+    assert [p[0] for p in pk] == [2, 4, 1, 8, 64, 16]   # hiện tại, AQI, dự báo, địa điểm, gió/độ ẩm, mặt trời
+    cur = pk[0]
+    assert int.from_bytes(cur[1:5], "little") == w.time and cur[5] == 28 and cur[6] == 1 and cur[7] == 31
+    assert cur[8:].rstrip(b"\0") == b"Partly cloudy"
+    assert pk[1][6:8] == (72).to_bytes(2, "little") and pk[1][8:].rstrip(b"\0") == b"Moderate"
+    fc = pk[2]
+    assert fc[6] == 7 and fc[7:11] == bytes([1, 1, 33, 25])          # 7 ngày; hôm nay: mã, mã, cao, thấp
+    assert pk[3] == b"\x08" + "TP. Hồ Chí Minh".encode() + b"\0"
+    assert pk[4][6:].split(b"\0")[:2] == [b"2", b"68%"]             # gió cấp Beaufort, độ ẩm
+    assert pk[5][6:] == bytes([5, 52, 17, 31])
+    vi = W.packets(w, "vi")[0]
+    assert vi[8:].rstrip(b"\0").decode() == "Có mây"
+    f = W.packets(w, "en", fahrenheit=True)[0]
+    assert f[7] == 89                                               # 31,4 °C = 88,5 °F
+    assert W.huami_condition(95) == 4 and W.huami_condition(45) == 18 and W.huami_condition(1234) == 0
+    long = P.weather_location("x" * 100)
+    assert len(long) == 1 + P.WEATHER_TEXT_MAX + 1
+    cut = P.weather_location("ồ" * 30)                               # không cắt giữa ký tự nhiều byte
+    assert cut[1:-1].decode("utf-8") and cut[-1] == 0
+
+
+async def test_weather_sent_on_connect_and_settings(client):
+    fake = await connected(client)
+    for _ in range(100):
+        if client.service.weather_status.get("state") == "done":
+            break
+        await asyncio.sleep(0.05)
+    weather = [d for t, d in fake.chunked_payloads if t == 1]
+    assert [d[0] for d in weather] == [2, 4, 1, 8, 64, 16]
+    st = (await (await client.get("/api/state")).json())["state"]["weather"]
+    assert st["state"] == "done" and st["enabled"] and st["place"] is None and st["now"]["temp"] == 31
+    # chọn thành phố: gửi lại ngay, tên địa điểm mới
+    places = (await (await client.get("/api/weather/search?q=n%E1%BB%99i")).json())["places"]
+    assert places[0]["name"] == "Hà Nội"
+    fake.chunked_payloads.clear()
+    r = await post(client, "/api/weather", {"place": places[0]})
+    assert (await r.json())["state"]["weather"]["place"]["name"] == "Hà Nội"
+    for _ in range(100):
+        if any(t == 1 and d[0] == 8 for t, d in fake.chunked_payloads):
+            break
+        await asyncio.sleep(0.05)
+    assert (1, b"\x08" + "Hà Nội".encode() + b"\0") in fake.chunked_payloads
+    r = await post(client, "/api/weather", {"place": {"name": "x", "lat": 200, "lon": 0}})
+    assert r.status == 400
+    r = await post(client, "/api/weather/sync", {})
+    assert r.status == 200 and (await r.json())["weather"]["now"]["place"] == "Hà Nội"
+    await post(client, "/api/weather", {"enabled": False, "place": None})
+    st = (await (await client.get("/api/state")).json())["state"]["weather"]
+    assert st["enabled"] is False and st["place"] is None

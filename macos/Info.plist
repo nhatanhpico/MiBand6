@@ -34,6 +34,17 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.nhatanhpico.MiBand6Manager</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>miband6</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Mi Band 6 dùng Bluetooth để kết nối và giữ kết nối với vòng tay Xiaomi Mi Smart Band 6.</string>
 	<key>NSAppTransportSecurity</key>

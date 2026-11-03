@@ -467,6 +467,11 @@ class MiBand6:
                 for c in P.chunked_old(type_, data):
                     await self._write(P.CHAR_CHUNKED, c)
 
+    async def send_weather(self, packets: list[bytes]) -> None:
+        """Gửi thời tiết (các gói của weather.packets) qua kênh chunked, loại 1."""
+        for packet in packets:
+            await self.write_chunked(P.CHUNKED_WEATHER, packet)
+
     async def write_user_settings(self, data: bytes) -> None:
         async with self._lock:
             await self._write(P.CHAR_USER_SETTINGS, data)

@@ -32,9 +32,10 @@ from aiohttp import WSMsgType, web
 from .. import health as H
 from .. import protocol as P
 from .. import watchface as WF
+from .. import weather as W
 from ..config import Store
 from ..envfile import env_settings, load_env
-from ..i18n import set_lang, tr
+from ..i18n import get_lang, set_lang, tr
 from ..device import PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError, MiBand6, MiBandError, scan
 from ..healthdb import HealthDB, db_path
 from .. import xiaomi_cloud as XC
@@ -52,6 +53,8 @@ HEALTH_SYNC_EVERY = 30 * 60            # giây giữa hai lần tự đồng b�
 FIRST_SYNC_DAYS = 30                   # lần đồng bộ đầu tiên lấy tối đa chừng này ngày (vòng tay giữ cỡ đó)
 BACKFILL_DAYS = 3 * 365                # một lần duy nhất: hỏi vòng tay mọi dữ liệu cũ hơn lần đầu, tới chừng này ngày
 CLOUD_PROFILE_EVERY = 12 * 3600        # tự lấy lại hồ sơ Mi Fitness (nếu còn phiên đăng nhập) sau chừng này giây
+WEATHER_EVERY = 3600                   # giây giữa hai lần gửi thời tiết khi đang kết nối
+IP_PLACE_TTL = 6 * 3600                # dùng lại vị trí theo IP trong chừng này giây
 CLOUD_WORKOUTS_EVERY = 3600            # tự lấy buổi tập mới từ Mi Fitness khi kết nối, nhiều nhất mỗi chừng này giây
 CLOUD_WORKOUTS_OVERLAP = 2 * 86400     # lấy lùi lại chừng này giây so với lần trước (buổi tập đồng bộ lên trễ)
 MAX_UPLOAD = 12 * 1024 * 1024          # cỡ tối đa của yêu cầu (tệp mặt đồng hồ + ảnh, dạng base64)
@@ -59,16 +62,20 @@ IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": 
 
 
 def demo_track(w: dict) -> list:
-    """Lộ trình giả lập cho chế độ xem thử: một vòng quanh công viên, mỗi 5 giây một điểm."""
+    """Lộ trình giả lập cho chế độ xem thử: vòng quanh trung tâm TP.HCM, mỗi buổi một chỗ khác, mỗi 5 giây một điểm."""
     import math
 
     duration = max(600, int(w.get("active_seconds") or 1800))
     n = duration // 5
-    lat0, lon0 = 10.7765, 106.6955
+    seed = (w["start"] // 60) % 997
+    ride = w.get("mf_proto") == 23
+    lat0 = 10.7765 + 0.012 * math.sin(seed)
+    lon0 = 106.6955 + 0.015 * math.cos(seed * 1.7)
+    size = (0.011 if ride else 0.0045) * (0.8 + 0.4 * ((seed % 7) / 6))
     out = []
     for i in range(n):
-        a = 2 * math.pi * i / n * 2   # hai vòng
-        r = 0.0045 + 0.0008 * math.sin(5 * a)
+        a = 2 * math.pi * i / n * (1 if ride else 2)   # chạy: hai vòng; đạp xe: một vòng lớn
+        r = size + 0.0008 * math.sin((3 + seed % 4) * a)
         out.append([w["start"] + 5 * i, round(lat0 + r * math.sin(a), 6), round(lon0 + 1.25 * r * math.cos(a), 6)])
     return out
 
@@ -136,7 +143,12 @@ class BandService:
         # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
         self.auto_health = True
         self.auto_cloud = not demo   # tự đồng bộ Mi Fitness sau khi kết nối (tắt ở chế độ xem thử)
+        self._track_jobs: dict[int, asyncio.Future] = {}   # lộ trình đang tải, theo giờ bắt đầu buổi tập
+        self._track_failed: set[int] = set()               # tải hỏng trong lần chạy này: không tự thử lại
+        self._prefetch_task: asyncio.Task | None = None
         self.health_status: dict = {"state": "idle"}
+        self.weather_status: dict = {"state": "idle"}
+        self._ip_place: tuple[float, W.Place] | None = None
         self._health_task: asyncio.Task | None = None
         self._dbs: dict[str, HealthDB] = {}
         self.watchface_busy = False
@@ -205,6 +217,7 @@ class BandService:
             "env_key": bool(self.env_key),
             "reconnect": None if self.connected else self.reconnect,
             "health": self.health_status,
+            "weather": {**self.weather_status, **self.weather_settings()},
             "watchface": self.settings.get("watchface"),
             "cloud": self.cloud.status,
         }
@@ -313,8 +326,10 @@ class BandService:
             used = await self.band.connect()
         except AuthError as e:
             raise ApiError(str(e), 401) from e
+        except (asyncio.TimeoutError, TimeoutError) as e:
+            raise ApiError(tr('Không kết nối được: vòng tay không trả lời. Vòng tay có thể đang nối với điện thoại (Mi Fitness), ở xa máy Mac, hoặc đang khởi động lại.'), 502) from e
         except Exception as e:  # noqa: BLE001
-            raise ApiError(tr('Không kết nối được: {e}', e=e), 502) from e
+            raise ApiError(tr('Không kết nối được: {e}', e=str(e) or type(e).__name__), 502) from e
         finally:
             self.busy = False
             if used is None:
@@ -343,6 +358,8 @@ class BandService:
                 self.log(tr('Lỗi khi đọc dữ liệu: {e}', e=e))
         if self.auto_cloud:
             self._spawn(self._cloud_background())
+        if self.weather_settings()["enabled"]:
+            self._spawn(self._periodic_weather(band))
         if self.auto_health and self.band is band and self.connected:
             self.start_health_sync()
             self._spawn(self._periodic_health(band))
@@ -367,6 +384,94 @@ class BandService:
                 return
             self.cloud.start(write=True, interactive=False, job=job, since=since)
             await self.cloud.wait()
+
+    # ------------------------------------------------------------ thời tiết
+    def weather_settings(self) -> dict:
+        w = self.settings.get("weather") or {}
+        return {"enabled": w.get("enabled", True), "place": w.get("place")}
+
+    def set_weather_settings(self, enabled: bool | None = None, place: dict | None | bool = False) -> None:
+        """place: dict (thành phố đã chọn), None (tự động theo IP), False (giữ nguyên)."""
+        w = self.weather_settings()
+        if enabled is not None:
+            w["enabled"] = bool(enabled)
+        if place is not False:
+            if place is not None:
+                lat, lon = float(place["lat"]), float(place["lon"])
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    raise ApiError(tr('Tọa độ không hợp lệ.'))
+                place = {"name": str(place.get("name") or "?")[:60], "lat": lat, "lon": lon,
+                         "detail": str(place.get("detail") or "")[:80]}
+            w["place"] = place
+        self.settings["weather"] = w
+        self.store.save()
+        self.push_state()
+        if w["enabled"] and self.connected:
+            self._spawn(self._sync_weather_quiet())
+
+    async def _weather_place(self) -> W.Place:
+        chosen = self.weather_settings()["place"]
+        if chosen:
+            return W.Place(chosen["name"], chosen["lat"], chosen["lon"], chosen.get("detail", ""))
+        if self.demo:
+            return W.demo().place
+        if self._ip_place and time.time() - self._ip_place[0] < IP_PLACE_TTL:
+            return self._ip_place[1]
+        place = await asyncio.to_thread(W.locate_by_ip)
+        self._ip_place = (time.time(), place)
+        return place
+
+    def _band_lang(self) -> str:
+        return "vi" if str(self.settings.get("language") or "").lower().startswith("vi") else "en"
+
+    async def sync_weather(self) -> dict:
+        """Lấy thời tiết nơi đang ở (hoặc thành phố đã chọn) rồi gửi tới vòng tay."""
+        band = self.require()
+        self.weather_status = {**self.weather_status, "state": "running"}
+        self.push({"type": "weather", "status": self.state()["weather"]})
+        try:
+            place = await self._weather_place()
+            data = W.demo(place) if self.demo else await asyncio.to_thread(W.fetch, place)
+            lang = self._band_lang()
+            await band.send_weather(W.packets(data, lang, fahrenheit=self.settings.get("metric") is False))
+        except ApiError:
+            raise
+        except Exception as e:  # noqa: BLE001 - lỗi mạng, mất kết nối…
+            self.weather_status = {**self.weather_status, "state": "error", "error": str(e) or type(e).__name__}
+            self.push({"type": "weather", "status": self.state()["weather"]})
+            raise ApiError(tr('Không gửi được thời tiết: {e}', e=str(e) or type(e).__name__), 502) from e
+        summary = data.summary(lang)
+        self.weather_status = {"state": "done", "at": int(time.time()), "now": summary}
+        self.log(tr('Đã gửi thời tiết tới vòng tay: {place}, {temp}°, {text}.', place=summary["place"],
+                    temp=summary["temp"], text=summary["text"]))
+        self.push({"type": "weather", "status": self.state()["weather"]})
+        return self.state()["weather"]
+
+    async def _sync_weather_quiet(self) -> None:
+        try:
+            await self.sync_weather()
+        except ApiError as e:
+            self.log(tr('Không gửi được thời tiết: {e}', e=e))
+
+    async def _periodic_weather(self, band: MiBand6) -> None:
+        """Gửi thời tiết ngay khi kết nối, rồi mỗi WEATHER_EVERY giây khi vẫn kết nối và còn bật."""
+        while self.band is band and self.connected and self.weather_settings()["enabled"]:
+            await self._sync_weather_quiet()
+            await asyncio.sleep(WEATHER_EVERY)
+
+    async def search_places(self, query: str) -> list[dict]:
+        query = query.strip()
+        if len(query) < 2:
+            return []
+        lang = get_lang()
+        if self.demo:
+            demo = [W.Place("Hà Nội", 21.0285, 105.8542, "Việt Nam"), W.Place("TP. Hồ Chí Minh", 10.7765, 106.7009, "Việt Nam"),
+                    W.Place("Đà Nẵng", 16.0544, 108.2022, "Việt Nam")]
+            return [p.as_dict() for p in demo if query.lower() in p.name.lower()]
+        try:
+            return [p.as_dict() for p in await asyncio.to_thread(W.search_places, query, lang)]
+        except Exception as e:  # noqa: BLE001
+            raise ApiError(tr('Không tìm được địa điểm: {e}', e=str(e) or type(e).__name__), 502) from e
 
     # ------------------------------------------------------------ dữ liệu sức khỏe
     def health_db(self) -> HealthDB | None:
@@ -511,10 +616,23 @@ class BandService:
         added = db.add_cloud_workouts(rows)
         db.set_last("cloud_workouts", int(time.time()))
         self.push({"type": "health_data"})
+        self.prefetch_tracks()
         return tr('Đã lấy {n} buổi tập từ Mi Fitness, {new} buổi mới.', n=len(rows), new=added)
 
     async def workout_track(self, start: int) -> list:
-        """Lộ trình GPS của một buổi tập (tải từ Mi Fitness lần đầu, sau đó dùng bản đã lưu trên máy)."""
+        """Lộ trình GPS của một buổi tập (tải từ Mi Fitness lần đầu, sau đó dùng bản đã lưu trên máy).
+        Nhiều yêu cầu cùng một buổi tập (người dùng bấm, tải sẵn chạy nền) dùng chung một lần tải."""
+        db = self.health_db()
+        cached = db.track(start) if db else None
+        if cached is not None:
+            return cached
+        job = self._track_jobs.get(start)
+        if job is None:
+            job = self._track_jobs[start] = asyncio.ensure_future(self._download_track(start))
+            job.add_done_callback(lambda _f: self._track_jobs.pop(start, None))
+        return await asyncio.shield(job)
+
+    async def _download_track(self, start: int) -> list:
         db = self.health_db()
         w = db.workout(start) if db else None
         if w is None:
@@ -549,7 +667,58 @@ class BandService:
                 self.log(tr('Không lấy được lộ trình: {e}', e=e or type(e).__name__))
                 raise ApiError(tr('Không lấy được lộ trình: {e}', e=e or type(e).__name__), 502) from e
         db.set_track(start, points)
+        self.push({"type": "tracks"})
         return points
+
+    def prefetch_tracks(self) -> None:
+        """Tải sẵn ở chế độ nền lộ trình của mọi buổi tập có GPS chưa có trên máy, để mở bản đồ tức thì
+        (máy chủ tệp của Xiaomi có thể mất cả phút mới trả lời)."""
+        if self._prefetch_task and not self._prefetch_task.done():
+            return
+        self._prefetch_task = asyncio.ensure_future(self._prefetch_tracks())
+
+    async def _prefetch_tracks(self) -> None:
+        db = self.health_db()
+        if db is None:
+            return
+        have = set(db.tracks())
+        todo = [w["start"] for w in db.gps_workouts() if w["start"] not in have and w["start"] not in self._track_failed]
+        if not todo:
+            return
+        limit = asyncio.Semaphore(3)
+        stop = asyncio.Event()
+
+        async def one(start: int) -> None:
+            async with limit:
+                if stop.is_set():
+                    return
+                try:
+                    await self.workout_track(start)
+                except ApiError as e:
+                    if e.status == 409:   # chưa đăng nhập / phiên hết hạn: dừng, không hỏi QR khi chạy nền
+                        stop.set()
+                    else:
+                        self._track_failed.add(start)
+
+        await asyncio.gather(*(one(s) for s in todo))
+
+    def all_tracks(self) -> dict:
+        """Mọi lộ trình đã có trên máy (rút gọn) cho bản đồ "những nơi đã đến"; tải nốt phần còn thiếu ở nền."""
+        db = self.health_db()
+        if db is None:
+            return {"routes": [], "pending": 0}
+        stored = db.tracks()
+        routes, pending = [], 0
+        for w in db.gps_workouts():
+            points = stored.get(w["start"])
+            if points is None:
+                pending += w["start"] not in self._track_failed
+                continue
+            if len(points) >= 2:
+                routes.append({"start": w["start"], "kind": H.route_kind(w), "points": H.simplify_track(points)})
+        if pending:
+            self.prefetch_tracks()
+        return {"routes": routes, "pending": pending}
 
     def health_summary(self, date: str) -> dict | None:
         db = self.health_db()
@@ -623,7 +792,9 @@ class BandService:
 
     # ------------------------------------------------------------ giữ kết nối
     def start(self) -> None:
-        """Gọi khi server vừa chạy: tự kết nối với vòng tay đã nhớ nếu đang bật Giữ kết nối."""
+        """Gọi khi server vừa chạy: tự kết nối với vòng tay đã nhớ nếu đang bật Giữ kết nối, và tải sẵn lộ trình."""
+        if not self.demo:
+            self.prefetch_tracks()
         if self.keep_connected and self._reconnect_target():
             self.want_connected = True
             self._start_reconnect(first_delay=False)
@@ -1049,6 +1220,20 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             raise ApiError(tr('Không tìm thấy buổi tập này.'), 404) from e
         return ok(points=await S.workout_track(start))
 
+    async def tracks_get(_):
+        return ok(**S.all_tracks())
+
+    async def weather_post(req):
+        b = await body(req)
+        S.set_weather_settings(b.get("enabled") if "enabled" in b else None, b["place"] if "place" in b else False)
+        return ok(state=S.state())
+
+    async def weather_sync(_):
+        return ok(weather=await S.sync_weather())
+
+    async def weather_search(req):
+        return ok(places=await S.search_places(req.query.get("q", "")))
+
     async def watchface_inspect(req):
         """Kiểm tra tệp .bin và trả ảnh xem trước bên trong nó (để mô phỏng trước khi cài)."""
         data = b64((await body(req)).get("file"))
@@ -1075,11 +1260,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
         return w, h, b64(value.get("rgba"))
 
     async def wallpaper_post(req):
-        """Tạo mặt đồng hồ từ ảnh nền đã cắt sẵn trên trình duyệt (152x486) rồi cài lên vòng tay.
-
-        Đang tắt (WF.WALLPAPER_INSTALL = False): vòng tay nhận tệp nhưng bị treo khi vẽ mặt đồng hồ này."""
-        if not WF.WALLPAPER_INSTALL:
-            raise ApiError(tr('Đã tạm tắt cài ảnh nền lên vòng tay: mặt đồng hồ ứng dụng tạo từ ảnh làm Mi Band 6 bị treo khi hiển thị. Ảnh vẫn dùng được làm ảnh xem trước.'), 410)
+        """Tạo mặt đồng hồ từ ảnh nền đã cắt sẵn trên trình duyệt (152x486) rồi cài lên vòng tay."""
         b = await body(req)
         _w, _h, background = rgba(b.get("background"), WF.SCREEN_W, WF.SCREEN_H)
         preview = rgba(b.get("preview"), WF.SCREEN_W, WF.SCREEN_H)
@@ -1190,6 +1371,10 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_get("/api/health", health_get)
     r.add_post("/api/health/sync", health_sync)
     r.add_get("/api/workouts/{start}/track", track_get)
+    r.add_get("/api/tracks", tracks_get)
+    r.add_post("/api/weather", weather_post)
+    r.add_post("/api/weather/sync", weather_sync)
+    r.add_get("/api/weather/search", weather_search)
     r.add_post("/api/watchface", watchface_post)
     r.add_post("/api/watchface/inspect", watchface_inspect)
     r.add_post("/api/wallpaper", wallpaper_post)

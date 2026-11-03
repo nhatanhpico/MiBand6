@@ -905,3 +905,55 @@ def firmware_info(fw_type: int, data: bytes, chunk_length: int) -> bytes:
     crc = (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little")
     return (bytes([FW_SEND_INFO, fw_type]) + size + crc + (chunk_length & 0xFFFF).to_bytes(2, "little")
             + bytes([0, 0, 1]) + size)   # cập nhật ở tiền cảnh, chỉ số 0, tổng 1 tệp, tổng kích thước
+
+
+# ---------------------------------------------------------------- thời tiết (kênh chunked, loại 1)
+# Theo HuamiSupport.onSendWeather của Gadgetbridge: mỗi gói mở đầu bằng 1 byte loại, phần lớn kèm thời điểm
+# (uint32) và múi giờ tính theo 15 phút (int8). Chữ là UTF-8 kết thúc bằng byte 0. Mi Band 6 nhận cả gói
+# gió/độ ẩm và giờ mặt trời mọc/lặn.
+CHUNKED_WEATHER = 1
+WEATHER_FORECAST, WEATHER_CURRENT, WEATHER_AQI, WEATHER_LOCATION, WEATHER_SUN, WEATHER_WIND_HUMIDITY = 1, 2, 4, 8, 16, 64
+WEATHER_MAX_DAYS = 7          # hôm nay + 6 ngày tới (Gadgetbridge cắt dự báo ở 6 ngày)
+WEATHER_TEXT_MAX = 40         # byte UTF-8 tối đa cho một chuỗi (tên địa điểm, mô tả)
+
+
+def _wtext(text: str) -> bytes:
+    raw = (text or "").encode("utf-8")[:WEATHER_TEXT_MAX]
+    return raw.decode("utf-8", "ignore").encode("utf-8") + b"\x00"   # không cắt giữa một ký tự nhiều byte
+
+
+def _wstamp(kind: int, ts: int, tz_quarters: int) -> bytes:
+    return bytes([kind]) + int(ts).to_bytes(4, "little") + (tz_quarters & 0xFF).to_bytes(1, "little")
+
+
+def _i8(v: float) -> bytes:
+    return (max(-128, min(127, round(v))) & 0xFF).to_bytes(1, "little")
+
+
+def weather_current(ts: int, tz_quarters: int, condition: int, temp: float, text: str) -> bytes:
+    return _wstamp(WEATHER_CURRENT, ts, tz_quarters) + bytes([condition & 0xFF]) + _i8(temp) + _wtext(text)
+
+
+def weather_aqi(ts: int, tz_quarters: int, aqi: int, text: str) -> bytes:
+    return _wstamp(WEATHER_AQI, ts, tz_quarters) + (int(aqi) & 0xFFFF).to_bytes(2, "little") + _wtext(text)
+
+
+def weather_forecast(ts: int, tz_quarters: int, days: list[tuple[int, float, float, str]]) -> bytes:
+    """days: [(mã thời tiết, cao nhất, thấp nhất, mô tả)], ngày đầu là hôm nay."""
+    days = days[:WEATHER_MAX_DAYS]
+    out = _wstamp(WEATHER_FORECAST, ts, tz_quarters) + bytes([len(days)])
+    for code, high, low, text in days:
+        out += bytes([code & 0xFF, code & 0xFF]) + _i8(high) + _i8(low) + _wtext(text)
+    return out
+
+
+def weather_location(name: str) -> bytes:
+    return bytes([WEATHER_LOCATION]) + _wtext(name)
+
+
+def weather_wind_humidity(ts: int, tz_quarters: int, wind: str, humidity: str) -> bytes:
+    return _wstamp(WEATHER_WIND_HUMIDITY, ts, tz_quarters) + _wtext(wind) + _wtext(humidity)
+
+
+def weather_sun(ts: int, tz_quarters: int, sunrise: tuple[int, int], sunset: tuple[int, int]) -> bytes:
+    return _wstamp(WEATHER_SUN, ts, tz_quarters) + bytes([sunrise[0], sunrise[1], sunset[0], sunset[1]])

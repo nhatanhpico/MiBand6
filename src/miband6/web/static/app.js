@@ -185,6 +185,11 @@ function route() {
   window.scrollTo({ top: 0 });
   if (page === "health") {
     healthAnchor = sub0 || "";
+    if (healthAnchor.startsWith("map:")) {   // ứng dụng mở từ nút "Mở trong ứng dụng" của trình duyệt
+      healthMap = healthAnchor.slice(4);
+      healthAnchor = "workouts";
+      history.replaceState(null, "", "#health");
+    }
     quiet(loadHealth());
   }
 }
@@ -423,6 +428,7 @@ function applyState(st) {
   markSync();
   renderWatchface(st.watchface);
   renderHealthStatus(st.health);
+  renderWeather(st.weather);
   for (const [kind, data] of Object.entries(st.live || {})) render(kind, data);
   updateGoal();
   drawBand();
@@ -456,7 +462,14 @@ function connectEvents() {
         break;
       case "cloud": renderCloud(msg.status); break;
       case "health": renderHealthStatus(msg.status); break;
+      case "weather": STATE.weather = msg.status; renderWeather(msg.status); break;
       case "health_data": if (!$("#page-health").hidden) quiet(loadHealth()); break;
+      case "tracks":   // vừa tải xong thêm lộ trình: bản đồ tổng đang mở thì vẽ thêm
+        if ($("#mapDialog").open && MAP.mode === "all") {
+          clearTimeout(MAP.refresh);
+          MAP.refresh = setTimeout(() => openAllMaps(true), 400);
+        }
+        break;
       case "watchface_progress": renderWatchfaceProgress(msg.data); break;
       case "device_event":
         if (msg.data === 0x08) startFindPhone();
@@ -1153,8 +1166,7 @@ function drawSim() {
 }
 
 function faceButtons() {
-  // ảnh nền: cài lên vòng tay đang tắt (vòng tay treo với mặt đồng hồ ứng dụng tạo), chỉ đặt làm ảnh xem trước
-  const ready = faceMode() === "photo" ? false : !!SIM.binB64;
+  const ready = faceMode() === "photo" ? !!WP.img : !!SIM.binB64;
   $("#faceInstallBtn").disabled = !ready || !STATE.connected;
   $("#facePreviewBtn").disabled = !(SIM.source === "photo" || SIM.source === "bin");
   $("#wfClearBtn").disabled = !STATE.watchface?.preview;
@@ -1412,6 +1424,90 @@ $("#wfClearBtn").onclick = () => quiet(run($("#wfClearBtn"), async () => {
   applyState((await api("/api/watchface/preview", { image: null })).state);
 }, t("Đã bỏ ảnh xem trước.")).finally(faceButtons));
 
+/* ============================================================ thời tiết */
+
+let wxCityMode = false;   // đang chọn "Chọn thành phố" nhưng chưa chọn nơi nào
+function renderWeather(w) {
+  if (!w) return;
+  $("#wxOn").checked = !!w.enabled;
+  const city = !!w.place || wxCityMode;
+  $("#wxAuto").checked = !city;
+  $("#wxCity").checked = city;
+  $("#wxSearch").hidden = !city;
+  const box = $("#wxNow");
+  box.textContent = "";
+  const line = (text, cls = "") => { const p = mkEl("p", cls ? { class: cls } : {}, box); p.textContent = text; return p; };
+  if (w.place) line(t("Thành phố: {name}", { name: [w.place.name, w.place.detail].filter(Boolean).join(", ") }), "wx-place");
+  else line(t("Vị trí tự động theo mạng đang dùng (địa chỉ IP)."), "wx-place");
+  if (w.state === "running") line(t("Đang gửi thời tiết…"));
+  else if (w.state === "error") line(t("Lần gửi trước không thành công: {e}", { e: w.error || "" }), "wx-error");
+  if (w.now) {
+    const n = w.now;
+    const parts = [`${n.place}`, `${n.temp}°`, n.text, t("cao {high}° / thấp {low}°", { high: n.high, low: n.low })];
+    if (n.humidity != null) parts.push(t("độ ẩm {h}%", { h: n.humidity }));
+    if (n.aqi != null) parts.push(t("AQI {aqi}", { aqi: n.aqi }));
+    line(t("Đã gửi lúc {time}: {summary}", { time: dateTime(w.at), summary: parts.join(" · ") }), "wx-sent");
+  } else if (w.state !== "running" && w.state !== "error") {
+    line(w.enabled ? t("Thời tiết sẽ được gửi khi kết nối vòng tay.") : t("Đang tắt: vòng tay giữ thời tiết đã nhận lần trước."));
+  }
+  $("#wxSyncBtn").disabled = !STATE.connected || w.state === "running";
+}
+
+async function saveWeather(body, okText) {
+  try {
+    applyState((await api("/api/weather", body)).state);
+    if (okText) toast(okText);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+$("#wxOn").addEventListener("change", () => saveWeather({ enabled: $("#wxOn").checked }));
+$("#wxAuto").addEventListener("change", () => { wxCityMode = false; saveWeather({ place: null }); });
+$("#wxCity").addEventListener("change", () => {
+  wxCityMode = true;
+  renderWeather(STATE.weather);
+  $("#wxQuery").focus();
+});
+$("#wxSyncBtn").onclick = () => quiet(run($("#wxSyncBtn"), async () => {
+  const r = await api("/api/weather/sync", {});
+  STATE.weather = r.weather;
+  renderWeather(r.weather);
+}, t("Đã gửi thời tiết tới vòng tay.")));
+(() => {
+  let timer = null, seq = 0;
+  $("#wxQuery").addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = $("#wxQuery").value.trim();
+      const my = ++seq;
+      const list = $("#wxResults");
+      if (q.length < 2) { list.textContent = ""; return; }
+      let places = [];
+      try {
+        places = (await api(`/api/weather/search?q=${encodeURIComponent(q)}`)).places;
+      } catch (e) {
+        if (my === seq) { list.textContent = ""; mkEl("li", { class: "wx-empty" }, list).textContent = e.message; }
+        return;
+      }
+      if (my !== seq) return;
+      list.textContent = "";
+      if (!places.length) { mkEl("li", { class: "wx-empty" }, list).textContent = t("Không tìm thấy nơi nào."); return; }
+      for (const p of places) {
+        const b = mkEl("button", { type: "button" }, mkEl("li", {}, list));
+        mkEl("b", {}, b).textContent = p.name;
+        if (p.detail) mkEl("span", {}, b).textContent = p.detail;
+        b.onclick = () => {
+          wxCityMode = false;
+          list.textContent = "";
+          $("#wxQuery").value = "";
+          saveWeather({ place: p }, t("Đã chọn {name}.", { name: p.name }));
+        };
+      }
+    }, 300);
+  });
+})();
+
 /* ============================================================ sức khỏe */
 
 const todayISO = () => {
@@ -1456,6 +1552,7 @@ const stressLabel = (v) => (v < 40 ? t("Thư giãn") : v < 60 ? t("Bình thườ
 let healthDate = todayISO();
 let healthData = null;
 let healthAnchor = "";
+let healthMap = null;   // bản đồ cần mở sau khi tải xong dữ liệu sức khỏe
 
 function renderHealthStatus(st) {
   if (!st) return;
@@ -1476,6 +1573,10 @@ async function loadHealth() {
   healthData = r.health;
   renderHealthStatus(r.status);
   renderHealth();
+  if (healthMap) {
+    openMapFromHash(healthMap);
+    healthMap = null;
+  }
   if (healthAnchor) {
     $(`#health-${healthAnchor}`)?.scrollIntoView({ block: "start" });
     healthAnchor = "";
@@ -1572,6 +1673,14 @@ window.addEventListener("resize", () => {
 /* ---- vẽ biểu đồ (SVG thuần) */
 
 const SVGNS = "http://www.w3.org/2000/svg";
+/** Tạo phần tử HTML với thuộc tính, gắn vào parent. */
+function mkEl(tag, attrs, parent) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+  if (parent) parent.append(node);
+  return node;
+}
+
 function sv(tag, attrs, parent) {
   const el = document.createElementNS(SVGNS, tag);
   for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
@@ -2023,6 +2132,7 @@ function renderHealth() {
     w.source === "mifitness" ? "Mi Fitness" : t("Vòng tay"), "",
   ]), t("Chưa có buổi tập nào. Bấm Lấy lịch sử từ Mi Fitness để lấy các buổi cũ."), 9);
   // nút Bản đồ cho buổi chạy / đạp xe ngoài trời có lộ trình GPS (Mi Fitness ghi từ GPS của điện thoại)
+  $("#woMapAllBtn").hidden = !H.workouts.some((w) => w.gps);
   $$("#woTable tr").forEach((tr, i) => {
     const w = H.workouts[i];
     if (!w?.gps) return;
@@ -2031,7 +2141,7 @@ function renderHealth() {
     b.className = "btn small wo-map";
     b.innerHTML = '<svg class="ic"><use href="#i-route"/></svg><span></span>';
     $("span", b).textContent = t("Bản đồ");
-    b.onclick = () => openMap(w, b);
+    b.onclick = () => openMap(w);
     tr.lastElementChild.append(b);
   });
 
@@ -2058,115 +2168,98 @@ function renderHealth() {
 /* Bản đồ nền: ô ảnh chuẩn của OpenStreetMap (CSS làm tối cho hợp giao diện); lộ trình vẽ bằng SVG lên trên.
    Theo chính sách dùng ô ảnh của OpenStreetMap: có ghi nguồn, chỉ tải phần đang xem.
    Phép chiếu Web Mercator; MAP.cx/cy là tâm khung nhìn tính bằng điểm ảnh ở mức phóng to MAP.z. */
-const MAP = { pts: null, z: 14, cx: 0, cy: 0, drag: null, frame: 0 };
-const TILE = 256;
-function project(lat, lon, z) {
-  const size = TILE * 2 ** z;
-  const r = (lat * Math.PI) / 180;
-  return [((lon + 180) / 360) * size, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * size];
+/* Bản đồ lộ trình: Apple Maps (MapKit) gốc của ứng dụng macOS, nằm đè đúng khung #map trong hộp thoại; trang chỉ báo vị
+   trí khung và các lộ trình (window.webkit.messageHandlers.nativeMap). Trên trình duyệt không có Apple Maps: khung bản đồ
+   báo cần mở ứng dụng, kèm nút mở đúng bản đồ đó trong ứng dụng (miband6://open?page=health/map:…).
+   mode "one": một buổi tập (điểm bắt đầu, kết thúc); mode "all": mọi nơi đã chạy, đi bộ, đạp xe, tô màu theo loại. */
+const MAP = { mode: "one", routes: [], hidden: new Set(), seq: 0 };
+const NATIVE_MAP = window.webkit?.messageHandlers?.nativeMap || null;
+const ROUTE_KINDS = ["run", "walk", "ride"];
+const routeKindName = (k) => ({ run: t("Chạy bộ"), walk: t("Đi bộ"), ride: t("Đạp xe") })[k];
+const visibleRoutes = () => MAP.routes.filter((r) => !MAP.hidden.has(r.kind));
+let nativeShown = false;
+
+function nativePost(msg) {
+  try { NATIVE_MAP.postMessage(msg); } catch { /* cửa sổ đang đóng */ }
 }
-function mapFit() {
-  const el = $("#map");
-  const w = el.clientWidth, h = el.clientHeight;
-  const xy = MAP.pts.map(([, lat, lon]) => project(lat, lon, 0));
-  const xs = xy.map((p) => p[0]), ys = xy.map((p) => p[1]);
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  let z = 18;
-  while (z > 2 && ((x1 - x0) * 2 ** z > w - 80 || (y1 - y0) * 2 ** z > h - 80)) z--;
-  MAP.z = z;
-  MAP.cx = ((x0 + x1) / 2) * 2 ** z;
-  MAP.cy = ((y0 + y1) / 2) * 2 ** z;
-  mapDraw();
+function nativeRect() {
+  // phần khung bản đồ đang thấy được trong hộp thoại (hộp thoại có thể cuộn khi cửa sổ thấp)
+  const m = $("#map").getBoundingClientRect();
+  const d = $("#mapDialog").getBoundingClientRect();
+  const x0 = Math.max(m.left, d.left), y0 = Math.max(m.top, d.top);
+  const x1 = Math.min(m.right, d.right, window.innerWidth), y1 = Math.min(m.bottom, d.bottom, window.innerHeight);
+  return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
 }
-function mapDraw() {
-  const el = $("#map");
-  const w = el.clientWidth, h = el.clientHeight;
-  const ox = MAP.cx - w / 2, oy = MAP.cy - h / 2;
-  const n = 2 ** MAP.z;
-  const tiles = $("#mapTiles");
-  tiles.textContent = "";
-  for (let ty = Math.floor(oy / TILE); ty <= Math.floor((oy + h) / TILE); ty++) {
-    if (ty < 0 || ty >= n) continue;
-    for (let tx = Math.floor(ox / TILE); tx <= Math.floor((ox + w) / TILE); tx++) {
-      const img = document.createElement("img");
-      img.alt = "";
-      img.src = `https://tile.openstreetmap.org/${MAP.z}/${((tx % n) + n) % n}/${ty}.png`;
-      img.style.left = `${tx * TILE - ox}px`;
-      img.style.top = `${ty * TILE - oy}px`;
-      img.onerror = () => img.remove();
-      tiles.append(img);
-    }
-  }
-  const svg = $("#mapRoute");
-  svg.textContent = "";
-  const pts = MAP.pts.map(([, lat, lon]) => { const [x, y] = project(lat, lon, MAP.z); return [x - ox, y - oy]; });
-  const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
-  sv("path", { d, class: "casing" }, svg);
-  sv("path", { d, class: "line" }, svg);
-  const [sx, sy] = pts[0], [ex, ey] = pts[pts.length - 1];
-  sv("circle", { cx: ex, cy: ey, r: 7, class: "end" }, svg);
-  sv("circle", { cx: sx, cy: sy, r: 7, class: "start" }, svg);
+/** Vẽ (lại) bản đồ gốc: fit = vừa khung với mọi lộ trình đang hiện. */
+function mapRender(fit) {
+  if (!NATIVE_MAP || !MAP.routes.length) { nativeHide(); return; }
+  const list = MAP.mode === "one" ? MAP.routes.slice(0, 1) : visibleRoutes();
+  const routes = list.map((r) => ({ id: r.start, kind: r.kind, points: r.pts }));
+  nativePost({ action: nativeShown ? "routes" : "show", rect: nativeRect(), mode: MAP.mode, routes, fit: fit || !nativeShown });
+  nativeShown = true;
 }
-function mapZoom(delta, mx, my) {
-  const z = Math.max(2, Math.min(19, MAP.z + delta));
-  if (z === MAP.z) return;
-  const el = $("#map");
-  const ax = (mx ?? el.clientWidth / 2) - el.clientWidth / 2, ay = (my ?? el.clientHeight / 2) - el.clientHeight / 2;
-  const f = 2 ** (z - MAP.z);
-  MAP.cx = (MAP.cx + ax) * f - ax;   // giữ nguyên điểm dưới con trỏ
-  MAP.cy = (MAP.cy + ay) * f - ay;
-  MAP.z = z;
-  mapDraw();
+function nativeHide() {
+  if (NATIVE_MAP && nativeShown) nativePost({ action: "hide" });
+  nativeShown = false;
 }
+window.nativeMapClick = (id) => {   // bấm vào một lộ trình trên bản đồ tổng (gọi từ ứng dụng)
+  const r = MAP.routes.find((x) => x.start === id);
+  if (r?.w) openMap(r.w, true);
+};
+
 function mapMessage(text) {
   $("#mapMsg").textContent = text;
   $("#mapMsg").hidden = !text;
+  if (text) nativeHide();   // thông báo nằm trong khung: cất bản đồ gốc đi để thấy chữ
+}
+/** Trình duyệt: khung bản đồ báo cần ứng dụng macOS; target là giờ bắt đầu buổi tập hoặc "all". */
+function mapNeedApp(target) {
+  $("#mapNeedApp").hidden = false;
+  $("#mapOpenApp").href = `miband6://open?page=${encodeURIComponent(`health/map:${target}`)}`;
 }
 
-// Trong ứng dụng macOS, lộ trình mở trong cửa sổ Apple Maps (MapKit) của ứng dụng; trên trình duyệt dùng bản đồ dưới đây.
-const nativeMap = () => window.webkit?.messageHandlers?.routeMap || null;
-
-async function openMap(w, btn) {
-  const stats = workoutStats(w);
-  const native = nativeMap();
-  let error = null;
-  if (native) {
-    if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
-    try {
-      const r = await api(`/api/workouts/${w.start}/track`);
-      if (r.points.length >= 2) {
-        native.postMessage({ title: workoutName(w), subtitle: dateTime(w.start), points: r.points, stats });
-        return;
-      }
-      error = t("Buổi tập này không có điểm GPS nào.");
-    } catch (e) {
-      error = e.message;
-    } finally {
-      if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); }
-    }
-  }
+function mapOpenDialog(title, sub) {
   const dlg = $("#mapDialog");
-  $("#mapTitle").textContent = workoutName(w);
-  $("#mapSub").textContent = dateTime(w.start);
-  $("#mapTiles").textContent = "";
-  $("#mapRoute").textContent = "";
-  statsList($("#mapStats"), stats);
-  if (error) {   // ứng dụng macOS: chỉ mở hộp thoại này để báo lỗi
-    MAP.pts = null;
-    mapMessage(error);
-    if (!dlg.open) dlg.showModal();
-    return;
-  }
-  mapMessage(t("Đang tải lộ trình…"));
+  $("#mapTitle").textContent = title;
+  $("#mapSub").textContent = sub;
+  $("#mapNeedApp").hidden = true;
+  MAP.seq++;
+  nativeHide();
+  mapMessage("");
   if (!dlg.open) dlg.showModal();
+  return MAP.seq;
+}
+
+function legendOne() {
+  const box = $("#mapLegend");
+  box.textContent = "";
+  if (!NATIVE_MAP) return;
+  for (const [cls, label] of [["start", t("Bắt đầu")], ["end", t("Kết thúc")]]) {
+    const s = mkEl("span", {}, box);
+    mkEl("i", { class: `dot ${cls}` }, s);
+    s.append(label);
+  }
+}
+
+/** Bản đồ một buổi tập. back: mở từ bản đồ tổng (hiện nút quay lại). */
+async function openMap(w, back = false) {
+  const seq = mapOpenDialog(workoutName(w), dateTime(w.start));
+  MAP.mode = "one";
+  MAP.routes = [];
+  $("#mapBack").hidden = !back;
+  legendOne();
+  statsList($("#mapStats"), workoutStats(w));
+  if (!NATIVE_MAP) { mapNeedApp(String(w.start)); return; }
+  mapMessage(t("Đang tải lộ trình…"));
   try {
     const r = await api(`/api/workouts/${w.start}/track`);
-    if (!r.points.length) { mapMessage(t("Buổi tập này không có điểm GPS nào.")); return; }
-    MAP.pts = r.points;
+    if (seq !== MAP.seq) return;   // người dùng đã mở bản đồ khác
+    if (r.points.length < 2) { mapMessage(t("Buổi tập này không có điểm GPS nào.")); return; }
+    MAP.routes = [{ start: w.start, kind: "run", w, pts: r.points.map(([, lat, lon]) => [lat, lon]) }];
     mapMessage("");
-    mapFit();
+    mapRender(true);
   } catch (e) {
-    mapMessage(e.message);
+    if (seq === MAP.seq) mapMessage(e.message);
   }
 }
 
@@ -2183,44 +2276,94 @@ function workoutStats(w) {
   if (w.calories) stats.push([t("Năng lượng"), fmtInt(w.calories), "kcal"]);
   return stats;
 }
+/** Bản đồ "những nơi đã đến": mọi lộ trình đã có trên máy; phần còn thiếu được tải ở nền rồi tự hiện thêm. */
+async function openAllMaps(refresh = false) {
+  const seq = refresh ? MAP.seq : mapOpenDialog(t("Những nơi bạn đã đến"), "");
+  if (!refresh) {
+    MAP.mode = "all";
+    MAP.routes = [];
+    $("#mapBack").hidden = true;
+    if (NATIVE_MAP) mapMessage(t("Đang tải lộ trình…")); else mapNeedApp("all");
+  }
+  let r;
+  try {
+    r = await api("/api/tracks");
+  } catch (e) {
+    if (seq === MAP.seq && !refresh && NATIVE_MAP) mapMessage(e.message);
+    return;
+  }
+  if (seq !== MAP.seq || MAP.mode !== "all") return;
+  const byStart = new Map((healthData?.workouts || []).map((w) => [w.start, w]));
+  const first = !MAP.routes.length;
+  MAP.routes = r.routes.map((x) => ({ ...x, w: byStart.get(x.start) || null, pts: x.points }))
+    .sort((a, b) => a.start - b.start);
+  renderAllLegend();
+  renderAllStats();
+  $("#mapSub").textContent = r.pending ? t("Đang tải thêm {n} lộ trình từ Mi Fitness…", { n: r.pending }) : "";
+  if (!NATIVE_MAP) return;
+  if (!MAP.routes.length) {
+    mapMessage(r.pending ? t("Đang tải lộ trình từ Mi Fitness, lần đầu có thể mất vài phút…")
+      : t("Chưa có buổi tập nào có lộ trình GPS. Bấm Lấy lịch sử từ Mi Fitness để lấy các buổi chạy, đi bộ, đạp xe ngoài trời."));
+    return;
+  }
+  mapMessage("");
+  mapRender(first);
+}
+
+function renderAllLegend() {
+  const box = $("#mapLegend");
+  box.textContent = "";
+  for (const kind of ROUTE_KINDS) {
+    const n = MAP.routes.filter((r) => r.kind === kind).length;
+    if (!n) continue;
+    const b = mkEl("button", { type: "button", class: "legend-toggle", "aria-pressed": String(!MAP.hidden.has(kind)) }, box);
+    mkEl("i", { class: `swatch ${kind}` }, b);
+    b.append(`${routeKindName(kind)} · ${n}`);
+    b.onclick = () => {
+      if (MAP.hidden.has(kind)) MAP.hidden.delete(kind); else MAP.hidden.add(kind);
+      b.setAttribute("aria-pressed", String(!MAP.hidden.has(kind)));
+      renderAllStats();
+      mapRender(false);
+    };
+  }
+  if (NATIVE_MAP) mkEl("span", { class: "legend-hint" }, box).textContent = t("Bấm vào một lộ trình để xem chi tiết.");
+}
+
+function renderAllStats() {
+  const shown = visibleRoutes();
+  const km = shown.reduce((a, r) => a + (r.w?.distance || 0), 0) / 1000;
+  const secs = shown.reduce((a, r) => a + (r.w ? r.w.active_seconds || r.w.end - r.w.start : 0), 0);
+  const days = new Set(shown.map((r) => new Date(r.start * 1000).toDateString())).size;
+  statsList($("#mapStats"), [
+    [t("Số lộ trình"), fmtInt(shown.length), ""],
+    [t("Quãng đường"), fmtDec(km, 1), "km"],
+    [t("Thời gian"), fmtMinutes(secs / 60), ""],
+    [t("Số ngày"), fmtInt(days), ""],
+  ]);
+}
+
+/** Mở bản đồ theo địa chỉ trang (#health/map:all, #health/map:<giờ bắt đầu>), ví dụ khi trình duyệt chuyển sang ứng dụng. */
+function openMapFromHash(target) {
+  if (target === "all") { openAllMaps(); return; }
+  const w = (healthData?.workouts || []).find((x) => String(x.start) === target);
+  if (w) openMap(w);
+}
+
 $("#mapClose").onclick = () => $("#mapDialog").close();
-$("#mapIn").onclick = () => mapZoom(1);
-$("#mapOut").onclick = () => mapZoom(-1);
-$("#mapFit").onclick = () => MAP.pts && mapFit();
-(() => {
-  const el = $("#map");
-  el.addEventListener("pointerdown", (e) => {
-    if (!MAP.pts || e.target.closest(".map-zoom, .map-attr")) return;
-    MAP.drag = { x: e.clientX, y: e.clientY, cx: MAP.cx, cy: MAP.cy };
-    el.setPointerCapture(e.pointerId);
-    el.classList.add("dragging");
-  });
-  el.addEventListener("pointermove", (e) => {
-    if (!MAP.drag) return;
-    MAP.cx = MAP.drag.cx - (e.clientX - MAP.drag.x);
-    MAP.cy = MAP.drag.cy - (e.clientY - MAP.drag.y);
-    cancelAnimationFrame(MAP.frame);
-    MAP.frame = requestAnimationFrame(mapDraw);
-  });
-  const end = () => { MAP.drag = null; el.classList.remove("dragging"); };
-  el.addEventListener("pointerup", end);
-  el.addEventListener("pointercancel", end);
-  el.addEventListener("wheel", (e) => {
-    if (!MAP.pts) return;
-    e.preventDefault();
-    const b = el.getBoundingClientRect();
-    mapZoom(e.deltaY < 0 ? 1 : -1, e.clientX - b.left, e.clientY - b.top);
-  }, { passive: false });
-  el.addEventListener("keydown", (e) => {
-    if (!MAP.pts) return;
-    const step = 80;
-    const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
-    if (moves[e.key]) { e.preventDefault(); MAP.cx += moves[e.key][0]; MAP.cy += moves[e.key][1]; mapDraw(); }
-    else if (e.key === "+" || e.key === "=") mapZoom(1);
-    else if (e.key === "-") mapZoom(-1);
-  });
-  window.addEventListener("resize", () => { if ($("#mapDialog").open && MAP.pts) mapDraw(); });
-})();
+$("#mapDialog").addEventListener("close", () => { MAP.seq++; nativeHide(); });
+$("#mapBack").onclick = () => openAllMaps();
+$("#woMapAllBtn").onclick = () => openAllMaps();
+if (NATIVE_MAP) {
+  // giữ bản đồ gốc trùng khung khi cửa sổ đổi cỡ hoặc hộp thoại cuộn
+  let pending = 0;
+  const sync = () => {
+    cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(() => { if (nativeShown) nativePost({ action: "rect", rect: nativeRect() }); });
+  };
+  new ResizeObserver(sync).observe($("#map"));
+  window.addEventListener("resize", sync);
+  $("#mapDialog").addEventListener("scroll", sync);
+}
 
 /** Vẽ lại các phần có chữ ghép với số liệu, ngày giờ (không đụng tới giá trị đang sửa trong các ô nhập). */
 function rerenderLanguage() {
