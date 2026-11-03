@@ -369,6 +369,8 @@ class DemoHealth:
                                                                 (4, 50, 15800, 420, 0)]):
             st = (now - dt.timedelta(days=2 * i + 1)).replace(hour=18, minute=5)
             self.workouts.append((st, self._summary(kind, st, minutes, dist, cal, steps, 132 + i * 5, 164)))
+        old = (now - dt.timedelta(days=45)).replace(hour=7, minute=30)   # cũ hơn lần đồng bộ đầu (30 ngày)
+        self.workouts.append((old, self._summary(5, old, 60, 0, 380, 300, 118, 150)))
 
     @staticmethod
     def _summary(kind, start, minutes, distance, calories, steps, avg_hr, max_hr) -> bytes:

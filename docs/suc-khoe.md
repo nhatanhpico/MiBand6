@@ -5,11 +5,11 @@ Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bư�
 ## Đồng bộ
 
 - Ứng dụng tự lấy dữ liệu mỗi lần kết nối vòng tay và mỗi 30 phút khi đang kết nối. Bấm **Đồng bộ** ở đầu trang để lấy ngay; dòng dưới tiêu đề cho biết đang lấy gì và lần đồng bộ gần nhất.
-- Lần đầu ứng dụng lấy tối đa 30 ngày (vòng tay giữ khoảng chừng ấy), nên có thể mất một hai phút. Các lần sau chỉ lấy phần mới.
+- Lần đầu ứng dụng lấy 30 ngày gần nhất, rồi một lần duy nhất hỏi vòng tay mọi dữ liệu cũ hơn mà nó còn giữ (dòng trạng thái ghi "dữ liệu cũ"), nên có thể mất vài phút. Các lần sau chỉ lấy phần mới.
 - **Mi Fitness vẫn đồng bộ bình thường.** Ứng dụng chỉ sao chép: nó không gửi lệnh xác nhận "đã lấy xong", nên vòng tay vẫn giữ nguyên dữ liệu cho Mi Fitness.
 - Dữ liệu được lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/` (mỗi vòng tay một tệp SQLite, chỉ tài khoản của bạn đọc được) và không gửi đi đâu.
 
-Chọn ngày bằng ô ngày hoặc hai nút ‹ ›; bấm vào một cột trong biểu đồ nhiều ngày để xem ngày đó.
+Chọn ngày bằng nút ngày ở đầu trang (mở lịch; ngày có chấm xanh là ngày có dữ liệu, có sẵn nút **Hôm qua** / **Hôm nay**) hoặc hai nút ‹ ›; bấm vào một cột trong biểu đồ nhiều ngày để xem ngày đó.
 
 ## Các thẻ
 
@@ -22,10 +22,27 @@ Chọn ngày bằng ô ngày hoặc hai nút ‹ ›; bấm vào một cột tro
 | **Căng thẳng** | Mức căng thẳng tự đo (đường) và đo tay (chấm), nền chia theo mức Thư giãn / Bình thường / Trung bình / Cao |
 | **PAI** | Tổng PAI 7 ngày và phần tăng mỗi ngày, so với mốc 100 |
 | **SpO2** | Các lần đo nồng độ oxy trong máu |
-| **Tập luyện** | Các buổi tập ghi trên vòng tay: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước |
+| **Tập luyện** | Các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness) |
 | **Đo tự động** | Cài đặt đo hiện tại và lối tắt tới **Cài đặt → Sức khỏe** |
 
 Rê chuột (hoặc chọn bằng phím Tab) lên cột, đoạn hay đường trong biểu đồ để xem số liệu chi tiết.
+
+### Lịch sử buổi tập từ Mi Fitness
+
+Vòng tay chỉ giữ các buổi tập gần đây, và có thể xóa bớt sau khi Mi Fitness đồng bộ xong; lịch sử đầy đủ nằm trong tài khoản Mi Fitness. Bấm **Lấy lịch sử từ Mi Fitness** ở thẻ **Tập luyện**: ứng dụng dùng phiên đăng nhập Xiaomi đã lưu (hoặc hiện mã QR để đăng nhập, như nút **Đồng bộ** hồ sơ) rồi đọc các buổi tập 5 năm gần đây.
+
+- Buổi tập trùng giờ bắt đầu (lệch không quá 3 phút) với buổi vòng tay đã ghi chỉ hiện một lần, dùng số liệu của vòng tay. Bấm lại nhiều lần không bị nhân đôi.
+- Mi Fitness dùng mã loại bài tập khác vòng tay. Ứng dụng học cách đổi mã từ các buổi có cả hai nguồn; mã chưa biết hiện là "Bài tập (mã Mi Fitness …)".
+- Ứng dụng chỉ đọc, không thay đổi gì trong tài khoản. Cách gọi API theo mô tả của dự án cộng đồng [mifit](https://github.com/Jenwein/mifit); Xiaomi không công bố API này nên có thể đổi bất cứ lúc nào.
+
+### Bản đồ lộ trình
+
+Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời với điện thoại, Mi Fitness ghi lộ trình bằng GPS của điện thoại và lưu trong tài khoản. Sau khi **Lấy lịch sử từ Mi Fitness**, các buổi có lộ trình hiện nút **Bản đồ**.
+
+- Lần đầu mở, ứng dụng tải tệp lộ trình từ Mi Fitness (cần phiên đăng nhập Xiaomi còn hạn; nếu hết hạn, bấm **Lấy lịch sử từ Mi Fitness** để đăng nhập lại), giải mã rồi lưu trên máy; các lần sau mở ngay, không cần mạng cho phần lộ trình.
+- Kéo để di chuyển, cuộn chuột hoặc nút **+** / **−** để phóng to, nút khung vuông để xem trọn lộ trình. Chấm xanh là điểm bắt đầu, chấm đỏ là điểm kết thúc.
+- Bản đồ nền là ô ảnh của [OpenStreetMap](https://www.openstreetmap.org/copyright), tải trực tiếp từ máy chủ OpenStreetMap khi mở bản đồ (máy chủ đó biết khu vực đang xem, không nhận được lộ trình). Lộ trình chỉ nằm trên máy bạn.
+- Cách tải và đọc tệp lộ trình theo mô tả của dự án [mifit](https://github.com/Jenwein/mifit); hiện đọc được tệp phiên bản 1 và 2.
 
 ### Đo tự động
 

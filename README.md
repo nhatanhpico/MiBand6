@@ -28,7 +28,7 @@
 - **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
 - Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
-- Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim)
+- Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
 - Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
 - Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
 
@@ -239,6 +239,7 @@ Vòng tay không cho đọc lại bố cục hiện tại, nên ứng dụng ch�
 
 | Hiện tượng | Cách xử lý |
 | --- | --- |
+| Mở lại ứng dụng thì không nối lại được, báo "Device with address … was not found" | Đã sửa: macOS thường vẫn giữ kết nối tới vòng tay sau khi thoát ứng dụng, nên vòng tay không phát quảng bá và quét không thấy. Ứng dụng giờ hỏi thẳng macOS về vòng tay đã biết và nối lại qua kết nối đó. |
 | Quét không thấy vòng tay | Tắt Bluetooth trên điện thoại, chạm màn hình vòng tay cho sáng rồi quét lại. Thử tích "Hiện mọi thiết bị Bluetooth". |
 | "Auth key không đúng" | Kiểm tra lại mã (32 ký tự hex). Nếu huami-token trả về nhiều thiết bị, chọn đúng dòng có MAC của Mi Band 6. Nếu vừa hủy ghép đôi trong app của hãng, mã cũ đã mất hiệu lực. |
 | "Vòng tay không phản hồi bước xác thực" | Vòng tay có thể vẫn đang nối với điện thoại. Thử chọn kiểu xác thực "Kiểu mới". |

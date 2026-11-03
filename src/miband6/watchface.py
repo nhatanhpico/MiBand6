@@ -27,6 +27,12 @@ TIME_HOURS, TIME_MINUTES = 1, 2
 DIGIT_TENS, DIGIT_ONES = 1, 2
 
 
+# Cài ảnh nền lên vòng tay đang TẮT: Mi Band 6 thật nhận tệp do wallpaper_face() tạo (d5/d6 trả 01) nhưng treo
+# khi vẽ mặt đồng hồ đó và khi xem trước nó trong danh sách mặt đồng hồ. Chỉ bật lại sau khi tìm ra lỗi định dạng
+# và thử trên vòng tay với sự đồng ý của người dùng.
+WALLPAPER_INSTALL = False
+
+
 def varint(value: int) -> bytes:
     value &= (1 << 64) - 1   # số âm: bù hai 64 bit như protobuf
     out = bytearray()

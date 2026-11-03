@@ -156,11 +156,87 @@ def workout_from_cloud(v: dict) -> dict | None:
     if not start:
         return None
     duration = num("duration")
+    tz = v.get("timezone")
     return {"source": "mifitness", "mf_type": num("sport_type"), "start": start,
+            # để tải tệp lộ trình GPS sau này (chạy, đạp xe ngoài trời): thời điểm báo cáo, múi giờ, kiểu dữ liệu, nguồn
+            "mf_time": num("time"), "mf_tz": tz if isinstance(tz, int) else None, "mf_proto": num("proto_type"),
+            "mf_sid": v.get("_sid"), "mf_region": v.get("_region"),
             "end": num("end_time") or start + (duration or 0), "active_seconds": duration,
             "distance": num("distance"), "calories": num("calories"), "steps": num("steps"),
             "avg_hr": num("avg_hrm") if valid_hr(num("avg_hrm") or 0) else None,
             "max_hr": num("max_hrm") if valid_hr(num("max_hrm") or 0) else None}
+
+
+GPS_PROTOS = (22, 23)    # kiểu dữ liệu buổi tập của Mi Fitness có lộ trình GPS: chạy, đạp xe ngoài trời
+
+
+def has_gps(w: dict) -> bool:
+    return w.get("mf_proto") in GPS_PROTOS and bool(w.get("mf_sid")) and bool(w.get("mf_time"))
+
+
+GPS_POINT_SIZE = {1: 12, 2: 18, 3: 26}   # byte mỗi điểm theo phiên bản tệp lộ trình
+
+
+def _gps_ok(lat: float, lon: float) -> bool:
+    return lat == lat and lon == lon and abs(lat) <= 90 and abs(lon) <= 180 and (lat, lon) != (0.0, 0.0)
+
+
+def _gps_points(plain: bytes, start: int, size: int) -> list[list]:
+    """Đọc các điểm cỡ `size` byte, mỗi điểm mở đầu bằng thời điểm (uint32), kinh độ, vĩ độ (float32)."""
+    out = []
+    for pos in range(start, len(plain) - size + 1, size):
+        ts, lon, lat = struct.unpack_from("<Iff", plain, pos)
+        if _gps_ok(lat, lon):
+            out.append([ts, round(lat, 6), round(lon, 6)])
+    return out
+
+
+def _gps_layout_score(plain: bytes, start: int, size: int, header_ts: int) -> float:
+    """Mức hợp lý khi coi mỗi điểm dài `size` byte: thời điểm tăng dần từng chút, tọa độ liền mạch."""
+    body = len(plain) - start
+    if size < 12 or body < size or body % size:
+        return 0.0
+    n = min(body // size, 300)
+    pts = [struct.unpack_from("<Iff", plain, start + i * size) for i in range(n)]
+    good_pos = sum(1 for _t, lon, lat in pts if _gps_ok(lat, lon))
+    steps = [b[0] - a[0] for a, b in zip(pts, pts[1:])]
+    good_steps = sum(1 for d in steps if 0 <= d <= 120)
+    jumps = sum(1 for a, b in zip(pts, pts[1:]) if _gps_ok(a[2], a[1]) and _gps_ok(b[2], b[1])
+                and abs(a[2] - b[2]) < 0.01 and abs(a[1] - b[1]) < 0.01)
+    near = 1.0 if pts and abs(pts[0][0] - header_ts) < 3 * 86400 else 0.5
+    if n == 1:
+        return near * good_pos
+    return near * (good_pos / n + good_steps / (n - 1) + jumps / (n - 1)) / 3
+
+
+def decode_gps_file(plain: bytes) -> list[list]:
+    """Tệp lộ trình GPS của Mi Fitness (đã giải mã): [[ts, vĩ độ, kinh độ], ...].
+
+    Tiêu đề 8 byte (thời điểm, múi giờ, phiên bản, kiểu dữ liệu, chế độ lưu), 1 byte cờ hợp lệ, rồi các
+    điểm cỡ cố định mở đầu bằng thời điểm (uint32), kinh độ, vĩ độ (float32). Phiên bản 1-2 theo bố cục mô tả
+    trong dự án mifit (phiên bản 2 thêm độ chính xác float32 và một uint16). Phiên bản 3 (Mi Fitness 2026,
+    kiểm tra trên tệp thật) thêm độ cao float32 và một float32 nữa (HDOP?), mỗi điểm 26 byte. Phiên bản mới hơn
+    nữa: cỡ mỗi điểm được dò từ chính dữ liệu (thời điểm tăng dần, tọa độ liền mạch). ValueError nếu không đọc
+    được."""
+    if len(plain) < 8:
+        raise ValueError("tệp GPS quá ngắn")
+    header_ts, _tz, version, _proto, mode = struct.unpack_from("<IbBBB", plain)
+    if mode != 0:
+        raise ValueError(f"tệp GPS được nén hoặc mã hóa thêm (chế độ {mode})")
+    if version in GPS_POINT_SIZE:
+        flags = plain[8]
+        if not (flags & 0x80 and flags & 0x40 and flags & 0x20):   # thời điểm, kinh độ, vĩ độ không hợp lệ
+            return []
+        return _gps_points(plain, 9, GPS_POINT_SIZE[version])
+    best = (0.0, 0, 0)
+    for flags_len in (1, 2, 3, 4):
+        for size in range(18, 65, 2):
+            score = _gps_layout_score(plain, 8 + flags_len, size, header_ts)
+            if score > best[0]:
+                best = (score, flags_len, size)
+    if best[0] < 0.9:
+        raise ValueError(f"chưa đọc được tệp GPS phiên bản {version} ({len(plain)} byte)")
+    return _gps_points(plain, 8 + best[1], best[2])
 
 
 # ---------------------------------------------------------------- giấc ngủ
@@ -291,6 +367,14 @@ def _clock_spread(starts: list[int]) -> float:
     return (sum((m - mean) ** 2 for m in mins) / len(mins)) ** 0.5
 
 
+def group_int(n: float) -> str:
+    """Số nguyên có dấu tách nghìn theo ngôn ngữ giao diện: 21.430 (tiếng Việt), 21,430 (tiếng Anh)."""
+    from .i18n import get_lang
+
+    text = f"{int(round(n)):,}"
+    return text if get_lang() == "en" else text.replace(",", ".")
+
+
 def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | None,
             spo2: list[tuple], stress: list[int], active_minutes: int, workouts: int, last_data: int | None,
             now: float | None = None) -> dict:
@@ -351,13 +435,13 @@ def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | N
         prev = _avg([d["steps"] for d in steps_days[-14:-7]])
         status = GOOD if avg >= goal else OK if avg >= goal * 0.6 else WATCH
         detail = tr('Trung bình {n} ngày; đạt mục tiêu {goal} bước {met}/{n} ngày.', n=len(week),
-                    goal=f"{goal:,}".replace(",", "."), met=met)
+                    goal=group_int(goal), met=met)
         if prev:
             change = (avg - prev) / prev * 100
             if abs(change) >= 10:
                 detail += " " + (tr('Tăng {p}% so với tuần trước.', p=int(round(change))) if change > 0
                                  else tr('Giảm {p}% so với tuần trước.', p=int(round(-change))))
-        add("steps", status, tr('Bước chân'), tr('{n} bước/ngày', n=f"{int(round(avg)):,}".replace(",", ".")), detail)
+        add("steps", status, tr('Bước chân'), tr('{n} bước/ngày', n=group_int(avg)), detail)
 
     # vận động vừa/mạnh: WHO khuyến nghị 150 phút mỗi tuần
     add("active", GOOD if active_minutes >= 150 else OK if active_minutes >= 75 else WATCH, tr('Vận động'),

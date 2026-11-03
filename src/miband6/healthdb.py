@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS stress (ts INTEGER, auto INTEGER, value INTEGER, PRIM
 CREATE TABLE IF NOT EXISTS spo2 (ts INTEGER PRIMARY KEY, value INTEGER, auto INTEGER);
 CREATE TABLE IF NOT EXISTS workouts (start INTEGER PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS sync (name TEXT PRIMARY KEY, value INTEGER);
+CREATE TABLE IF NOT EXISTS tracks (start INTEGER PRIMARY KEY, data TEXT);
 """
 
 
@@ -78,8 +79,7 @@ class HealthDB:
         old = self._workout_near(w["start"])
         if old is not None:
             self.db.execute("DELETE FROM workouts WHERE start = ?", (old["start"],))
-            if old.get("mf_type") is not None:
-                w = {**w, "mf_type": old["mf_type"]}
+            w = {**w, **{k: v for k, v in old.items() if k.startswith("mf_")}}
         self.db.execute("INSERT OR REPLACE INTO workouts VALUES (?, ?)", (w["start"], json.dumps({"source": "band", **w})))
         self.db.commit()
 
@@ -100,10 +100,22 @@ class HealthDB:
             elif old.get("source") == "mifitness":
                 self.db.execute("UPDATE workouts SET data = ? WHERE start = ?", (json.dumps({**old, **w, "start": old["start"]}), old["start"]))
             else:
-                self.db.execute("UPDATE workouts SET data = ? WHERE start = ?",
-                                (json.dumps({**old, "mf_type": w.get("mf_type")}), old["start"]))
+                extra = {k: v for k, v in w.items() if k.startswith("mf_")}
+                self.db.execute("UPDATE workouts SET data = ? WHERE start = ?", (json.dumps({**old, **extra}), old["start"]))
         self.db.commit()
         return added
+
+    def workout(self, start: int) -> dict | None:
+        row = self.db.execute("SELECT data FROM workouts WHERE start = ?", (start,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def track(self, start: int) -> list | None:
+        row = self.db.execute("SELECT data FROM tracks WHERE start = ?", (start,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def set_track(self, start: int, points: list) -> None:
+        self.db.execute("INSERT OR REPLACE INTO tracks VALUES (?, ?)", (start, json.dumps(points)))
+        self.db.commit()
 
     def first(self, name: str) -> int | None:
         """Thời điểm cũ nhất đã lưu của một loại dữ liệu (để lấy bù phần cũ hơn)."""
@@ -210,6 +222,9 @@ class HealthDB:
         for w in workouts:
             if w.get("type") is None and w.get("mf_type") in mf_to_band:
                 w["type"] = mf_to_band[w["mf_type"]]
+            w["gps"] = H.has_gps(w)
+            for k in ("mf_sid", "mf_region", "mf_time", "mf_tz"):   # chỉ dùng phía server để tải lộ trình
+                w.pop(k, None)
         return {
             "date": date,
             "has_data": bool(self.db.execute("SELECT 1 FROM activity LIMIT 1").fetchone()),

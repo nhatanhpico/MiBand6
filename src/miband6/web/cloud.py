@@ -12,9 +12,12 @@ import threading
 import time
 
 from ..i18n import tr
-from ..xiaomi_cloud import LoginError, SessionExpired, XiaomiLogin, fetch_profile, profile_for_band
+from ..xiaomi_cloud import (LoginError, SessionExpired, XiaomiLogin, fetch_profile, fetch_sport_records,
+                            profile_for_band)
 
 ACTIVE = ("checking", "login", "fetching")
+JOBS = ("profile", "workouts")
+CLOUD_HISTORY_DAYS = 5 * 365   # lịch sử buổi tập lấy từ Mi Fitness
 
 
 def NO_PROFILE() -> str:  # noqa: N802
@@ -22,6 +25,20 @@ def NO_PROFILE() -> str:  # noqa: N802
 
 DEMO_PROFILE = {"name": "Demo", "birth": "1995-06-15", "sex": "male", "height": 172, "weight": 64.5,
                 "daily_step_goal": 9000}
+
+
+def demo_sport_records() -> list[dict]:
+    """Vài buổi tập kiểu tài khoản Mi Fitness cho chế độ xem thử (cũ hơn dữ liệu của vòng tay giả lập)."""
+    now = int(time.time())
+    out = []
+    for i, (kind, minutes, dist, cal, steps, hr) in enumerate([(1, 28, 4600, 290, 4900, 148), (6, 55, 17000, 410, 0, 131),
+                                                               (308, 40, 0, 210, 0, 118), (1, 35, 5600, 350, 6000, 152)]):
+        start = now - (20 + 9 * i) * 86400 - 6 * 3600
+        out.append({"start_time": start, "end_time": start + minutes * 60, "duration": minutes * 60, "sport_type": kind,
+                    "distance": dist, "calories": cal, "steps": steps, "avg_hrm": hr, "max_hrm": hr + 22, "timezone": 28,
+                    "time": start + minutes * 60, "proto_type": {1: 22, 6: 23}.get(kind, 30),
+                    "_sid": "demo", "_region": "sg"})
+    return out
 
 
 class CloudSync:
@@ -35,6 +52,9 @@ class CloudSync:
         self._seq = 0
         self._task: asyncio.Task | None = None
         self._cancel = threading.Event()
+        self.job = "profile"
+        self.since: int | None = None     # lịch sử buổi tập: chỉ lấy từ thời điểm này (None: cả lịch sử)
+        self.interactive = True
 
     @property
     def running(self) -> bool:
@@ -42,20 +62,35 @@ class CloudSync:
 
     def _set(self, **status) -> None:
         self._seq += 1
-        self.status = {**status, "seq": self._seq}
+        self.status = {**status, "job": self.job, "seq": self._seq}
         self.service.push({"type": "cloud", "status": self.status})
 
-    def start(self, write: bool = True, fresh: bool = False, interactive: bool = True) -> dict:
-        """interactive=False: chạy ngầm khi kết nối vòng tay; chỉ dùng phiên đăng nhập đã lưu, không hiện mã QR."""
+    def start(self, write: bool = True, fresh: bool = False, interactive: bool = True, job: str = "profile",
+              since: int | None = None) -> dict:
+        """job: "profile" (hồ sơ, ghi vào vòng tay) hoặc "workouts" (lịch sử buổi tập).
+
+        interactive=False: chạy ngầm khi kết nối vòng tay; chỉ dùng phiên đăng nhập đã lưu, không hiện mã QR.
+        Người dùng bấm đồng bộ trong lúc một lượt chạy ngầm: dừng lượt ngầm, chạy lượt của người dùng."""
         if self.running:
-            return self.status
+            if self.interactive or not interactive:
+                return self.status
+            self._cancel.set()
+            self._task.cancel()
         if fresh:
             self.factory.forget()
+        self.job = job if job in JOBS else "profile"
+        self.since = since
+        self.interactive = interactive
         self._cancel = threading.Event()
         if interactive:
             self._set(state="checking")
         self._task = asyncio.ensure_future(self._run(write, interactive))
         return self.status
+
+    async def wait(self) -> None:
+        """Chờ lượt đang chạy xong (không ném lỗi nếu lượt đó bị hủy)."""
+        if self._task is not None:
+            await asyncio.wait([self._task])
 
     def cancel(self) -> dict:
         self._cancel.set()
@@ -73,6 +108,12 @@ class CloudSync:
             raw = await (self._demo() if self.demo else self._fetch(interactive))
             if raw is None or self._cancel.is_set():
                 return
+            if self.job == "workouts":
+                message = self.service.import_cloud_workouts(raw)
+                self._set(state="done", message=message)
+                return
+            # chỉ tên các trường (không có giá trị) để chẩn đoán khi thiếu thông tin, ví dụ biệt danh
+            self.service.log("Mi Fitness: " + tr('hồ sơ có các trường {fields}', fields=", ".join(sorted(map(str, raw)))))
             values = profile_for_band(raw)
             if not values:
                 raise LoginError(tr('Tài khoản Mi Fitness chưa có thông tin hồ sơ.'))
@@ -82,36 +123,57 @@ class CloudSync:
             pass
         except LoginError as e:
             if not interactive:
-                self.service.log(tr('Không tự lấy được hồ sơ Mi Fitness: {e}', e=e))
+                self._log_background(e)
             elif not self._cancel.is_set():
                 self._set(state="error", error=str(e))
         except Exception as e:  # noqa: BLE001 - lỗi mạng, máy chủ trả dữ liệu lạ…
             if not interactive:
-                self.service.log(tr('Không tự lấy được hồ sơ Mi Fitness: {e}', e=e))
+                self._log_background(e)
             elif not self._cancel.is_set():
                 self._set(state="error", error=tr('Không đồng bộ được với Mi Fitness: {e}', e=e))
 
-    async def _demo(self) -> dict:
+    def _log_background(self, e: Exception) -> None:
+        if self.job == "workouts":
+            self.service.log(tr('Không tự lấy được buổi tập từ Mi Fitness: {e}', e=e))
+        else:
+            self.service.log(tr('Không tự lấy được hồ sơ Mi Fitness: {e}', e=e))
+
+    async def _demo(self):
         await asyncio.sleep(0.6)
         self._set(state="fetching")
         await asyncio.sleep(0.6)
+        if self.job == "workouts":
+            return demo_sport_records()
         return dict(DEMO_PROFILE)
 
-    async def _fetch(self, interactive: bool = True) -> dict | None:
+    def _download(self, login):
+        """Gọi API của việc đang làm; trả về (dữ liệu, nhật ký)."""
+        if self.job == "workouts":
+            end = int(time.time())
+            return fetch_sport_records(login, self.since or end - CLOUD_HISTORY_DAYS * 86400, end)
+        return fetch_profile(login)
+
+    def _checked(self, raw, trail: list[str]):
+        if self.job == "workouts":
+            self._log(trail)
+            return raw
+        if raw is None:
+            self._log(trail)
+            raise LoginError(NO_PROFILE())
+        return raw
+
+    async def _fetch(self, interactive: bool = True):
         login = self.factory()
         if await asyncio.to_thread(login.load):
             try:
                 if interactive:
                     self._set(state="fetching")
-                raw, trail = await asyncio.to_thread(fetch_profile, login)
+                raw, trail = await asyncio.to_thread(self._download, login)
             except SessionExpired:
                 self.factory.forget()
                 login = self.factory()
             else:
-                if raw is None:
-                    self._log(trail)
-                    raise LoginError(NO_PROFILE())
-                return raw
+                return self._checked(raw, trail)
         if not interactive:
             return None
         self._set(state="checking")
@@ -121,11 +183,8 @@ class CloudSync:
         await asyncio.to_thread(login.wait_qr, q, None, self._cancel)
         await asyncio.to_thread(login.save)
         self._set(state="fetching")
-        raw, trail = await asyncio.to_thread(fetch_profile, login)
-        if raw is None:
-            self._log(trail)
-            raise LoginError(NO_PROFILE())
-        return raw
+        raw, trail = await asyncio.to_thread(self._download, login)
+        return self._checked(raw, trail)
 
     def _log(self, trail: list[str]) -> None:
         for line in trail:

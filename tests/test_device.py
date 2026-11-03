@@ -109,3 +109,33 @@ async def test_find_phone_event_is_acknowledged():
     await asyncio.sleep(0.05)
     assert ("device_event", P.EVENT_FIND_PHONE_START) in events
     assert band.config_commands[-1] == P.ACK_FIND_PHONE
+
+
+
+async def test_saved_address_uses_peripheral_known_to_macos(monkeypatch):
+    """Mở lại ứng dụng khi macOS còn giữ kết nối: nối thẳng thiết bị hệ thống trả về thay vì quét theo địa chỉ."""
+    import bleak
+
+    from miband6 import device as D
+
+    known = object()
+    seen = []
+
+    class Client:
+        def __init__(self, target, **kw):
+            seen.append(target)
+            self.is_connected = False
+
+        async def connect(self):
+            raise OSError("stop here")
+
+    async def fake_known(address):
+        return known if address == "DC9516B3-5FF3-9052-C620-C72D7B6B4C83" else None
+
+    monkeypatch.setattr(D, "known_peripheral", fake_known)
+    monkeypatch.setattr(bleak, "BleakClient", Client)
+    for address, expected in (("DC9516B3-5FF3-9052-C620-C72D7B6B4C83", known), ("11111111-2222-3333-4444-555555555555", None)):
+        band = D.MiBand6(address, bytes(16))
+        with pytest.raises(OSError):
+            await band._open(1.0)
+        assert seen[-1] is (known if expected else address)

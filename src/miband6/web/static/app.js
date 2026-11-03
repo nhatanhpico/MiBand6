@@ -11,15 +11,18 @@ const DAY_BITS = [1, 2, 4, 8, 16, 32, 64];
 
 /* ============================================================ ngôn ngữ */
 
-const LANG = (() => {
+let LANG = (() => {
   try {
     const saved = localStorage.getItem("mb6_lang");
     if (saved === "vi" || saved === "en") return saved;
   } catch { /* trình duyệt chặn localStorage */ }
   return (navigator.language || "vi").toLowerCase().startsWith("vi") ? "vi" : "en";
 })();
-const LOCALE = LANG === "en" ? "en-US" : "vi-VN";
+let LOCALE = LANG === "en" ? "en-US" : "vi-VN";
 let CATALOG = {};
+let REVERSE = null;            // bản dịch tiếng Anh -> chuỗi gốc tiếng Việt (để đổi ngược về tiếng Việt)
+const TITLE = document.title;  // tiêu đề gốc (tiếng Việt) trong index.html
+const DOM_SRC = new WeakMap(); // nút chữ / phần tử -> {khóa: [chuỗi gốc, chuỗi đang hiện]}
 
 /** Dịch một chuỗi gốc tiếng Việt; {tên} được thay bằng vars.tên. */
 function t(source, vars) {
@@ -28,11 +31,30 @@ function t(source, vars) {
   return out;
 }
 
-/** Dịch toàn bộ chữ tĩnh trong trang (nút, nhãn, placeholder…) một lần lúc mở. */
+/** Chuỗi gốc tiếng Việt của một đoạn chữ đang hiện (bằng ngôn ngữ nào cũng được), hoặc null nếu không phải chuỗi dịch. */
+function sourceOf(text, remembered) {
+  if (remembered && remembered[1] === text) return remembered[0];   // chính chuỗi ta đã đặt lần trước
+  if (text in CATALOG) return text;
+  REVERSE ||= Object.fromEntries(Object.entries(CATALOG).map(([vi, en]) => [en, vi]));
+  return REVERSE[text] ?? null;
+}
+
+function translateText(holder, slot, text, apply) {
+  const memo = DOM_SRC.get(holder) || {};
+  const src = sourceOf(text, memo[slot]);
+  if (src == null) return;
+  const out = t(src);
+  if (out !== text) apply(out);
+  memo[slot] = [src, out];
+  DOM_SRC.set(holder, memo);
+}
+
+/** Dịch chữ trong trang (nút, nhãn, placeholder…) sang ngôn ngữ đang chọn, theo cả hai chiều: lúc mở trang và
+    mỗi lần đổi ngôn ngữ, không tải lại trang. Phần chữ có số liệu được vẽ lại bằng rerenderLanguage(). */
 function translateDom() {
   document.documentElement.lang = LANG;
-  if (LANG === "vi") return;
-  document.title = t(document.title);
+  document.title = t(TITLE);
+  if (LANG === "vi" && !Object.keys(CATALOG).length) return;   // trang gốc đã là tiếng Việt
   const skip = new Set(["SCRIPT", "STYLE", "PRE", "CODE", "TEXTAREA"]);
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -45,35 +67,47 @@ function translateDom() {
   while (walker.nextNode()) nodes.push(walker.currentNode);
   for (const node of nodes) {
     const raw = node.nodeValue;
-    const key = raw.trim().replace(/\s+/g, " ");
-    if (key in CATALOG) node.nodeValue = raw.replace(raw.trim(), () => CATALOG[key]);
+    translateText(node, "text", raw.trim().replace(/\s+/g, " "), (out) => { node.nodeValue = raw.replace(raw.trim(), () => out); });
   }
-  $$("[data-i18n-value]").forEach((el) => { el.value = t(el.value); });
+  $$("[data-i18n-value]").forEach((el) => translateText(el, "value", el.value, (out) => { el.value = out; }));
   for (const attr of ["placeholder", "aria-label", "title", "data-empty"]) {
-    $$(`[${attr}]`).forEach((el) => {
-      const v = el.getAttribute(attr);
-      if (v in CATALOG) el.setAttribute(attr, CATALOG[v]);
-    });
+    $$(`[${attr}]`).forEach((el) => translateText(el, attr, el.getAttribute(attr), (out) => el.setAttribute(attr, out)));
   }
+}
+
+let catalogLoad = null;
+function ensureCatalog() {
+  catalogLoad ||= fetch("/static/i18n/en.json", { cache: "no-cache" })
+    .then((r) => r.json())
+    .then((c) => { CATALOG = c; REVERSE = null; })
+    .catch(() => { catalogLoad = null; });
+  return catalogLoad;
 }
 
 async function loadLanguage() {
-  if (LANG === "en") {
-    try {
-      CATALOG = await (await fetch("/static/i18n/en.json", { cache: "no-cache" })).json();
-    } catch { CATALOG = {}; }
-  }
+  if (LANG === "en") await ensureCatalog();
   translateDom();
   $$(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === LANG)));
   document.documentElement.classList.remove("i18n-pending");
+  if (LANG === "vi") setTimeout(ensureCatalog, 1500);   // tải sẵn để đổi sang tiếng Anh tức thì
 }
 
-$$(".lang button").forEach((b) => b.addEventListener("click", async () => {
-  if (b.dataset.lang === LANG) return;
-  try { localStorage.setItem("mb6_lang", b.dataset.lang); } catch { /* bỏ qua */ }
-  await api("/api/prefs", { lang: b.dataset.lang }).catch(() => {});
-  location.reload();
-}));
+/** Đổi ngôn ngữ tại chỗ: thay chữ đang hiện, vẽ lại phần có số liệu; không tải lại trang. */
+async function setLanguage(lang) {
+  if (lang === LANG || (lang !== "vi" && lang !== "en")) return;
+  await ensureCatalog();
+  LANG = lang;
+  LOCALE = lang === "en" ? "en-US" : "vi-VN";
+  try { localStorage.setItem("mb6_lang", lang); } catch { /* bỏ qua */ }
+  translateDom();
+  $$(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === LANG)));
+  rerenderLanguage();
+  try { await api("/api/prefs", { lang }); } catch { /* server vẫn dùng ngôn ngữ cũ cho thông báo */ }
+  // phần phân tích sức khỏe do server viết theo ngôn ngữ đã chọn: lấy lại khi trang đang mở
+  if (LANG === lang && healthData && !$("#page-health").hidden) quiet(loadHealth());
+}
+
+$$(".lang button").forEach((b) => b.addEventListener("click", () => setLanguage(b.dataset.lang)));
 
 const weekdays = () => (LANG === "en" ? ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] : ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]);
 const fmtInt = (n) => (n == null ? "—" : Number(n).toLocaleString(LOCALE));
@@ -161,8 +195,80 @@ $$(".subtabs button").forEach((b) => b.addEventListener("click", () => (location
 
 const live = { hr: null, steps: null, battery: null, charging: false, hrHistory: [] };
 
+/** Giờ như vòng tay hiện: theo kiểu 12/24 giờ đã lưu (mặc định 24 giờ). */
+function bandClock(now = new Date()) {
+  const h = now.getHours();
+  const h12 = STATE.settings?.time_24h === false;
+  return `${h12 ? (h % 12) || 12 : pad(h)}:${pad(now.getMinutes())}`;
+}
+
+/** Mặt đồng hồ mặc định của ứng dụng (khi chưa có ảnh mặt đồng hồ thật): giờ, ngày, nhịp tim, bước, pin. */
 function drawBand() {
-  $("#dateLine").textContent = new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const now = new Date();
+  $("#dateLine").textContent = new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(now);
+  $("#bTime").textContent = bandClock(now);
+  $("#bDate").textContent = `${weekdays()[(now.getDay() + 6) % 7]}  ${pad(now.getDate())}/${pad(now.getMonth() + 1)}`;
+  $("#bHr").textContent = `♥ ${live.hr || "--"}`;
+  const goal = Number(STATE.profile.goal || 8000);
+  const frac = live.steps == null ? 0 : Math.min(1, live.steps / goal);
+  const c = 2 * Math.PI * 24;
+  $("#bRing").setAttribute("stroke-dasharray", `${(frac * c).toFixed(1)} ${c.toFixed(1)}`);
+  $("#bSteps").textContent = live.steps == null ? "--" : fmtInt(live.steps);
+  $("#bSteps").style.fontSize = (live.steps ?? 0) >= 10000 ? "10px" : "";
+  const hasBat = live.battery != null;
+  $("#bBatText").textContent = hasBat ? `${live.battery}%${live.charging ? " ⚡" : ""}` : "";
+  const bat = $("#bBat");
+  bat.setAttribute("width", hasBat ? (30 * Math.max(0, Math.min(100, live.battery))) / 100 : 0);
+  bat.classList.toggle("low", hasBat && live.battery <= 20);
+  if (SIM.source === "default" && !$("#sub-face").hidden) drawSim();
+}
+
+/** Mặt mặc định vẽ lên khung mô phỏng 152 × 486 (cùng bố cục với hình ở trang Tổng quan). */
+function drawDefaultFace(g) {
+  const now = new Date();
+  const css = getComputedStyle(document.documentElement);
+  const color = (v) => css.getPropertyValue(v).trim();
+  const font = (w, px) => `${w} ${px}px "Be Vietnam Pro", -apple-system, sans-serif`;
+  g.textAlign = "center";
+  g.textBaseline = "alphabetic";
+  g.fillStyle = "#fff";
+  g.font = font(700, 52);
+  g.fillText(bandClock(now), 76, 128);
+  g.fillStyle = "#8e9b97";
+  g.font = font(500, 17);
+  g.fillText(`${weekdays()[(now.getDay() + 6) % 7]}  ${pad(now.getDate())}/${pad(now.getMonth() + 1)}`, 76, 160);
+  g.fillStyle = color("--coral");
+  g.font = font(700, 30);
+  g.fillText(`♥ ${live.hr || "--"}`, 76, 228);
+  const goal = Number(STATE.profile?.goal || 8000);
+  const frac = live.steps == null ? 0 : Math.min(1, live.steps / goal);
+  g.lineWidth = 9;
+  g.lineCap = "round";
+  g.strokeStyle = "#222826";
+  g.beginPath();
+  g.arc(76, 310, 42, 0, Math.PI * 2);
+  g.stroke();
+  if (frac > 0) {
+    g.strokeStyle = color("--amber");
+    g.beginPath();
+    g.arc(76, 310, 42, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    g.stroke();
+  }
+  g.fillStyle = color("--amber");
+  g.font = font(700, (live.steps ?? 0) >= 10000 ? 17 : 21);
+  g.fillText(live.steps == null ? "--" : fmtInt(live.steps), 76, 318);
+  if (live.battery != null) {
+    g.fillStyle = "#8e9b97";
+    g.font = font(500, 17);
+    g.fillText(`${live.battery}%${live.charging ? " ⚡" : ""}`, 76, 392);
+    g.strokeStyle = "#5c6763";
+    g.lineWidth = 2;
+    g.strokeRect(46, 404, 56, 19);
+    g.fillStyle = "#5c6763";
+    g.fillRect(103, 410, 4, 7);
+    g.fillStyle = live.battery <= 20 ? color("--coral") : color("--mint");
+    g.fillRect(50, 408, (48 * Math.max(0, Math.min(100, live.battery))) / 100, 11);
+  }
 }
 
 /** Mặt đồng hồ trên hình vòng tay: ảnh xem trước thật (của mặt đã cài hoặc ảnh người dùng chọn). */
@@ -172,6 +278,7 @@ function renderWatchface(info) {
   if (has) img.setAttribute("href", `/api/watchface/preview?v=${info.version || 0}`);
   else img.removeAttribute("href");
   img.style.display = has ? "" : "none";
+  $("#bandDefault").style.display = has ? "none" : "";
   $("#wfEmpty").hidden = has;
   let current = t("Chưa cài mặt đồng hồ nào qua ứng dụng");
   if (info?.name) {
@@ -539,6 +646,14 @@ function fillSelect(sel, items, current) {
   if (current != null) sel.value = String(current);
 }
 /** Như fillSelect, nhưng current null thêm dòng "Chưa biết" (giá trị trên vòng tay chưa biết). */
+const hrIntervalLabel = (m) => (m === 0 ? t("Tắt") : m === 1 ? t("Mỗi phút") : t("Mỗi {m} phút", { m }));
+const hrThresholdLabel = (v) => t("{v} nhịp/phút", { v });
+
+/** Đổi nhãn các lựa chọn có số (đổi ngôn ngữ), giữ nguyên lựa chọn đang chọn. */
+function relabelOptions(sel, label) {
+  for (const o of sel.options) if (o.value !== "") o.textContent = label(Number(o.value));
+}
+
 function fillSelectKnown(sel, items, current) {
   fillSelect(sel, current == null ? [["", t("— Chưa biết —")], ...items] : items, current ?? "");
   sel.classList.toggle("unknown", current == null);
@@ -594,8 +709,8 @@ function fillForms() {
   buildShortcuts(s.shortcuts || META.shortcuts_default);
 
   const hrKnown = has("hr_interval");
-  fillSelectKnown($("#hInterval"), META.hr_intervals.map((m) => [m, m === 0 ? t("Tắt") : m === 1 ? t("Mỗi phút") : t("Mỗi {m} phút", { m })]), hrKnown ? s.hr_interval : null);
-  fillSelectKnown($("#hThreshold"), META.hr_thresholds.map((v) => [v, t("{v} nhịp/phút", { v })]), hrKnown ? b(s.hr_threshold, 120) : null);
+  fillSelectKnown($("#hInterval"), META.hr_intervals.map((m) => [m, hrIntervalLabel(m)]), hrKnown ? s.hr_interval : null);
+  fillSelectKnown($("#hThreshold"), META.hr_thresholds.map((v) => [v, hrThresholdLabel(v)]), hrKnown ? b(s.hr_threshold, 120) : null);
   setSwitch($("#hSleep"), hrKnown ? !!s.hr_sleep : null);
   setSwitch($("#hActivity"), hrKnown ? !!s.hr_activity : null);
   setSwitch($("#hAlert"), hrKnown ? !!s.hr_alert : null);
@@ -1022,19 +1137,24 @@ function drawSim() {
   } else if (SIM.current) {
     drawCover(g, SIM.current);
     source = "current";
+  } else {
+    drawDefaultFace(g);
+    source = "default";
   }
   SIM.source = source;
-  $("#simEmpty").hidden = !!source;
+  $("#simEmpty").hidden = true;
   $("#simCaption").textContent = ({
     photo: () => t("Mô phỏng ảnh nền của bạn trên Mi Band 6"),
     bin: () => t("Mô phỏng: ảnh xem trước trong tệp .bin"),
     current: () => t("Mặt đồng hồ đã cài qua ứng dụng"),
-  }[source] || (() => t("Mô phỏng màn hình Mi Band 6 (152 × 486)")))();
+    default: () => t("Mặt mặc định của ứng dụng (chưa chọn ảnh)"),
+  }[source])();
   faceButtons();
 }
 
 function faceButtons() {
-  const ready = faceMode() === "photo" ? !!WP.img : !!SIM.binB64;
+  // ảnh nền: cài lên vòng tay đang tắt (vòng tay treo với mặt đồng hồ ứng dụng tạo), chỉ đặt làm ảnh xem trước
+  const ready = faceMode() === "photo" ? false : !!SIM.binB64;
   $("#faceInstallBtn").disabled = !ready || !STATE.connected;
   $("#facePreviewBtn").disabled = !(SIM.source === "photo" || SIM.source === "bin");
   $("#wfClearBtn").disabled = !STATE.watchface?.preview;
@@ -1321,6 +1441,9 @@ const STAGES = [
 ];
 const stageInfo = (key) => STAGES.find((s) => s[0] === key);
 
+/** Mã loại bài tập của Mi Fitness (khác mã vòng tay); chỉ các mã đã kiểm chứng (dự án mifit). */
+const mfSportName = (k) => ({ 1: t("Chạy bộ"), 6: t("Đạp xe"), 300: t("Máy leo cầu thang"), 308: t("Tập sức mạnh") })[k];
+const workoutName = (w) => (w.type != null ? sportName(w.type) : mfSportName(w.mf_type) ?? t("Bài tập (mã Mi Fitness {k})", { k: w.mf_type ?? "?" }));
 const sportName = (k) => ({
   1: t("Chạy ngoài trời"), 2: t("Chạy máy"), 3: t("Đi bộ"), 4: t("Đạp xe"), 5: t("Tập tự do"), 6: t("Bơi trong hồ"),
   7: t("Bơi ngoài trời"), 8: t("Đạp xe trong nhà"), 9: t("Máy tập elip"), 10: t("Leo núi"), 15: t("Đi bộ đường dài"),
@@ -1359,10 +1482,83 @@ async function loadHealth() {
   }
 }
 
-$("#hDate").addEventListener("change", () => {
-  if (!$("#hDate").value) return;
-  healthDate = $("#hDate").value > todayISO() ? todayISO() : $("#hDate").value;
+/* ---- chọn ngày */
+
+let calMonth = null;   // ngày đầu của tháng đang xem trong lịch
+const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function goToDate(iso) {
+  healthDate = iso > todayISO() ? todayISO() : iso;
+  closeCal();
   quiet(loadHealth());
+}
+function renderDateNav() {
+  const today = todayISO();
+  const d = new Date(`${healthDate}T12:00:00`);
+  $("#hDateMain").textContent = healthDate === today ? t("Hôm nay") : healthDate === shiftDate(today, -1) ? t("Hôm qua")
+    : new Intl.DateTimeFormat(LOCALE, { weekday: "long" }).format(d);
+  $("#hDateSub").textContent = new Intl.DateTimeFormat(LOCALE, { weekday: healthDate >= shiftDate(today, -1) ? "long" : undefined, day: "numeric", month: "long", year: "numeric" }).format(d);
+  $("#hNext").disabled = healthDate >= today;
+}
+function daysWithData() {
+  const set = new Set();
+  for (const d of healthData?.steps_days || []) if (d.steps > 0) set.add(d.date);
+  for (const d of healthData?.sleep_days || []) if (d.minutes) set.add(d.date);
+  return set;
+}
+function renderCal() {
+  const grid = $("#calGrid");
+  grid.textContent = "";
+  $("#calTitle").textContent = new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric" }).format(calMonth);
+  for (const name of weekdays()) {
+    const el = document.createElement("span");
+    el.className = "cal-dow";
+    el.textContent = name;
+    grid.append(el);
+  }
+  const lead = (calMonth.getDay() + 6) % 7;   // tuần bắt đầu từ thứ Hai
+  for (let i = 0; i < lead; i++) grid.append(document.createElement("span"));
+  const today = todayISO();
+  const has = daysWithData();
+  const d = new Date(calMonth);
+  while (d.getMonth() === calMonth.getMonth()) {
+    const iso = isoOf(d);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "cal-day";
+    b.textContent = String(d.getDate());
+    b.disabled = iso > today;
+    b.classList.toggle("today", iso === today);
+    b.classList.toggle("has", has.has(iso));
+    b.setAttribute("aria-selected", String(iso === healthDate));
+    b.setAttribute("aria-label", new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(d));
+    b.onclick = () => goToDate(iso);
+    grid.append(b);
+    d.setDate(d.getDate() + 1);
+  }
+  const now = new Date();
+  $("#calNextM").disabled = calMonth.getFullYear() === now.getFullYear() && calMonth.getMonth() === now.getMonth();
+}
+function openCal() {
+  const d = new Date(`${healthDate}T12:00:00`);
+  calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  renderCal();
+  $("#calPop").hidden = false;
+  $("#hDateBtn").setAttribute("aria-expanded", "true");
+  ($("#calGrid .cal-day[aria-selected=true]") || $("#calToday")).focus();
+}
+function closeCal() {
+  if ($("#calPop").hidden) return;
+  $("#calPop").hidden = true;
+  $("#hDateBtn").setAttribute("aria-expanded", "false");
+}
+$("#hDateBtn").onclick = () => ($("#calPop").hidden ? openCal() : closeCal());
+$("#calPrevM").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCal(); };
+$("#calNextM").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCal(); };
+$("#calToday").onclick = () => goToDate(todayISO());
+$("#calYesterday").onclick = () => goToDate(shiftDate(todayISO(), -1));
+document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".day-nav")) closeCal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#calPop").hidden) { closeCal(); $("#hDateBtn").focus(); }
 });
 $("#hPrev").onclick = () => { healthDate = shiftDate(healthDate, -1); quiet(loadHealth()); };
 $("#hNext").onclick = () => { if (healthDate < todayISO()) { healthDate = shiftDate(healthDate, 1); quiet(loadHealth()); } };
@@ -1700,9 +1896,7 @@ function renderAnalysis(a) {
 
 function renderHealth() {
   const H = healthData;
-  $("#hDate").value = healthDate;
-  $("#hDate").max = todayISO();
-  $("#hNext").disabled = healthDate >= todayISO();
+  renderDateNav();
   $("#hEmpty").hidden = !!H?.has_data;
   renderAnalysis(H?.analysis);
   if (!H) {
@@ -1820,11 +2014,26 @@ function renderHealth() {
   tableRows($("#spTable"), sp.map(([ts, v, auto]) => [dateTime(ts), `${v}%`, auto ? t("Tự động") : t("Đo tay")]), t("Chưa có lần đo SpO2 nào. Đo trên vòng tay rồi đồng bộ lại."), 3);
 
   // tập luyện
+  const fromCloud = H.workouts.filter((w) => w.source === "mifitness").length;
+  $("#woSub").textContent = t("{n} buổi tập: {band} từ vòng tay, {cloud} từ Mi Fitness.", { n: H.workouts.length, band: H.workouts.length - fromCloud, cloud: fromCloud });
   tableRows($("#woTable"), H.workouts.map((w) => [
-    sportName(w.type), dateTime(w.start), fmtMinutes(((w.active_seconds || (w.end - w.start)) / 60)),
+    workoutName(w), dateTime(w.start), fmtMinutes(((w.active_seconds || (w.end - w.start)) / 60)),
     w.distance ? `${fmtDec(w.distance / 1000)} km` : "—", w.calories ? `${fmtInt(w.calories)} kcal` : "—",
     w.avg_hr ? t("{n} nhịp/phút", { n: w.avg_hr }) : "—", w.steps ? fmtInt(w.steps) : "—",
-  ]), t("Chưa có buổi tập nào."), 7);
+    w.source === "mifitness" ? "Mi Fitness" : t("Vòng tay"), "",
+  ]), t("Chưa có buổi tập nào. Bấm Lấy lịch sử từ Mi Fitness để lấy các buổi cũ."), 9);
+  // nút Bản đồ cho buổi chạy / đạp xe ngoài trời có lộ trình GPS (Mi Fitness ghi từ GPS của điện thoại)
+  $$("#woTable tr").forEach((tr, i) => {
+    const w = H.workouts[i];
+    if (!w?.gps) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn small wo-map";
+    b.innerHTML = '<svg class="ic"><use href="#i-route"/></svg><span></span>';
+    $("span", b).textContent = t("Bản đồ");
+    b.onclick = () => openMap(w, b);
+    tr.lastElementChild.append(b);
+  });
 
   // đo tự động
   const s = STATE.settings || {};
@@ -1841,6 +2050,193 @@ function renderHealth() {
     const dd = document.createElement("dd");
     dd.textContent = v;
     facts.append(dt_, dd);
+  }
+}
+
+/* ============================================================ bản đồ lộ trình */
+
+/* Bản đồ nền: ô ảnh chuẩn của OpenStreetMap (CSS làm tối cho hợp giao diện); lộ trình vẽ bằng SVG lên trên.
+   Theo chính sách dùng ô ảnh của OpenStreetMap: có ghi nguồn, chỉ tải phần đang xem.
+   Phép chiếu Web Mercator; MAP.cx/cy là tâm khung nhìn tính bằng điểm ảnh ở mức phóng to MAP.z. */
+const MAP = { pts: null, z: 14, cx: 0, cy: 0, drag: null, frame: 0 };
+const TILE = 256;
+function project(lat, lon, z) {
+  const size = TILE * 2 ** z;
+  const r = (lat * Math.PI) / 180;
+  return [((lon + 180) / 360) * size, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * size];
+}
+function mapFit() {
+  const el = $("#map");
+  const w = el.clientWidth, h = el.clientHeight;
+  const xy = MAP.pts.map(([, lat, lon]) => project(lat, lon, 0));
+  const xs = xy.map((p) => p[0]), ys = xy.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  let z = 18;
+  while (z > 2 && ((x1 - x0) * 2 ** z > w - 80 || (y1 - y0) * 2 ** z > h - 80)) z--;
+  MAP.z = z;
+  MAP.cx = ((x0 + x1) / 2) * 2 ** z;
+  MAP.cy = ((y0 + y1) / 2) * 2 ** z;
+  mapDraw();
+}
+function mapDraw() {
+  const el = $("#map");
+  const w = el.clientWidth, h = el.clientHeight;
+  const ox = MAP.cx - w / 2, oy = MAP.cy - h / 2;
+  const n = 2 ** MAP.z;
+  const tiles = $("#mapTiles");
+  tiles.textContent = "";
+  for (let ty = Math.floor(oy / TILE); ty <= Math.floor((oy + h) / TILE); ty++) {
+    if (ty < 0 || ty >= n) continue;
+    for (let tx = Math.floor(ox / TILE); tx <= Math.floor((ox + w) / TILE); tx++) {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = `https://tile.openstreetmap.org/${MAP.z}/${((tx % n) + n) % n}/${ty}.png`;
+      img.style.left = `${tx * TILE - ox}px`;
+      img.style.top = `${ty * TILE - oy}px`;
+      img.onerror = () => img.remove();
+      tiles.append(img);
+    }
+  }
+  const svg = $("#mapRoute");
+  svg.textContent = "";
+  const pts = MAP.pts.map(([, lat, lon]) => { const [x, y] = project(lat, lon, MAP.z); return [x - ox, y - oy]; });
+  const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+  sv("path", { d, class: "casing" }, svg);
+  sv("path", { d, class: "line" }, svg);
+  const [sx, sy] = pts[0], [ex, ey] = pts[pts.length - 1];
+  sv("circle", { cx: ex, cy: ey, r: 7, class: "end" }, svg);
+  sv("circle", { cx: sx, cy: sy, r: 7, class: "start" }, svg);
+}
+function mapZoom(delta, mx, my) {
+  const z = Math.max(2, Math.min(19, MAP.z + delta));
+  if (z === MAP.z) return;
+  const el = $("#map");
+  const ax = (mx ?? el.clientWidth / 2) - el.clientWidth / 2, ay = (my ?? el.clientHeight / 2) - el.clientHeight / 2;
+  const f = 2 ** (z - MAP.z);
+  MAP.cx = (MAP.cx + ax) * f - ax;   // giữ nguyên điểm dưới con trỏ
+  MAP.cy = (MAP.cy + ay) * f - ay;
+  MAP.z = z;
+  mapDraw();
+}
+function mapMessage(text) {
+  $("#mapMsg").textContent = text;
+  $("#mapMsg").hidden = !text;
+}
+
+// Trong ứng dụng macOS, lộ trình mở trong cửa sổ Apple Maps (MapKit) của ứng dụng; trên trình duyệt dùng bản đồ dưới đây.
+const nativeMap = () => window.webkit?.messageHandlers?.routeMap || null;
+
+async function openMap(w, btn) {
+  const stats = workoutStats(w);
+  const native = nativeMap();
+  let error = null;
+  if (native) {
+    if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
+    try {
+      const r = await api(`/api/workouts/${w.start}/track`);
+      if (r.points.length >= 2) {
+        native.postMessage({ title: workoutName(w), subtitle: dateTime(w.start), points: r.points, stats });
+        return;
+      }
+      error = t("Buổi tập này không có điểm GPS nào.");
+    } catch (e) {
+      error = e.message;
+    } finally {
+      if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); }
+    }
+  }
+  const dlg = $("#mapDialog");
+  $("#mapTitle").textContent = workoutName(w);
+  $("#mapSub").textContent = dateTime(w.start);
+  $("#mapTiles").textContent = "";
+  $("#mapRoute").textContent = "";
+  statsList($("#mapStats"), stats);
+  if (error) {   // ứng dụng macOS: chỉ mở hộp thoại này để báo lỗi
+    MAP.pts = null;
+    mapMessage(error);
+    if (!dlg.open) dlg.showModal();
+    return;
+  }
+  mapMessage(t("Đang tải lộ trình…"));
+  if (!dlg.open) dlg.showModal();
+  try {
+    const r = await api(`/api/workouts/${w.start}/track`);
+    if (!r.points.length) { mapMessage(t("Buổi tập này không có điểm GPS nào.")); return; }
+    MAP.pts = r.points;
+    mapMessage("");
+    mapFit();
+  } catch (e) {
+    mapMessage(e.message);
+  }
+}
+
+function workoutStats(w) {
+  const secs = w.active_seconds || w.end - w.start;
+  const stats = [[t("Thời gian"), fmtMinutes(secs / 60), ""]];
+  if (w.distance) {
+    stats.push([t("Quãng đường"), fmtDec(w.distance / 1000), "km"]);
+    const perKm = secs / (w.distance / 1000);
+    if (w.mf_type === 6 || w.type === 4) stats.push([t("Tốc độ TB"), fmtDec((w.distance / 1000) / (secs / 3600), 1), "km/h"]);
+    else stats.push([t("Tốc độ TB"), `${Math.floor(perKm / 60)}'${pad(Math.round(perKm % 60))}"`, "/km"]);
+  }
+  if (w.avg_hr) stats.push([t("Nhịp tim TB"), String(w.avg_hr), t("nhịp/phút")]);
+  if (w.calories) stats.push([t("Năng lượng"), fmtInt(w.calories), "kcal"]);
+  return stats;
+}
+$("#mapClose").onclick = () => $("#mapDialog").close();
+$("#mapIn").onclick = () => mapZoom(1);
+$("#mapOut").onclick = () => mapZoom(-1);
+$("#mapFit").onclick = () => MAP.pts && mapFit();
+(() => {
+  const el = $("#map");
+  el.addEventListener("pointerdown", (e) => {
+    if (!MAP.pts || e.target.closest(".map-zoom, .map-attr")) return;
+    MAP.drag = { x: e.clientX, y: e.clientY, cx: MAP.cx, cy: MAP.cy };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!MAP.drag) return;
+    MAP.cx = MAP.drag.cx - (e.clientX - MAP.drag.x);
+    MAP.cy = MAP.drag.cy - (e.clientY - MAP.drag.y);
+    cancelAnimationFrame(MAP.frame);
+    MAP.frame = requestAnimationFrame(mapDraw);
+  });
+  const end = () => { MAP.drag = null; el.classList.remove("dragging"); };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+  el.addEventListener("wheel", (e) => {
+    if (!MAP.pts) return;
+    e.preventDefault();
+    const b = el.getBoundingClientRect();
+    mapZoom(e.deltaY < 0 ? 1 : -1, e.clientX - b.left, e.clientY - b.top);
+  }, { passive: false });
+  el.addEventListener("keydown", (e) => {
+    if (!MAP.pts) return;
+    const step = 80;
+    const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    if (moves[e.key]) { e.preventDefault(); MAP.cx += moves[e.key][0]; MAP.cy += moves[e.key][1]; mapDraw(); }
+    else if (e.key === "+" || e.key === "=") mapZoom(1);
+    else if (e.key === "-") mapZoom(-1);
+  });
+  window.addEventListener("resize", () => { if ($("#mapDialog").open && MAP.pts) mapDraw(); });
+})();
+
+/** Vẽ lại các phần có chữ ghép với số liệu, ngày giờ (không đụng tới giá trị đang sửa trong các ô nhập). */
+function rerenderLanguage() {
+  if (!META) return;
+  const steps = [
+    () => applyState(STATE),
+    () => { relabelOptions($("#hInterval"), hrIntervalLabel); relabelOptions($("#hThreshold"), hrThresholdLabel); },
+    renderAlarms,
+    drawSpark,
+    // trang ẩn thì để lúc mở trang (route -> loadHealth) vẽ lại, tránh vẽ biểu đồ khi chưa có kích thước
+    () => { if (healthData && !$("#page-health").hidden) { renderDateNav(); renderHealth(); } },
+    () => { if (SIM) drawSim(); },
+    () => { if (cloudOpen && STATE.cloud && STATE.cloud.state !== "done") renderCloud({ ...STATE.cloud, seq: null }); },
+  ];
+  for (const step of steps) {
+    try { step(); } catch (e) { console.warn(e); }
   }
 }
 
@@ -1879,7 +2275,8 @@ function renderCloud(st) {
   STATE.cloud = st;
   const s = st.state || "idle";
   if (s === "done") {
-    fillProfile();
+    if (st.job === "workouts") quiet(loadHealth());
+    else fillProfile();
     if (cloudOpen) {
       closeCloud();
       toast(st.message || t("Đã lấy hồ sơ từ Mi Fitness."));
@@ -1889,7 +2286,8 @@ function renderCloud(st) {
   if (!cloudOpen) return;
   const busy = s === "checking" || s === "fetching";
   $("#cloudBusy").hidden = !busy;
-  $("#cloudBusyText").textContent = s === "fetching" ? t("Đang đọc hồ sơ từ Mi Fitness…") : t("Đang kết nối tới máy chủ Xiaomi…");
+  $("#cloudBusyText").textContent = s !== "fetching" ? t("Đang kết nối tới máy chủ Xiaomi…")
+    : st.job === "workouts" ? t("Đang đọc lịch sử buổi tập từ Mi Fitness…") : t("Đang đọc hồ sơ từ Mi Fitness…");
   $("#cloudLogin").hidden = s !== "login";
   $("#cloudError").hidden = s !== "error";
   $("#cloudError").textContent = st.error || "";
@@ -1908,13 +2306,15 @@ function renderCloud(st) {
   }
 }
 
-async function startCloud(fresh = false) {
+let cloudJob = "profile";
+async function startCloud(fresh = false, job = cloudJob) {
   cloudOpen = true;
+  cloudJob = job;
   const dlg = $("#cloudDialog");
   if (!dlg.open) dlg.showModal();
   renderCloud({ state: "checking" });
   try {
-    const r = await api("/api/cloud/sync", { write: true, fresh });
+    const r = await api("/api/cloud/sync", { write: true, fresh, job });
     renderCloud(r.cloud);
   } catch (e) {
     renderCloud({ state: "error", error: e.message });
@@ -1934,7 +2334,8 @@ function cancelCloud() {
   if (active) quiet(api("/api/cloud/cancel", {}));
 }
 
-$("#cloudSyncBtn").addEventListener("click", () => startCloud(false));
+$("#cloudSyncBtn").addEventListener("click", () => startCloud(false, "profile"));
+$("#woCloudBtn").addEventListener("click", () => startCloud(false, "workouts"));
 $("#cloudRetryBtn").addEventListener("click", () => startCloud(false));
 $("#cloudReloginBtn").addEventListener("click", () => startCloud(true));
 $("#cloudCancelBtn").addEventListener("click", cancelCloud);

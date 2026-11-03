@@ -28,9 +28,15 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
   <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5Z"/><path d="m9.5 13.5 2.5-2.5 2.5 2.5M12 11v5"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+  <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-4.5 3.5 3 3-2.5L20 17"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5"/></symbol>
-  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/></symbol>
 </svg>
 
 <div class="app">
@@ -99,12 +105,21 @@
               <rect x="20" y="60" width="100" height="280" rx="50" fill="url(#bodyGrad)" stroke="#45514e" stroke-width="1"/>
               <rect x="27" y="67" width="86" height="266" rx="43" fill="#000"/>
               <image id="wfImage" x="27" y="67" width="86" height="266" preserveAspectRatio="xMidYMid slice" clip-path="url(#screenClip)" style="display:none"/>
+              <g id="bandDefault">
+                <text id="bTime" x="70" y="132" class="b-time">--:--</text>
+                <text id="bDate" x="70" y="151" class="b-small"></text>
+                <text id="bHr" x="70" y="190" class="b-hr">♥ --</text>
+                <circle cx="70" cy="236" r="24" class="b-ring-bg"/>
+                <circle id="bRing" cx="70" cy="236" r="24" class="b-ring" transform="rotate(-90 70 236)" stroke-dasharray="0 151"/>
+                <text id="bSteps" x="70" y="240.5" class="b-steps">--</text>
+                <text id="bBatText" x="70" y="285" class="b-small"></text>
+                <rect x="52" y="292" width="34" height="11" rx="3" class="b-bat-frame"/>
+                <rect x="87" y="295.5" width="2" height="4" rx="1" class="b-bat-tip"/>
+                <rect id="bBat" x="54" y="294" width="0" height="7" rx="1.5" class="b-bat"/>
+              </g>
             </svg>
-            <div class="wf-empty" id="wfEmpty">
-              <p>Vòng tay không cho đọc mặt đồng hồ đang dùng</p>
-              <a href="#settings/face">Chọn mặt đồng hồ</a>
             </div>
-            </div>
+            <figcaption class="band-cap" id="wfEmpty">Mặt mặc định của ứng dụng · <a href="#settings/face">Chọn mặt đồng hồ</a></figcaption>
           </figure>
           <div class="hero-stats">
             <p class="hero-label">Bước chân hôm nay</p>
@@ -166,9 +181,24 @@
         </div>
         <div class="head-actions">
           <div class="day-nav">
-            <button id="hPrev" class="btn ghost small" type="button" aria-label="Ngày trước">‹</button>
-            <input type="date" id="hDate" aria-label="Ngày">
-            <button id="hNext" class="btn ghost small" type="button" aria-label="Ngày sau">›</button>
+            <button id="hPrev" class="nav-arrow" type="button" aria-label="Ngày trước"><svg class="ic"><use href="#i-chev-left"/></svg></button>
+            <button id="hDateBtn" class="date-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="calPop">
+              <svg class="ic"><use href="#i-calendar"/></svg>
+              <span class="date-txt"><b id="hDateMain">Hôm nay</b><span id="hDateSub"></span></span>
+            </button>
+            <button id="hNext" class="nav-arrow" type="button" aria-label="Ngày sau"><svg class="ic"><use href="#i-chev-right"/></svg></button>
+            <div class="cal-pop" id="calPop" role="dialog" aria-label="Chọn ngày" hidden>
+              <div class="cal-head">
+                <button id="calPrevM" class="nav-arrow small" type="button" aria-label="Tháng trước"><svg class="ic"><use href="#i-chev-left"/></svg></button>
+                <span id="calTitle"></span>
+                <button id="calNextM" class="nav-arrow small" type="button" aria-label="Tháng sau"><svg class="ic"><use href="#i-chev-right"/></svg></button>
+              </div>
+              <div class="cal-grid" id="calGrid"></div>
+              <div class="cal-foot">
+                <span class="cal-key"><i></i>Có dữ liệu</span>
+                <span class="cal-quick"><button id="calYesterday" class="btn ghost small" type="button">Hôm qua</button><button id="calToday" class="btn small" type="button">Hôm nay</button></span>
+              </div>
+            </div>
           </div>
           <button id="hSyncBtn" class="btn" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ</span></button>
         </div>
@@ -228,8 +258,12 @@
         </article>
 
         <article class="card wide" id="health-workouts">
-          <header class="card-head"><h2>Tập luyện</h2><p class="card-sub">Các buổi tập ghi trên vòng tay.</p></header>
-          <table class="data-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th></tr></thead><tbody id="woTable"></tbody></table>
+          <header class="card-head split-head">
+            <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
+            <button id="woCloudBtn" class="btn small" type="button"><svg class="ic"><use href="#i-cloud"/></svg><span>Lấy lịch sử từ Mi Fitness</span></button>
+          </header>
+          <p class="card-sub wo-note">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
+          <table class="data-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table>
         </article>
 
         <article class="card wide" id="health-measure">
@@ -378,6 +412,7 @@
 
               <div id="modePhoto" class="face-mode">
                 <p class="face-hint">Dùng ảnh của bạn làm ảnh nền, kèm giờ. Ảnh lớn được tự thu nhỏ cho vừa màn hình vòng tay.</p>
+                <p class="face-warn" role="note"><svg class="ic"><use href="#i-alert"/></svg><span>Tạm thời chỉ đặt được làm ảnh xem trước. Cài ảnh nền lên vòng tay đã bị tắt vì mặt đồng hồ tạo từ ảnh làm Mi Band 6 bị treo.</span></p>
                 <div class="pick">
                   <button class="btn" id="wpPickBtn" type="button"><svg class="ic"><use href="#i-image"/></svg><span>Chọn ảnh…</span></button>
                   <span class="pick-name" id="wpName">Chưa chọn ảnh</span>
@@ -604,6 +639,26 @@
     --method amazfit --email EMAIL --password PASSWORD --bt_keys</pre>
   <p>Các cách khác có trong <a href="https://gadgetbridge.org/basics/pairing/huami-xiaomi-server/" target="_blank" rel="noopener">hướng dẫn của Gadgetbridge</a>. Đừng hủy ghép đôi vòng tay trong app của hãng, vì làm vậy mã cũ sẽ mất hiệu lực.</p>
   <form method="dialog" class="dialog-foot"><button class="btn primary">Đóng</button></form>
+</dialog>
+
+<dialog id="mapDialog" class="dialog map-dialog" aria-labelledby="mapTitle">
+  <header class="map-head">
+    <div><h2 id="mapTitle">Lộ trình</h2><p class="card-sub" id="mapSub"></p></div>
+    <button id="mapClose" class="btn ghost small" type="button">Đóng</button>
+  </header>
+  <div class="map" id="map" tabindex="0" aria-label="Bản đồ lộ trình; kéo để di chuyển, cuộn để phóng to">
+    <div class="map-tiles" id="mapTiles"></div>
+    <svg class="map-route" id="mapRoute" aria-hidden="true"></svg>
+    <div class="map-zoom">
+      <button id="mapIn" type="button" aria-label="Phóng to">+</button>
+      <button id="mapOut" type="button" aria-label="Thu nhỏ">−</button>
+      <button id="mapFit" type="button" aria-label="Vừa lộ trình"><svg class="ic"><use href="#i-fit"/></svg></button>
+    </div>
+    <p class="map-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>
+    <p class="map-msg" id="mapMsg" hidden></p>
+  </div>
+  <div class="map-legend"><span><i class="dot start"></i>Bắt đầu</span><span><i class="dot end"></i>Kết thúc</span></div>
+  <dl class="stats" id="mapStats"></dl>
 </dialog>
 
 <dialog id="cloudDialog" class="dialog small">

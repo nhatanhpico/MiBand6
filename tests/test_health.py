@@ -224,7 +224,11 @@ async def test_health_sync_and_summary(client):
     body = await (await client.get(f"/api/health?date={today}")).json()
     h = body["health"]
     assert h["has_data"] and len(h["steps_days"]) >= 10
-    assert len(h["workouts"]) == 3 and h["pai"]["latest"]["total"] > 0 and h["spo2_recent"]
+    # 3 buổi trong 30 ngày + 1 buổi cũ hơn, lấy ở lượt "dữ liệu cũ" chạy một lần
+    assert len(h["workouts"]) == 4 and h["pai"]["latest"]["total"] > 0 and h["spo2_recent"]
+    assert all(w["source"] == "band" for w in h["workouts"])
+    db = client.service.health_db()
+    assert db.last("workouts_backfill") and db.last("activity_backfill")
     assert h["day"]["sleep"]["minutes"] > 300 and h["day"]["hr"]
     assert sum(h["day"]["steps_hourly"]) == h["day"]["steps"]
     assert any(d["minutes"] > 300 for d in h["sleep_days"])
@@ -239,7 +243,7 @@ async def test_health_sync_and_summary(client):
     activity = [since for kind, since in newer if kind == P.FETCH_ACTIVITY]
     assert activity and activity[0] > dt.datetime.now().astimezone() - dt.timedelta(minutes=5)
     again = (await (await client.get(f"/api/health?date={today}")).json())["health"]
-    assert again["steps_days"] == h["steps_days"] and len(again["workouts"]) == 3
+    assert again["steps_days"] == h["steps_days"] and len(again["workouts"]) == 4
 
     r = await client.get("/api/health?date=not-a-date")
     assert r.status == 400
@@ -278,7 +282,18 @@ async def test_install_watchface_and_preview(client):
     assert (await client.get("/api/watchface/preview")).status == 404
 
 
-async def test_wallpaper_endpoint(client):
+async def test_wallpaper_install_disabled(client):
+    """Cài ảnh nền đang tắt: không gửi gì tới vòng tay (mặt đồng hồ tạo ra làm Mi Band 6 thật bị treo)."""
+    fake = await connected(client)
+    b64 = lambda raw: base64.b64encode(raw).decode()  # noqa: E731
+    img = lambda w, h: {"w": w, "h": h, "rgba": b64(bytes([30, 60, 90, 255]) * (w * h))}  # noqa: E731
+    r = await post(client, "/api/wallpaper", {"background": img(152, 486), "preview": img(76, 243)})
+    assert r.status == 410
+    assert getattr(fake, "installed_watchface", None) is None
+
+
+async def test_wallpaper_endpoint(client, monkeypatch):
+    monkeypatch.setattr(WF, "WALLPAPER_INSTALL", True)
     fake = await connected(client)
     b64 = lambda raw: base64.b64encode(raw).decode()  # noqa: E731
     img = lambda w, h: {"w": w, "h": h, "rgba": b64(bytes([30, 60, 90, 255]) * (w * h))}  # noqa: E731
@@ -349,3 +364,142 @@ async def test_health_api_includes_analysis(client):
     assert {"sleep", "deep", "rhr", "steps", "active", "pai", "spo2", "stress"} <= keys
     sleep = next(i for i in h["analysis"]["items"] if i["key"] == "sleep")
     assert sleep["status"] == "good"   # giả lập ngủ 23:20–06:50 mỗi đêm
+
+
+def test_cloud_workouts_merge_with_band(tmp_path):
+    db = HealthDB(tmp_path / "h.sqlite3")
+    db.add_workout({"type": 5, "start": 1_800_000_000, "end": 1_800_003_600, "calories": 300})
+    rows = [H.workout_from_cloud(v) for v in (
+        {"start_time": 1_800_000_090, "end_time": 1_800_003_600, "sport_type": 308, "duration": 3500},   # cùng buổi
+        {"start_time": 1_799_000_000, "end_time": 1_799_001_800, "sport_type": 308, "duration": 1800, "calories": 150},
+        {"start_time": 1_798_000_000, "sport_type": 1, "duration": 1200, "distance": 3000, "avg_hrm": 0},
+        {"sport_type": 1},   # không có giờ bắt đầu: bỏ
+    )]
+    assert rows[3] is None and rows[2]["end"] == 1_798_001_200 and rows[2]["avg_hr"] is None
+    assert db.add_cloud_workouts([r for r in rows if r]) == 2
+    assert db.add_cloud_workouts([r for r in rows if r]) == 0   # lấy lại không nhân đôi
+    w = db.summary("2027-01-15")["workouts"]
+    assert [x["source"] for x in w] == ["band", "mifitness", "mifitness"]
+    assert w[0]["mf_type"] == 308 and w[1]["type"] == 5   # mã 308 của Mi Fitness học được là "tập tự do"
+    # buổi vòng tay tới sau buổi Mi Fitness cùng giờ: thay bằng bản của vòng tay, giữ mã Mi Fitness
+    db.add_workout({"type": 1, "start": 1_798_000_030, "end": 1_798_001_230, "distance": 3100})
+    w = db.summary("2027-01-15")["workouts"]
+    assert len(w) == 3 and w[-1]["source"] == "band" and w[-1]["mf_type"] == 1 and w[-1]["distance"] == 3100
+
+
+def test_fetch_sport_records_pages():
+    from miband6 import xiaomi_cloud as X
+
+    pages = {None: {"code": 0, "result": {"sport_records": [{"time": 2, "value": '{"start_time": 2}'},
+                                                            {"time": 3, "value": "{}", "deleted": True}],
+                                           "has_more": True, "next_key": "k2"}},
+             "k2": {"code": 0, "result": {"sport_records": [{"time": 1, "value": {"start_time": 1}}], "has_more": False}}}
+    calls = []
+
+    class Login:
+        class requests:  # noqa: N801
+            class exceptions:  # noqa: N801
+                RequestException = OSError
+
+        def request(self, host, path, plain, method="POST", region="sg", **_):
+            req = json.loads(plain["data"])
+            calls.append((host, path, method, req))
+            return 200, pages[req.get("next_key")]
+
+    records, trail = X.fetch_sport_records(Login(), 100, 200)
+    assert [r["start_time"] for r in records] == [2, 1] and records[0]["_region"] == "sg" and records[0]["_sid"] is None
+    assert calls[0][:3] == ("sg.hlth.io.mi.com", "/app/v1/data/get_sport_records_by_time", "GET")
+    assert calls[0][3]["start_time"] == 99 and calls[1][3]["next_key"] == "k2"
+
+    class Expired(Login):
+        def request(self, *a, **kw):
+            return 401, None
+
+    with pytest.raises(X.SessionExpired):
+        X.fetch_sport_records(Expired(), 100, 200)
+
+
+async def test_cloud_workouts_job_demo(client):
+    await connected(client)
+    await wait_sync(client.service)
+    r = await post(client, "/api/cloud/sync", {"job": "workouts"})
+    assert r.status == 200 and (await r.json())["cloud"]["job"] == "workouts"
+    for _ in range(100):
+        st = client.service.cloud.status
+        if st["state"] == "done":
+            break
+        await asyncio.sleep(0.05)
+    assert st["state"] == "done" and st["job"] == "workouts" and "4" in st["message"]
+    h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
+    assert sum(1 for w in h["workouts"] if w["source"] == "mifitness") == 4
+
+
+
+def gps_file(points, version=2):
+    """Tệp lộ trình kiểu Mi Fitness: tiêu đề 8 byte, 1 byte cờ hợp lệ, rồi các điểm."""
+    head = struct.pack("<IbBBB", 1_800_000_000, 28, version, 22, 0)
+    if version == 1:
+        body = b"".join(struct.pack("<Iff", t, lon, lat) for t, lat, lon in points)
+        return head + bytes([0b11100000]) + body
+    body = b"".join(struct.pack("<IfffH", t, lon, lat, 5.0, 0x51) for t, lat, lon in points)
+    return head + bytes([0b11111100]) + body
+
+
+def test_decode_gps_file():
+    pts = [(100, 10.7765, 106.6955), (101, 10.7766, 106.6957), (102, 0.0, 0.0), (103, 95.0, 1.0)]
+    for version in (1, 2):
+        track = H.decode_gps_file(gps_file(pts, version))
+        assert [p[0] for p in track] == [100, 101] and abs(track[0][1] - 10.7765) < 1e-5   # bỏ điểm (0,0) và sai
+    with pytest.raises(ValueError):
+        H.decode_gps_file(struct.pack("<IbBBB", 1, 0, 9, 22, 0) + bytes(20))   # phiên bản chưa biết, không dò được điểm
+    # phiên bản 3 (như tệp thật: 26 byte, thêm độ cao và một float32); phiên bản 4 chưa biết: cỡ điểm dò từ dữ liệu
+    run = [(1_800_000_000 + i, 10.7765 + i * 1e-5, 106.6955 + i * 2e-5) for i in range(200)]
+    for version, extra in ((3, struct.pack("<ff", 107.5, 0.0)), (4, struct.pack("<fff", 107.5, 0.0, 1.0))):
+        head = struct.pack("<IbBBB", 1_800_000_000, 28, version, 22, 0) + bytes([0xFE])
+        body = b"".join(struct.pack("<IfffH", t_, lon, lat, 5.0, 113) + extra for t_, lat, lon in run)
+        track = H.decode_gps_file(head + body)
+        assert len(track) == 200 and track[0][0] == 1_800_000_000 and abs(track[-1][1] - (10.7765 + 199e-5)) < 1e-5
+    with pytest.raises(ValueError):
+        H.decode_gps_file(b"abc")
+
+
+def test_gps_file_name_and_decrypt():
+    import base64 as b64
+    import hashlib
+
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    from miband6 import xiaomi_cloud as X
+
+    name = X.gps_file_suffix("abc", 1_800_000_000, 28, 22)
+    key_part, sid_part = name.split("_", 1) if name.count("_") == 1 else (name[:8], name[9:])
+    assert b64.urlsafe_b64decode(key_part + "==") == struct.pack("<Ib", 1_800_000_000, 28) + bytes([0x80 | 22 << 2 | 2])
+    assert sid_part == b64.urlsafe_b64encode(hashlib.sha1(b"abc").digest()).rstrip(b"=").decode()
+    key = bytes(range(16))
+    plain = gps_file([(100, 10.0, 106.0)])
+    padder = padding.PKCS7(128).padder()
+    enc = Cipher(algorithms.AES(key), modes.CBC(X.FDS_IV)).encryptor()
+    cipher = enc.update(padder.update(plain) + padder.finalize()) + enc.finalize()
+    body = json.dumps(b64.urlsafe_b64encode(cipher).rstrip(b"=").decode()).encode()
+    assert X.decrypt_fds(body, b64.urlsafe_b64encode(key).decode()) == plain
+
+
+async def test_workout_track_endpoint_demo(client):
+    await connected(client)
+    await wait_sync(client.service)
+    await post(client, "/api/cloud/sync", {"job": "workouts"})
+    for _ in range(100):
+        if client.service.cloud.status["state"] == "done":
+            break
+        await asyncio.sleep(0.05)
+    h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
+    with_gps = [w for w in h["workouts"] if w["gps"]]
+    assert len(with_gps) == 3 and all("mf_sid" not in w for w in h["workouts"])   # chạy và đạp xe ngoài trời
+    r = await client.get(f"/api/workouts/{with_gps[0]['start']}/track")
+    pts = (await r.json())["points"]
+    assert r.status == 200 and len(pts) > 100 and pts[0][0] == with_gps[0]["start"]
+    assert client.service.health_db().track(with_gps[0]["start"]) == pts   # lưu lại, lần sau không tải nữa
+    no_gps = next(w for w in h["workouts"] if not w["gps"])
+    assert (await client.get(f"/api/workouts/{no_gps['start']}/track")).status == 404
+    assert (await client.get("/api/workouts/123/track")).status == 404

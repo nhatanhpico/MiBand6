@@ -37,6 +37,8 @@ from ..envfile import env_settings, load_env
 from ..i18n import set_lang, tr
 from ..device import PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError, MiBand6, MiBandError, scan
 from ..healthdb import HealthDB, db_path
+from .. import xiaomi_cloud as XC
+from ..xiaomi_cloud import LoginError, SessionExpired, fetch_gps_file
 from .cloud import CloudSync
 
 STATIC = Path(__file__).parent / "static"
@@ -48,9 +50,27 @@ RECONNECT_DELAYS = (2, 5, 10, 20, 30, 60)   # giây chờ trước mỗi lần t
 MAX_AUTH_FAILURES = 3                  # vòng tay từ chối xác thực ngần này lần liền thì thôi tự kết nối lại
 HEALTH_SYNC_EVERY = 30 * 60            # giây giữa hai lần tự đồng bộ dữ liệu sức khỏe khi đang kết nối
 FIRST_SYNC_DAYS = 30                   # lần đồng bộ đầu tiên lấy tối đa chừng này ngày (vòng tay giữ cỡ đó)
+BACKFILL_DAYS = 3 * 365                # một lần duy nhất: hỏi vòng tay mọi dữ liệu cũ hơn lần đầu, tới chừng này ngày
 CLOUD_PROFILE_EVERY = 12 * 3600        # tự lấy lại hồ sơ Mi Fitness (nếu còn phiên đăng nhập) sau chừng này giây
+CLOUD_WORKOUTS_EVERY = 3600            # tự lấy buổi tập mới từ Mi Fitness khi kết nối, nhiều nhất mỗi chừng này giây
+CLOUD_WORKOUTS_OVERLAP = 2 * 86400     # lấy lùi lại chừng này giây so với lần trước (buổi tập đồng bộ lên trễ)
 MAX_UPLOAD = 12 * 1024 * 1024          # cỡ tối đa của yêu cầu (tệp mặt đồng hồ + ảnh, dạng base64)
 IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif"}
+
+
+def demo_track(w: dict) -> list:
+    """Lộ trình giả lập cho chế độ xem thử: một vòng quanh công viên, mỗi 5 giây một điểm."""
+    import math
+
+    duration = max(600, int(w.get("active_seconds") or 1800))
+    n = duration // 5
+    lat0, lon0 = 10.7765, 106.6955
+    out = []
+    for i in range(n):
+        a = 2 * math.pi * i / n * 2   # hai vòng
+        r = 0.0045 + 0.0008 * math.sin(5 * a)
+        out.append([w["start"] + 5 * i, round(lat0 + r * math.sin(a), 6), round(lon0 + 1.25 * r * math.cos(a), 6)])
+    return out
 
 
 def jsonable(o):
@@ -97,6 +117,8 @@ class BandService:
         self.env_address = env_address
         self.env_protocol = env_protocol
         set_lang(self.settings.get("ui_lang", "vi"))
+        if str(self.profile.get("alias") or "").isdigit():
+            self.profile.pop("alias")   # bản trước đã chép nhầm mã tài khoản Xiaomi làm tên
         self.band: MiBand6 | None = None
         self.scan_cache: dict[str, tuple[object, str]] = {}
         self.busy = False
@@ -113,6 +135,7 @@ class BandService:
         self._reconnect_task: asyncio.Task | None = None
         # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
         self.auto_health = True
+        self.auto_cloud = not demo   # tự đồng bộ Mi Fitness sau khi kết nối (tắt ở chế độ xem thử)
         self.health_status: dict = {"state": "idle"}
         self._health_task: asyncio.Task | None = None
         self._dbs: dict[str, HealthDB] = {}
@@ -318,12 +341,32 @@ class BandService:
                 await job()
             except Exception as e:  # noqa: BLE001
                 self.log(tr('Lỗi khi đọc dữ liệu: {e}', e=e))
-        # hồ sơ từ Mi Fitness: tự lấy lại nếu còn phiên đăng nhập (không hiện mã QR khi chạy ngầm)
-        if not self.demo and time.time() - float(self.profile.get("cloud_at") or 0) > CLOUD_PROFILE_EVERY:
-            self.cloud.start(write=True, interactive=False)
+        if self.auto_cloud:
+            self._spawn(self._cloud_background())
         if self.auto_health and self.band is band and self.connected:
             self.start_health_sync()
             self._spawn(self._periodic_health(band))
+
+    async def _cloud_background(self) -> None:
+        """Sau khi kết nối: nếu đã đăng nhập Xiaomi (phiên đã lưu), tự lấy hồ sơ và các buổi tập mới từ Mi Fitness.
+
+        Chạy nền, không hiện mã QR; chưa đăng nhập thì không làm gì. Lịch sử buổi tập chỉ lấy phần từ lần trước
+        (lùi lại CLOUD_WORKOUTS_OVERLAP), lần đầu thì lấy cả lịch sử."""
+        now = time.time()
+        jobs: list[tuple[str, int | None]] = []
+        if now - float(self.profile.get("cloud_at") or 0) > CLOUD_PROFILE_EVERY:
+            jobs.append(("profile", None))
+        db = self.health_db()
+        last = db.last("cloud_workouts") if db else None
+        if db and now - (last or 0) > CLOUD_WORKOUTS_EVERY:
+            jobs.append(("workouts", last - CLOUD_WORKOUTS_OVERLAP if last else None))
+        for job, since in jobs:
+            while self.cloud.running:   # người dùng đang đồng bộ tay: chờ xong
+                await asyncio.sleep(2)
+            if not self.connected:
+                return
+            self.cloud.start(write=True, interactive=False, job=job, since=since)
+            await self.cloud.wait()
 
     # ------------------------------------------------------------ dữ liệu sức khỏe
     def health_db(self) -> HealthDB | None:
@@ -382,6 +425,9 @@ class BandService:
             self._set_health(state="running", step=label)
             try:
                 await self._sync_one(band, db, name, kind)
+                if db.last(f"{name}_backfill") is None:
+                    self._set_health(state="running", step=tr('{label} (dữ liệu cũ)', label=label))
+                    await self._backfill_one(band, db, name, kind)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001 - vòng tay không có loại dữ liệu này, mất gói…
@@ -394,6 +440,22 @@ class BandService:
         self._set_health(state="error" if errors and len(errors) == len(self.HEALTH_JOBS) else "done",
                          errors=sorted(set(errors)))
         self.push({"type": "health_data"})
+
+    async def _backfill_one(self, band: MiBand6, db: HealthDB, name: str, kind: int) -> None:
+        """Một lần duy nhất: lấy phần vòng tay còn giữ nhưng cũ hơn dữ liệu đã có (lần đầu chỉ lấy 30 ngày)."""
+        stop = db.first(name) or db.last(name) or time.time()
+        since_ts = time.time() - BACKFILL_DAYS * 86400
+        for _ in range(200):
+            if since_ts >= stop:
+                break
+            start, data = await band.fetch_data(kind, dt.datetime.fromtimestamp(since_ts).astimezone())
+            if start is None or not data or start.timestamp() >= stop:
+                break
+            nxt = self._store_health(db, name, start, data)
+            if nxt is None or nxt <= since_ts:
+                break
+            since_ts = nxt
+        db.set_last(f"{name}_backfill", int(time.time()))
 
     async def _sync_one(self, band: MiBand6, db: HealthDB, name: str, kind: int) -> None:
         now = time.time()
@@ -439,6 +501,55 @@ class BandService:
         else:
             return None
         return max(r[0] for r in rows) + 60 if rows else None
+
+    def import_cloud_workouts(self, records: list[dict]) -> str:
+        """Lưu buổi tập lấy từ tài khoản Mi Fitness (gộp với buổi vòng tay đã ghi)."""
+        db = self.health_db()
+        if db is None:
+            raise LoginError(tr('Kết nối vòng tay một lần trước khi lấy lịch sử buổi tập.'))
+        rows = [w for w in (H.workout_from_cloud(v) for v in records) if w]
+        added = db.add_cloud_workouts(rows)
+        db.set_last("cloud_workouts", int(time.time()))
+        self.push({"type": "health_data"})
+        return tr('Đã lấy {n} buổi tập từ Mi Fitness, {new} buổi mới.', n=len(rows), new=added)
+
+    async def workout_track(self, start: int) -> list:
+        """Lộ trình GPS của một buổi tập (tải từ Mi Fitness lần đầu, sau đó dùng bản đã lưu trên máy)."""
+        db = self.health_db()
+        w = db.workout(start) if db else None
+        if w is None:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404)
+        cached = db.track(start)
+        if cached is not None:
+            return cached
+        if not H.has_gps(w):
+            raise ApiError(tr('Buổi tập này không có lộ trình GPS.'), 404)
+        if self.demo:
+            points = demo_track(w)
+        else:
+            login = self.cloud.factory()
+            if not await asyncio.to_thread(login.load):
+                raise ApiError(tr('Đăng nhập Mi Fitness trước: bấm Lấy lịch sử từ Mi Fitness ở thẻ Tập luyện.'), 409)
+            try:
+                plain = await asyncio.to_thread(fetch_gps_file, login, w["mf_sid"], w["mf_time"], w.get("mf_tz") or 0,
+                                                w["mf_proto"], w.get("mf_region") or "sg")
+                try:
+                    points = H.decode_gps_file(plain) if plain else []
+                except ValueError:
+                    # giữ tệp (đã giải mã, chỉ trên máy này) để sửa bộ đọc cho phiên bản tệp mới
+                    keep = self.store.path.parent / "health" / "gps-unread" / f"{start}.bin"
+                    keep.parent.mkdir(parents=True, exist_ok=True)
+                    keep.write_bytes(plain)
+                    keep.chmod(0o600)
+                    self.log(tr('Tệp lộ trình chưa đọc được đã lưu tại {path}.', path=keep))
+                    raise
+            except SessionExpired as e:
+                raise ApiError(tr('Phiên đăng nhập Mi Fitness đã hết hạn: bấm Lấy lịch sử từ Mi Fitness để đăng nhập lại.'), 409) from e
+            except Exception as e:  # noqa: BLE001 - lỗi mạng, tệp lạ…
+                self.log(tr('Không lấy được lộ trình: {e}', e=e or type(e).__name__))
+                raise ApiError(tr('Không lấy được lộ trình: {e}', e=e or type(e).__name__), 502) from e
+        db.set_track(start, points)
+        return points
 
     def health_summary(self, date: str) -> dict | None:
         db = self.health_db()
@@ -602,6 +713,8 @@ class BandService:
 
     async def apply_cloud_profile(self, values: dict, write: bool = True) -> str:
         """Lưu hồ sơ lấy từ Mi Fitness; ghi vào vòng tay ngay nếu đang kết nối, nếu không thì khi kết nối."""
+        if "alias" not in values and str(self.profile.get("alias") or "").isdigit():
+            self.profile.pop("alias")   # bản trước đã chép nhầm mã tài khoản Xiaomi làm tên
         self.profile.update(values)
         self.profile["pending_sync"] = True
         self.profile["cloud_at"] = int(time.time())
@@ -929,6 +1042,13 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     async def health_sync(_):
         return ok(status=S.start_health_sync())
 
+    async def track_get(req):
+        try:
+            start = int(req.match_info["start"])
+        except ValueError as e:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404) from e
+        return ok(points=await S.workout_track(start))
+
     async def watchface_inspect(req):
         """Kiểm tra tệp .bin và trả ảnh xem trước bên trong nó (để mô phỏng trước khi cài)."""
         data = b64((await body(req)).get("file"))
@@ -955,7 +1075,11 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
         return w, h, b64(value.get("rgba"))
 
     async def wallpaper_post(req):
-        """Tạo mặt đồng hồ từ ảnh nền đã cắt sẵn trên trình duyệt (152x486) rồi cài lên vòng tay."""
+        """Tạo mặt đồng hồ từ ảnh nền đã cắt sẵn trên trình duyệt (152x486) rồi cài lên vòng tay.
+
+        Đang tắt (WF.WALLPAPER_INSTALL = False): vòng tay nhận tệp nhưng bị treo khi vẽ mặt đồng hồ này."""
+        if not WF.WALLPAPER_INSTALL:
+            raise ApiError(tr('Đã tạm tắt cài ảnh nền lên vòng tay: mặt đồng hồ ứng dụng tạo từ ảnh làm Mi Band 6 bị treo khi hiển thị. Ảnh vẫn dùng được làm ảnh xem trước.'), 410)
         b = await body(req)
         _w, _h, background = rgba(b.get("background"), WF.SCREEN_W, WF.SCREEN_H)
         preview = rgba(b.get("preview"), WF.SCREEN_W, WF.SCREEN_H)
@@ -1001,7 +1125,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
 
     async def cloud_sync(req):
         b = await body(req)
-        return ok(cloud=S.cloud.start(bool(b.get("write", True)), bool(b.get("fresh"))))
+        return ok(cloud=S.cloud.start(bool(b.get("write", True)), bool(b.get("fresh")), job=str(b.get("job") or "profile")))
 
     async def cloud_status(_):
         return ok(cloud=S.cloud.status)
@@ -1065,6 +1189,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/log/clear", log_clear)
     r.add_get("/api/health", health_get)
     r.add_post("/api/health/sync", health_sync)
+    r.add_get("/api/workouts/{start}/track", track_get)
     r.add_post("/api/watchface", watchface_post)
     r.add_post("/api/watchface/inspect", watchface_inspect)
     r.add_post("/api/wallpaper", wallpaper_post)
@@ -1128,6 +1253,12 @@ def _announce(port: int) -> None:
 
 async def serve(args) -> None:
     env_path = load_env(args.env)
+    if env_path and not args.demo:
+        # phiên đăng nhập Xiaomi được lưu cả vào .env này; chép phiên đang có vào nếu .env chưa có
+        XC.ENV_FILE = env_path
+        login = XC.XiaomiLogin()
+        if not os.environ.get(XC.ENV_SESSION) and login.load():
+            login.save()
     env_key, env_address, env_protocol = env_settings()
     if env_key:
         try:

@@ -208,3 +208,95 @@ async def test_demo_mode(tmp_path):
         await post(c, "/api/cloud/sync", {})
         st = await wait_state(c, "done")
         assert st["profile"]["goal"] == 9000
+
+
+def test_profile_name_never_uses_account_id():
+    assert "alias" not in X.profile_for_band({"name": "6761359519", "height": 176})
+    assert X.profile_for_band({"name": "6761359519", "nickname": "nhatanh245"})["alias"] == "nhatanh245"
+    assert X.profile_for_band({"name": "Nhật Anh", "nick_name": "  "})["alias"] == "Nhật Anh"
+
+
+
+def test_session_saved_to_env_and_renewed(tmp_path, monkeypatch):
+    """Phiên lưu cả trong .env; token hết hạn thì đổi passToken lấy token mới rồi gửi lại, không cần quét QR."""
+    import base64
+
+    env = tmp_path / ".env"
+    env.write_text("MIBAND6_AUTH_KEY=abc\n")
+    monkeypatch.setattr(X, "cache_path", lambda: tmp_path / "cache" / "session.json")
+    monkeypatch.setattr(X, "ENV_FILE", env)
+    monkeypatch.delenv(X.ENV_SESSION, raising=False)
+    login = X.XiaomiLogin(seed="t")
+    login.ssecurity, login.service_token = base64.b64encode(b"k" * 16).decode(), "tok"
+    login.user_id, login.c_user_id, login.pass_token = "123", "cu", "pt"
+    login.save()
+    line = next(l for l in env.read_text().splitlines() if l.startswith(X.ENV_SESSION + "="))
+    assert "MIBAND6_AUTH_KEY=abc" in env.read_text() and len(line) > 40
+    # tệp cache bị xóa (macOS dọn cache): vẫn đọc được phiên từ .env
+    (tmp_path / "cache" / "session.json").unlink()
+    again = X.XiaomiLogin(seed="other")
+    assert again.load() and again.pass_token == "pt" and again.device_id == login.device_id
+
+    calls = []
+
+    class Resp:
+        def __init__(self, status, text=""):
+            self.status_code, self.text = status, text
+
+    class Requests:
+        class exceptions:  # noqa: N801
+            RequestException = OSError
+
+        def get(self, url, params=None, cookies=None, **kw):
+            calls.append(url)
+            if "serviceLogin" in url:
+                assert cookies["passToken"] == "pt" and cookies["userId"] == "123"
+                return Resp(200, '&&&START&&&{"ssecurity": "%s", "location": "https://sts/x", "passToken": "pt2"}'
+                            % base64.b64encode(b"n" * 16).decode())
+            return Resp(401 if again.service_token == "tok" else 404)
+
+    again.requests = Requests()
+
+    def fake_fetch(location, nonce=None):
+        again.service_token = "tok2"
+
+    again._fetch_service_token = fake_fetch
+    status, _ = again.request("sg.hlth.io.mi.com", "/app/v1/x", {"data": "{}"}, method="GET")
+    assert status == 404 and again.service_token == "tok2" and again.pass_token == "pt2"
+    assert sum("serviceLogin" in c for c in calls) == 1   # chỉ đổi một lần
+    X.XiaomiLogin.forget()
+    assert X.ENV_SESSION + "=\n" in env.read_text() and X.ENV_SESSION not in __import__("os").environ
+
+
+
+async def test_background_cloud_sync_after_connect(tmp_path):
+    """Sau khi kết nối: tự lấy buổi tập Mi Fitness ở chế độ nền; lần kết nối lại trong vòng 1 giờ thì không lấy nữa."""
+    import asyncio
+
+    import datetime
+
+    from miband6.config import Store
+    from miband6.web.server import BandService
+
+    service = BandService(Store(tmp_path / "config.json"), demo=True)
+    service.auto_health = False
+    service.auto_cloud = True
+    service.profile["cloud_at"] = __import__("time").time()   # hồ sơ vừa lấy: chỉ còn việc lấy buổi tập
+    starts = []
+    real_start = service.cloud.start
+
+    def spy(*a, **kw):
+        starts.append((kw.get("job"), kw.get("interactive"), kw.get("since")))
+        return real_start(*a, **kw)
+
+    service.cloud.start = spy
+    for _ in range(2):
+        await service.connect("AA:BB:CC:DD:EE:FF", "0x" + "11" * 16, "auto")
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if not service.cloud.running and service.health_db().last("cloud_workouts"):
+                break
+        await service.disconnect()
+    assert starts == [("workouts", False, None)]
+    db = service.health_db()
+    assert db.last("cloud_workouts") and any(w.get("source") == "mifitness" for w in db.summary(datetime.date.today().isoformat())["workouts"])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
+import sys
 from typing import Any, Callable
 
 from . import crypto
@@ -41,8 +42,69 @@ async def scan(timeout: float = 8.0, show_all: bool = False):
         is_band = P.looks_like_miband6(name) or P.SVC_MIBAND in [u.lower() for u in (adv.service_uuids or [])]
         if show_all or is_band:
             out.append((dev, adv.rssi, is_band, name))
+    # vòng tay macOS vẫn đang giữ kết nối không phát quảng bá, nên quét không thấy: hỏi hệ thống
+    try:
+        seen = {d.address for d, *_ in out}
+        for dev in await connected_bands():
+            if dev.address not in seen:
+                out.append((dev, None, True, dev.name or P.MI_BAND6_NAME))
+    except Exception:  # noqa: BLE001 - không có thì thôi
+        pass
     out.sort(key=lambda t: (not t[2], -(t[1] or -999)))
     return out
+
+
+async def _system_manager():
+    from bleak.backends.corebluetooth.CentralManagerDelegate import CentralManagerDelegate
+
+    manager = CentralManagerDelegate()
+    await manager.wait_until_ready()
+    return manager
+
+
+def _band_services():
+    from CoreBluetooth import CBUUID
+
+    return [CBUUID.UUIDWithString_(u) for u in ("FEE0", "FEE1")]
+
+
+async def connected_bands() -> list:
+    """macOS: các vòng tay Huami đang nối với máy Mac ở mức hệ thống (BLEDevice), kể cả do ứng dụng khác."""
+    if sys.platform != "darwin":
+        return []
+    from bleak.backends.device import BLEDevice
+
+    manager = await _system_manager()
+    return [BLEDevice(str(p.identifier().UUIDString()), p.name(), (p, manager))
+            for p in manager.central_manager.retrieveConnectedPeripheralsWithServices_(_band_services()) or []]
+
+
+async def known_peripheral(address: str):
+    """macOS: vòng tay mà hệ thống đã biết, lấy theo mã thiết bị thay vì quét.
+
+    Sau khi thoát rồi mở lại ứng dụng, macOS thường vẫn giữ kết nối Bluetooth tới vòng tay. Vòng tay đang được
+    nối thì không phát quảng bá, nên quét theo địa chỉ (cách bleak làm khi chỉ có chuỗi địa chỉ) không bao giờ
+    thấy. CoreBluetooth vẫn trả lại thiết bị qua retrievePeripheralsWithIdentifiers / retrieveConnectedPeripherals;
+    nối tới thiết bị đó dùng lại đường kết nối sẵn có. Trả về BLEDevice cho BleakClient, hoặc None."""
+    if sys.platform != "darwin" or not isinstance(address, str):
+        return None
+    from bleak.backends.device import BLEDevice
+    from Foundation import NSUUID
+
+    uuid = NSUUID.alloc().initWithUUIDString_(address)
+    if uuid is None:
+        return None
+    manager = await _system_manager()
+    cm = manager.central_manager
+    found = list(cm.retrievePeripheralsWithIdentifiers_([uuid]) or [])
+    if not found:
+        found = [p for p in cm.retrieveConnectedPeripheralsWithServices_(_band_services()) or []
+                 if str(p.identifier().UUIDString()).lower() == address.lower()]
+    if not found:
+        return None
+    peripheral = found[0]
+    # bleak dùng (CBPeripheral, CentralManagerDelegate) trong BLEDevice.details để nối thẳng, không quét
+    return BLEDevice(str(peripheral.identifier().UUIDString()), peripheral.name(), (peripheral, manager))
 
 
 class MiBand6:
@@ -169,7 +231,17 @@ class MiBand6:
         if self._client is None:
             from bleak import BleakClient
 
-            self._client = BleakClient(self.device, disconnected_callback=self._on_disconnect, timeout=timeout)
+            target = self.device
+            if isinstance(target, str):   # chỉ có địa chỉ đã lưu (mới mở ứng dụng): hỏi hệ thống trước khi quét
+                try:
+                    known = await known_peripheral(target)
+                except Exception as e:  # noqa: BLE001 - không lấy được thì quét như cũ
+                    known = None
+                    self.log(tr('Không hỏi được macOS về vòng tay đã biết: {e}', e=e))
+                if known is not None:
+                    self.log(tr('macOS đã biết vòng tay này; nối thẳng, không cần quét.'))
+                    target = known
+            self._client = BleakClient(target, disconnected_callback=self._on_disconnect, timeout=timeout)
         self._notifying.clear()
         self.log(tr('Đang kết nối Bluetooth…'))
         await self._client.connect()

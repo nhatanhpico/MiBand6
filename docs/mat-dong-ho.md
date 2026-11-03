@@ -30,6 +30,8 @@ Cách cài giống Gadgetbridge. Vòng tay từ chối khi pin yếu hoặc khô
 
 ## Mặt đồng hồ có sẵn
 
-Mi Band 6 không cho ứng dụng nào đọc mặt đồng hồ đang hiện trên vòng tay hay lấy ảnh của nó, kể cả mặt có sẵn; giao thức Bluetooth của vòng tay không có lệnh này. Vì vậy hình vòng tay ở trang **Tổng quan** chỉ hiện mặt đồng hồ cài qua ứng dụng.
+Vòng tay không gửi ảnh mặt đồng hồ qua Bluetooth, và tài liệu công khai duy nhất về giao thức (Gadgetbridge) không có lệnh hỏi mặt đang dùng của Mi Band 6. Mi Fitness hiện được là nhờ ảnh trong kho mặt đồng hồ trên máy chủ Xiaomi (API không công khai). Vì vậy hình vòng tay ở trang **Tổng quan** chỉ hiện mặt đồng hồ cài qua ứng dụng.
+
+Khi chưa có ảnh nào, trang Tổng quan và khung mô phỏng hiện **mặt mặc định của ứng dụng**: giờ (theo kiểu 12/24 giờ đã lưu), ngày, nhịp tim, vòng bước chân và pin, cập nhật trực tiếp từ vòng tay. Đây là mặt do ứng dụng vẽ, không phải mặt đang hiện trên vòng tay.
 
 Nếu bạn dùng mặt có sẵn và muốn trang Tổng quan hiện đúng: chụp ảnh màn hình vòng tay, chọn ảnh đó ở **Ảnh của bạn**, đặt **Giờ** là **Ẩn**, rồi bấm **Chỉ đặt làm ảnh xem trước** (không cài gì lên vòng tay). **Bỏ ảnh xem trước đã đặt** để xóa ảnh này.

@@ -37,7 +37,7 @@ mkdir -p "$CONTENTS/MacOS" "$RES" "$WORK"
 
 echo "==> Biên dịch phần Swift ($ARCH)"
 xcrun swiftc -swift-version 5 -O -target "$ARCH-apple-macos12.0" \
-  -framework AppKit -framework WebKit -framework ServiceManagement -framework UserNotifications \
+  -framework AppKit -framework WebKit -framework ServiceManagement -framework UserNotifications -framework MapKit \
   "$SRC"/Sources/*.swift -o "$CONTENTS/MacOS/MiBand6"
 
 echo "==> Info.plist và biểu tượng"

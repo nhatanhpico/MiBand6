@@ -36,7 +36,8 @@ HEALTH_PATH = "/app/v1/source/get_source_list"
 REGIONS = ["sg", "", "de", "us", "i2", "ru", "in"]
 KEY_FIELDS = ["encrypt_key", "encryptKey", "auth_key", "authKey", "huamiAuthKey", "token"]
 HEX32 = re.compile(r"^(?:0x)?([0-9a-fA-F]{32})$")
-SESSION_MAX_AGE = 12 * 3600
+ENV_SESSION = "MIBAND6_XIAOMI_SESSION"   # phiên đăng nhập lưu thêm trong .env (nếu dùng .env)
+ENV_FILE: Path | None = None              # server đặt khi khởi động: tệp .env đang dùng
 
 
 class LoginError(Exception):
@@ -184,33 +185,93 @@ class XiaomiLogin:
         self.service_token: str | None = None
         self.user_id: str | None = None
         self.c_user_id: str | None = None
+        self.pass_token: str | None = None   # để đổi lấy serviceToken mới khi token cũ hết hạn, không cần quét QR
+        self._renewed = False
 
     # ---------------------------------------------------- lưu phiên để khỏi quét lại
+    def _session_data(self) -> dict:
+        return dict(ssecurity=self.ssecurity, service_token=self.service_token, user_id=self.user_id,
+                    c_user_id=self.c_user_id, pass_token=self.pass_token, device_id=self.device_id, saved=time.time())
+
     def save(self) -> None:
+        """Lưu phiên (chỉ tài khoản của bạn đọc được): tệp trong thư mục cache, và trong .env nếu đang dùng .env."""
+        data = self._session_data()
         p = cache_path()
         p.parent.mkdir(parents=True, exist_ok=True)
-        data = dict(ssecurity=self.ssecurity, service_token=self.service_token, user_id=self.user_id,
-                    c_user_id=self.c_user_id, saved=time.time())
         p.write_text(json.dumps(data))
         os.chmod(p, 0o600)
+        encoded = base64.urlsafe_b64encode(json.dumps(data, separators=(",", ":")).encode()).decode()
+        os.environ[ENV_SESSION] = encoded
+        if ENV_FILE is not None:
+            from .envfile import write_env_value
+
+            try:
+                write_env_value(ENV_FILE, ENV_SESSION, encoded)
+            except OSError:
+                pass
 
     def load(self) -> bool:
+        """Phiên đã lưu (tệp cache, nếu không có thì từ biến môi trường / .env). Không giới hạn tuổi: token
+        bị từ chối thì request() tự đổi passToken lấy token mới, không được thì mới phải đăng nhập lại."""
+        d = None
         try:
             d = json.loads(cache_path().read_text())
         except (OSError, ValueError):
-            return False
-        if time.time() - d.get("saved", 0) > SESSION_MAX_AGE or not d.get("service_token"):
+            raw = os.environ.get(ENV_SESSION)
+            if raw:
+                try:
+                    d = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+                except (ValueError, TypeError):
+                    d = None
+        if not isinstance(d, dict) or not d.get("service_token") or not d.get("ssecurity"):
             return False
         self.ssecurity, self.service_token = d["ssecurity"], d["service_token"]
         self.user_id, self.c_user_id = d.get("user_id"), d.get("c_user_id")
+        self.pass_token = d.get("pass_token")
+        if d.get("device_id"):
+            self.device_id = d["device_id"]
+            for dom in ("xiaomi.com", "mi.com"):
+                self.s.cookies.set("deviceId", self.device_id, domain=dom)
         return True
 
     @staticmethod
     def forget() -> None:
+        """Đăng xuất: xóa phiên ở tệp cache và trong .env."""
         try:
             cache_path().unlink()
         except OSError:
             pass
+        os.environ.pop(ENV_SESSION, None)
+        if ENV_FILE is not None and ENV_FILE.is_file():
+            from .envfile import write_env_value
+
+            try:
+                write_env_value(ENV_FILE, ENV_SESSION, "")
+            except OSError:
+                pass
+
+    def renew(self) -> bool:
+        """Đổi passToken lấy serviceToken mới (như app Mi Fitness làm khi token bị từ chối), không cần quét QR.
+
+        Theo mô tả của dự án mifit: GET serviceLogin kèm cookie userId, passToken, deviceId; kết quả giống lúc
+        quét QR xong (ssecurity, location) rồi lấy serviceToken ở location. Lưu lại phiên mới nếu thành công."""
+        if getattr(self, "_renewed", False) or not (getattr(self, "pass_token", None) and self.user_id):
+            return False
+        self._renewed = True
+        try:
+            r = self.requests.get(f"{ACCOUNT}/pass/serviceLogin", params={"sid": SID, "_json": "true"},
+                                  cookies={"userId": str(self.user_id), "passToken": self.pass_token,
+                                           "deviceId": self.device_id},
+                                  headers={"User-Agent": UA}, allow_redirects=False, timeout=20)
+            data = parse_json(r.text)
+            if not data.get("ssecurity") or not data.get("location"):
+                return False
+            self.pass_token = data.get("passToken") or self.pass_token
+            self._finish(data)
+        except (LoginError, self.requests.exceptions.RequestException):
+            return False
+        self.save()
+        return True
 
     # ---------------------------------------------------- chung
     def _cookie(self, name: str, prefer: str = "io.mi.com") -> str | None:
@@ -226,6 +287,7 @@ class XiaomiLogin:
         return d
 
     def _finish(self, data: dict) -> None:
+        self.pass_token = data.get("passToken") or self.pass_token
         self.ssecurity = data.get("ssecurity")
         self.user_id = str(data.get("userId") or "") or None
         self.c_user_id = data.get("cUserId")
@@ -243,6 +305,7 @@ class XiaomiLogin:
                 break
         self.c_user_id = self.c_user_id or self._cookie("cUserId")
         self.user_id = self.user_id or self._cookie("userId")
+        self.pass_token = self.pass_token or self._cookie("passToken", prefer="account.xiaomi.com")
         if not self.service_token:
             raise LoginError(tr('Không nhận được serviceToken sau khi đăng nhập.'))
         if not self.c_user_id:
@@ -433,6 +496,9 @@ class XiaomiLogin:
         else:
             headers["Content-Type"] = "application/x-www-form-urlencoded"
             r = self.requests.post(url, params=params, cookies=cookies, headers=headers, timeout=20)
+        if r.status_code == 401 and self.renew():
+            # token hết hạn: đã đổi passToken lấy token mới, gửi lại một lần (ký lại bằng khóa phiên mới)
+            return self.request(host, path, plain, method=method, sign_path=sign_path, variant=variant, region=region)
         if r.status_code != 200:
             return r.status_code, None
         try:
@@ -630,7 +696,8 @@ def fetch_sport_records(login: XiaomiLogin, start_s: int, end_s: int, regions: l
                     except ValueError:
                         continue
                 if isinstance(value, dict):
-                    records.append(value)
+                    # mã nguồn (sid) và vùng máy chủ: cần để tải lộ trình GPS; chỉ lưu trên máy
+                    records.append({**value, "_sid": entry.get("sid"), "_region": region})
             if not body.get("has_more") or not body.get("next_key") or body.get("next_key") == next_key:
                 break
             next_key = body["next_key"]
@@ -639,6 +706,70 @@ def fetch_sport_records(login: XiaomiLogin, start_s: int, end_s: int, regions: l
         if records:
             return records, trail
     return [], trail
+
+
+GPS_LINK_PATH = "/healthapp/service/gen_download_url"
+GPS_LINK_SIGN = "/service/gen_download_url"
+FDS_IV = b"1234567887654321"
+
+
+def _b64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(text: str) -> bytes:
+    core = text.strip().rstrip("=")
+    return base64.urlsafe_b64decode(core + "=" * (-len(core) % 4))
+
+
+def gps_file_suffix(sid: str, report_time: int, tz15: int, proto: int, file_type: int = 2) -> str:
+    """Tên tệp chi tiết buổi tập trên máy chủ: base64url(thời điểm, múi giờ, kiểu) _ base64url(sha1(sid))."""
+    flags = ((1 << 7) + (proto << 2) + file_type) & 0xFF
+    key = struct.pack("<Ib", report_time, tz15) + bytes([flags])
+    return f"{_b64url(key)}_{_b64url(hashlib.sha1(sid.encode('utf-8')).digest())}"
+
+
+def decrypt_fds(body: bytes, key_b64: str) -> bytes:
+    """Giải mã tệp tải từ kho tệp của Xiaomi: base64url (có thể nằm trong chuỗi JSON), AES-CBC, IV cố định."""
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    text = body.decode("ascii").strip()
+    if text.startswith('"'):
+        text = json.loads(text)
+    data = _b64url_decode(text)
+    key = _b64url_decode(key_b64)
+    if not data or len(data) % 16 or len(key) not in (16, 24, 32):
+        raise ValueError(tr('Tệp lộ trình không giải mã được.'))
+    dec = Cipher(algorithms.AES(key), modes.CBC(FDS_IV)).decryptor()
+    padded = dec.update(data) + dec.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    return unpadder.update(padded) + unpadder.finalize()
+
+
+def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, proto: int,
+                   region: str = "sg") -> bytes | None:
+    """Tệp lộ trình GPS (đã giải mã) của một buổi tập trong tài khoản Mi Fitness; None nếu buổi đó không có.
+
+    Cách gọi theo mô tả của dự án mifit: một yêu cầu ký lấy đường dẫn tải và khóa, rồi tải tệp (không kèm
+    cookie). Ném SessionExpired nếu phiên đăng nhập hết hạn."""
+    suffix = gps_file_suffix(sid, report_time, tz15, proto)
+    host = f"{region}.hlth.io.mi.com" if region else "hlth.io.mi.com"
+    data = {"did": sid, "items": [{"timestamp": report_time, "suffix": suffix}]}
+    status, res = login.request(host, GPS_LINK_PATH, {"data": json.dumps(data, separators=(",", ":"))},
+                                method="GET", sign_path=GPS_LINK_SIGN, region=region)
+    if status == 401:
+        raise SessionExpired(tr('Phiên đăng nhập Xiaomi đã hết hạn.'))
+    if not isinstance(res, dict) or res.get("code", 0) != 0 or not isinstance(res.get("result"), dict):
+        detail = f"HTTP {status}" if res is None else f"code {res.get('code')}"
+        raise LoginError(tr('Máy chủ Mi Fitness không trả đường dẫn tải lộ trình ({detail}).', detail=detail))
+    entry = res["result"].get(f"{suffix}_{report_time}")
+    if not isinstance(entry, dict) or not entry.get("obj_key") or not isinstance(entry.get("url"), str):
+        return None   # buổi tập không có tệp lộ trình
+    r = login.requests.get(entry["url"], timeout=30, allow_redirects=False)
+    if r.status_code != 200:
+        raise LoginError(tr('Không tải được tệp lộ trình (HTTP {status}).', status=r.status_code))
+    return decrypt_fds(r.content, entry["obj_key"])
 
 
 def _date(value) -> dt.date | None:
@@ -672,9 +803,13 @@ def _number(value) -> float | None:
 def profile_for_band(raw: dict) -> dict:
     """Hồ sơ Mi Fitness → giá trị cho vòng tay: alias, birth, gender, height, weight, goal (chỉ trường hợp lệ)."""
     out: dict = {}
-    name = str(raw.get("name") or raw.get("nickname") or "").strip()
-    if name:
-        out["alias"] = name[:32]
+    # trường "name" của hồ sơ sức khỏe thường là mã tài khoản Xiaomi (dãy số) khi người dùng chưa đặt tên:
+    # ưu tiên biệt danh, và không bao giờ dùng một dãy số làm tên
+    for key in ("nickname", "nick_name", "nickName", "name"):
+        name = str(raw.get(key) or "").strip()
+        if name and not name.isdigit():
+            out["alias"] = name[:32]
+            break
     birth = _date(raw.get("birth") or raw.get("birthday"))
     if birth and dt.date(1900, 1, 1) <= birth <= dt.date.today():
         out["birth"] = birth.isoformat()

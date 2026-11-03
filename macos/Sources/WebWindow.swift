@@ -3,8 +3,10 @@ import WebKit
 
 /// Cửa sổ chính: hiện giao diện web của server trong WKWebView. Đóng cửa sổ chỉ ẩn nó đi,
 /// ứng dụng (và kết nối Bluetooth) vẫn chạy trên thanh menu.
-final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
+                                  WKDownloadDelegate, WKScriptMessageHandler {
     var onClose: (() -> Void)?
+    private var mapWindows: [RouteMapWindowController] = []
     private let webView: WKWebView
     private var serverURL: URL?
     private var downloads: [ObjectIdentifier: URL] = [:]
@@ -12,6 +14,8 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
     init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // giữ localStorage (ngôn ngữ đã chọn) giữa các lần mở
+        let contentController = WKUserContentController()
+        config.userContentController = contentController
         webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")   // không chớp nền trắng khi tải trang
         if #available(macOS 13.3, *) { webView.isInspectable = true }
@@ -32,6 +36,8 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
         window.delegate = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        // trang web gọi window.webkit.messageHandlers.routeMap.postMessage(...) để mở bản đồ Apple Maps
+        contentController.add(WeakMessageHandler(self), name: "routeMap")
         showMessage(t("Đang khởi động…"))
     }
 
@@ -60,6 +66,18 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
     private func isServer(_ url: URL) -> Bool {
         guard let serverURL, let host = url.host else { return false }
         return ["127.0.0.1", "localhost"].contains(host) && url.port == serverURL.port
+    }
+
+    // MARK: bản đồ lộ trình (Apple Maps)
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "routeMap", let body = message.body as? [String: Any],
+              let controller = RouteMapWindowController(body: body) else { return }
+        controller.onClose = { [weak self, weak controller] in
+            self?.mapWindows.removeAll { $0 === controller }
+        }
+        mapWindows.append(controller)
+        controller.show()
     }
 
     // MARK: NSWindowDelegate
@@ -164,5 +182,18 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloads.removeValue(forKey: ObjectIdentifier(download))
+    }
+}
+
+/// WKUserContentController giữ handler bằng tham chiếu mạnh; lớp trung gian này tránh vòng tham chiếu.
+final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var target: WKScriptMessageHandler?
+
+    init(_ target: WKScriptMessageHandler) {
+        self.target = target
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(controller, didReceive: message)
     }
 }
