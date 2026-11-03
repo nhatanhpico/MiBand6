@@ -785,3 +785,123 @@ class DeviceInfo:
     software: str = ""
     protocol: str = ""
     extra: dict = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Lấy dữ liệu sức khỏe lưu trên vòng tay (Gadgetbridge: AbstractFetchOperation)
+#
+#   → 0x0004  01 <loại> <từ lúc: năm(2) tháng ngày giờ phút> 00 <múi giờ>
+#   ← 0x0004  10 01 01 <số byte(4)> <mốc bắt đầu: năm(2) tháng ngày giờ phút giây> [múi giờ]
+#   → 0x0004  02
+#   ← 0x0005  <số thứ tự gói> <dữ liệu…>   (nhiều gói)
+#   ← 0x0004  10 02 01 [crc32]
+#
+# Không gửi lệnh xác nhận 03: lệnh đó khiến vòng tay coi dữ liệu là đã đồng bộ, và Mi Fitness
+# sẽ không nhận được nữa. Lần sau chỉ cần hỏi từ mốc thời gian đã lấy tới.
+# ---------------------------------------------------------------------------
+
+CHAR_FETCH = _huami("0004")
+CHAR_ACTIVITY_DATA = _huami("0005")
+
+FETCH_ACTIVITY = 0x01        # mỗi phút 8 byte: loại, cường độ, bước, nhịp tim, ?, ngủ, ngủ sâu, REM
+FETCH_SPORTS_SUMMARY = 0x05  # tóm tắt một buổi tập mỗi lần lấy
+FETCH_PAI = 0x0D
+FETCH_STRESS_MANUAL = 0x12
+FETCH_STRESS_AUTO = 0x13
+FETCH_SPO2 = 0x25
+FETCH_CMD_START = 0x01
+FETCH_CMD_DATA = 0x02
+
+
+def _tz_quarters(t: _dt.datetime) -> int:
+    offset = t.utcoffset() or _dt.timedelta(0)
+    return int(offset.total_seconds() // 900)
+
+
+def fetch_start(data_type: int, since: _dt.datetime) -> bytes:
+    """Lệnh bắt đầu lấy dữ liệu loại `data_type` từ thời điểm `since` (làm tròn xuống phút)."""
+    since = since.astimezone()  # giờ địa phương của máy, như Gadgetbridge
+    return bytes([FETCH_CMD_START, data_type, since.year & 0xFF, since.year >> 8, since.month, since.day,
+                  since.hour, since.minute, 0, _tz_quarters(since) & 0xFF])
+
+
+def decode_fetch_start(data: bytes) -> tuple[int, _dt.datetime | None]:
+    """Phản hồi lệnh bắt đầu: (số byte vòng tay sẽ gửi, mốc thời gian của byte đầu tiên).
+
+    ValueError nếu vòng tay từ chối."""
+    data = bytes(data)
+    if len(data) < 3 or data[0] != 0x10 or data[1] != FETCH_CMD_START:
+        raise ValueError(tr('Phản hồi lấy dữ liệu không hợp lệ: {data}', data=data.hex(" ")))
+    if data[2] != 0x01:
+        raise ValueError(tr('Vòng tay từ chối lấy dữ liệu (mã {code:#04x}).', code=data[2]))
+    if len(data) < 14:
+        return 0, None
+    length = int.from_bytes(data[3:7], "little")
+    year = data[7] | (data[8] << 8)
+    try:
+        start = _dt.datetime(year, data[9], data[10], data[11], data[12], data[13])
+    except ValueError:
+        return length, None
+    if len(data) >= 15:
+        q = data[14] - 256 if data[14] > 127 else data[14]
+        start = start.replace(tzinfo=_dt.timezone(_dt.timedelta(minutes=15 * q)))
+    else:
+        start = start.astimezone()
+    return length, start
+
+
+def is_fetch_done(data: bytes) -> bool | None:
+    """Phản hồi lệnh 02: True khi gửi xong, False khi lỗi, None nếu không phải phản hồi này."""
+    data = bytes(data)
+    if len(data) >= 3 and data[0] == 0x10 and data[1] == FETCH_CMD_DATA:
+        return data[2] == 0x01
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Cài mặt đồng hồ (Gadgetbridge: UpdateFirmwareOperation2020, MiBand6FirmwareInfo)
+#
+#   (mặt đồng hồ UIHH) → lệnh cấu hình 39 00 <cỡ tệp(4)> <tệp[18:22]>
+#   → 1531 d0                       ← 10 d0 01 .. <cỡ khối(2)>
+#   → 1531 d2 <thông tin tệp>        ← 10 d2 01
+#   → 1531 d3 01                     ← 10 d3 01
+#   → 1532 <một khối dữ liệu>        ← 10 d4 <đã nhận(4)>   (lặp tới hết tệp)
+#   → 1531 d5                        ← 10 d5 01
+#   → 1531 d6                        ← 10 d6 01
+# ---------------------------------------------------------------------------
+
+SVC_FIRMWARE = _huami("1530")
+CHAR_FW_CONTROL = _huami("1531")
+CHAR_FW_DATA = _huami("1532")
+FW_REQUEST_PARAMS = 0xD0
+FW_SEND_INFO = 0xD2
+FW_START_TRANSFER = 0xD3
+FW_PROGRESS = 0xD4
+FW_COMPLETE = 0xD5
+FW_FINALIZE = 0xD6
+FW_TYPE_WATCHFACE = 8
+FW_ERR_LOW_BATTERY = 0x22
+FW_ERR_FREE_SPACE = 0x47
+WATCHFACE_MAX_SIZE = 4 * 1024 * 1024
+
+
+def check_watchface(data: bytes) -> None:
+    """ValueError nếu không phải tệp mặt đồng hồ Mi Band 6 (định dạng UIHH, như Gadgetbridge kiểm tra)."""
+    if len(data) < 32 or not data.startswith(b"UIHH") or data[4] not in (1, 2):
+        raise ValueError(tr('Tệp không phải mặt đồng hồ Mi Band 6 (cần tệp .bin bắt đầu bằng "UIHH").'))
+    if len(data) > WATCHFACE_MAX_SIZE:
+        raise ValueError(tr('Tệp mặt đồng hồ quá lớn.'))
+
+
+def watchface_prepare(data: bytes) -> bytes:
+    """Lệnh cấu hình báo trước kích thước và mã của mặt đồng hồ UIHH."""
+    return bytes([0x39, 0x00]) + len(data).to_bytes(4, "little") + bytes(data[18:22])
+
+
+def firmware_info(fw_type: int, data: bytes, chunk_length: int) -> bytes:
+    import zlib
+
+    size = len(data).to_bytes(4, "little")
+    crc = (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little")
+    return (bytes([FW_SEND_INFO, fw_type]) + size + crc + (chunk_length & 0xFFFF).to_bytes(2, "little")
+            + bytes([0, 0, 1]) + size)   # cập nhật ở tiền cảnh, chỉ số 0, tổng 1 tệp, tổng kích thước

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import contextlib
 import dataclasses
 import datetime as dt
@@ -28,11 +29,14 @@ from urllib.parse import urlparse
 
 from aiohttp import WSMsgType, web
 
+from .. import health as H
 from .. import protocol as P
+from .. import watchface as WF
 from ..config import Store
 from ..envfile import env_settings, load_env
 from ..i18n import set_lang, tr
-from ..device import PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError, MiBand6, scan
+from ..device import PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError, MiBand6, MiBandError, scan
+from ..healthdb import HealthDB, db_path
 from .cloud import CloudSync
 
 STATIC = Path(__file__).parent / "static"
@@ -42,6 +46,11 @@ SERVER_ID = "miband6-manager"          # /api/meta trả về, để nhận ra s
 READY_PREFIX = "MIBAND6_READY"         # dòng stdout báo địa chỉ cho ứng dụng macOS (chế độ --app)
 RECONNECT_DELAYS = (2, 5, 10, 20, 30, 60)   # giây chờ trước mỗi lần tự kết nối lại; lần sau cùng lặp mãi
 MAX_AUTH_FAILURES = 3                  # vòng tay từ chối xác thực ngần này lần liền thì thôi tự kết nối lại
+HEALTH_SYNC_EVERY = 30 * 60            # giây giữa hai lần tự đồng bộ dữ liệu sức khỏe khi đang kết nối
+FIRST_SYNC_DAYS = 30                   # lần đồng bộ đầu tiên lấy tối đa chừng này ngày (vòng tay giữ cỡ đó)
+CLOUD_PROFILE_EVERY = 12 * 3600        # tự lấy lại hồ sơ Mi Fitness (nếu còn phiên đăng nhập) sau chừng này giây
+MAX_UPLOAD = 12 * 1024 * 1024          # cỡ tối đa của yêu cầu (tệp mặt đồng hồ + ảnh, dạng base64)
+IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif"}
 
 
 def jsonable(o):
@@ -102,6 +111,12 @@ class BandService:
         self.reconnect: dict | None = None      # {"attempt": n, "at": epoch} khi đang chờ hoặc đang thử nối lại
         self.reconnect_delays = RECONNECT_DELAYS
         self._reconnect_task: asyncio.Task | None = None
+        # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
+        self.auto_health = True
+        self.health_status: dict = {"state": "idle"}
+        self._health_task: asyncio.Task | None = None
+        self._dbs: dict[str, HealthDB] = {}
+        self.watchface_busy = False
         self.cloud = CloudSync(self, demo=demo, **({"login_factory": login_factory} if login_factory else {}))
 
     # ------------------------------------------------------------ tiện ích
@@ -166,6 +181,8 @@ class BandService:
             "last_device": self.store.data.get("last_device") or self.env_address,
             "env_key": bool(self.env_key),
             "reconnect": None if self.connected else self.reconnect,
+            "health": self.health_status,
+            "watchface": self.settings.get("watchface"),
             "cloud": self.cloud.status,
         }
 
@@ -181,6 +198,7 @@ class BandService:
     def on_event(self, kind: str, data) -> None:
         if kind == "disconnected":
             self._stop_beep = True
+            self._cancel_health()
             if self.busy:  # rớt giữa lúc đang kết nối: lỗi đã được báo qua kết quả của lần kết nối đó
                 return
             reconnecting = self.want_connected and self.keep_connected and self._start_reconnect()
@@ -300,6 +318,191 @@ class BandService:
                 await job()
             except Exception as e:  # noqa: BLE001
                 self.log(tr('Lỗi khi đọc dữ liệu: {e}', e=e))
+        # hồ sơ từ Mi Fitness: tự lấy lại nếu còn phiên đăng nhập (không hiện mã QR khi chạy ngầm)
+        if not self.demo and time.time() - float(self.profile.get("cloud_at") or 0) > CLOUD_PROFILE_EVERY:
+            self.cloud.start(write=True, interactive=False)
+        if self.auto_health and self.band is band and self.connected:
+            self.start_health_sync()
+            self._spawn(self._periodic_health(band))
+
+    # ------------------------------------------------------------ dữ liệu sức khỏe
+    def health_db(self) -> HealthDB | None:
+        address = self.device_meta.get("address") or self.store.data.get("last_device") or self.env_address
+        if not address:
+            return None
+        if address not in self._dbs:
+            self._dbs[address] = HealthDB(db_path(self.store.path.parent, address))
+        return self._dbs[address]
+
+    def _set_health(self, **status) -> None:
+        db = self.health_db()
+        self.health_status = {**status, "last_sync": db.last("last_sync") if db else None}
+        self.push({"type": "health", "status": self.health_status})
+
+    def start_health_sync(self) -> dict:
+        self.require()
+        if not (self._health_task and not self._health_task.done()):
+            self._health_task = asyncio.ensure_future(self._sync_health(self.band))
+        return self.health_status
+
+    def _cancel_health(self) -> None:
+        if self._health_task and not self._health_task.done():
+            self._health_task.cancel()
+        if self.health_status.get("state") == "running":
+            self.health_status = {**self.health_status, "state": "idle"}
+
+    async def _periodic_health(self, band: MiBand6) -> None:
+        while True:
+            await asyncio.sleep(HEALTH_SYNC_EVERY)
+            if self.band is not band or not self.connected:
+                return
+            self.start_health_sync()
+
+    HEALTH_JOBS = (
+        ("activity", P.FETCH_ACTIVITY),
+        ("stress_auto", P.FETCH_STRESS_AUTO),
+        ("stress_manual", P.FETCH_STRESS_MANUAL),
+        ("spo2", P.FETCH_SPO2),
+        ("pai", P.FETCH_PAI),
+        ("workouts", P.FETCH_SPORTS_SUMMARY),
+    )
+
+    @staticmethod
+    def _health_label(name: str) -> str:
+        return {"activity": tr('bước chân, nhịp tim và giấc ngủ'), "stress_auto": tr('căng thẳng'),
+                "stress_manual": tr('căng thẳng'), "spo2": "SpO2", "pai": "PAI",
+                "workouts": tr('các buổi tập')}.get(name, name)
+
+    async def _sync_health(self, band: MiBand6) -> None:
+        """Lấy dữ liệu mới từ vòng tay cho từng loại; dữ liệu vẫn còn trên vòng tay cho Mi Fitness."""
+        db = self.health_db()
+        errors = []
+        for name, kind in self.HEALTH_JOBS:
+            label = self._health_label(name)
+            self._set_health(state="running", step=label)
+            try:
+                await self._sync_one(band, db, name, kind)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - vòng tay không có loại dữ liệu này, mất gói…
+                errors.append(label)
+                self.log(tr('Không lấy được {label}: {e}', label=label, e=e or type(e).__name__))
+                if not self.connected:
+                    break
+        if self.connected:
+            db.set_last("last_sync", int(time.time()))
+        self._set_health(state="error" if errors and len(errors) == len(self.HEALTH_JOBS) else "done",
+                         errors=sorted(set(errors)))
+        self.push({"type": "health_data"})
+
+    async def _sync_one(self, band: MiBand6, db: HealthDB, name: str, kind: int) -> None:
+        now = time.time()
+        last = db.last(name)
+        since_ts = last if last is not None else now - FIRST_SYNC_DAYS * 86400
+        if name == "pai" and last is not None:
+            since_ts = last - 86400   # bản ghi PAI của hôm nay được vòng tay cập nhật suốt ngày
+        for _ in range(80):   # mỗi lượt vòng tay chỉ gửi một phần; lặp tới khi hết dữ liệu mới
+            start, data = await band.fetch_data(kind, dt.datetime.fromtimestamp(since_ts).astimezone())
+            if start is None or not data:
+                return
+            nxt = self._store_health(db, name, start, data)
+            if nxt is None or nxt <= since_ts:
+                return
+            db.set_last(name, nxt)
+            since_ts = nxt
+            if since_ts >= now:
+                return
+
+    @staticmethod
+    def _store_health(db: HealthDB, name: str, start: dt.datetime, data: bytes) -> int | None:
+        """Lưu một lượt dữ liệu; trả về mốc thời gian để lượt sau hỏi tiếp."""
+        if name == "activity":
+            rows = H.decode_activity(start, data)
+            db.add_activity(rows)
+            return rows[-1][0] + 60 if rows else None
+        if name == "stress_auto":
+            db.add_stress(H.decode_stress_auto(start, data), auto=True)
+            return int(start.timestamp()) + 60 * len(data)
+        if name == "workouts":
+            db.add_workout(H.decode_sport_summary(data, start))
+            return int(start.timestamp()) + 60
+        if name == "stress_manual":
+            rows = H.decode_stress_manual(data)
+            db.add_stress(rows, auto=False)
+        elif name == "spo2":
+            rows = H.decode_spo2(data)
+            db.add_spo2(rows)
+        elif name == "pai":
+            rows = H.decode_pai(data)
+            db.add_pai(rows)
+            rows = [(r["ts"],) for r in rows]
+        else:
+            return None
+        return max(r[0] for r in rows) + 60 if rows else None
+
+    def health_summary(self, date: str) -> dict | None:
+        db = self.health_db()
+        return db.summary(date) if db else None
+
+    # ------------------------------------------------------------ mặt đồng hồ
+    @property
+    def watchface_dir(self) -> Path:
+        return self.store.path.parent / "watchface"
+
+    async def install_watchface(self, name: str, data: bytes, preview: bytes | None) -> str:
+        band = self.require()
+        if self.watchface_busy:
+            raise ApiError(tr('Đang cài một mặt đồng hồ, chờ xong đã.'), 409)
+        try:
+            P.check_watchface(data)
+        except ValueError as e:
+            raise ApiError(str(e)) from e
+        self._cancel_health()   # nhường kênh Bluetooth cho việc cài; lần đồng bộ sau sẽ lấy tiếp
+        self.watchface_busy = True
+        last_pct = [-1]
+
+        def progress(sent: int, total: int) -> None:
+            pct = sent * 100 // total
+            if pct != last_pct[0]:
+                last_pct[0] = pct
+                self.push({"type": "watchface_progress", "data": {"sent": sent, "total": total}})
+
+        self.push({"type": "watchface_progress", "data": {"sent": 0, "total": len(data)}})
+        try:
+            await band.upload_watchface(data, progress)
+        except MiBandError as e:
+            raise ApiError(str(e), 502) from e
+        except asyncio.TimeoutError as e:
+            raise ApiError(tr('Vòng tay không phản hồi khi cài mặt đồng hồ.'), 504) from e
+        finally:
+            self.watchface_busy = False
+        self.watchface_dir.mkdir(parents=True, exist_ok=True)
+        (self.watchface_dir / "current.bin").write_bytes(data)
+        info = {"name": name[:120], "size": len(data), "installed": int(time.time()), "preview": False}
+        if preview is not None:
+            (self.watchface_dir / "preview").write_bytes(preview)
+            info.update(preview=True, version=int(time.time()))
+        elif (self.watchface_dir / "preview").exists():
+            (self.watchface_dir / "preview").unlink()
+        self.settings["watchface"] = info
+        self.store.save()
+        self.push_state()
+        return tr('Đã cài mặt đồng hồ lên vòng tay.')
+
+    def set_watchface_preview(self, preview: bytes | None) -> None:
+        """Ảnh xem trước của mặt đồng hồ đang dùng (vòng tay không cho đọc mặt đồng hồ hiện tại)."""
+        info = dict(self.settings.get("watchface") or {})
+        path = self.watchface_dir / "preview"
+        if preview is None:
+            path.unlink(missing_ok=True)
+            info["preview"] = False
+        else:
+            self.watchface_dir.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(preview)
+            info.update(preview=True, version=int(time.time()))
+        self.settings["watchface"] = info
+        self.store.save()
+        self.push_state()
 
     # ------------------------------------------------------------ giữ kết nối
     def start(self) -> None:
@@ -395,6 +598,7 @@ class BandService:
         """Lưu hồ sơ lấy từ Mi Fitness; ghi vào vòng tay ngay nếu đang kết nối, nếu không thì khi kết nối."""
         self.profile.update(values)
         self.profile["pending_sync"] = True
+        self.profile["cloud_at"] = int(time.time())
         self.store.save()
         message = tr('Đã lấy hồ sơ từ Mi Fitness. Hồ sơ sẽ được ghi vào vòng tay khi kết nối.')
         if write and self.connected:
@@ -407,6 +611,7 @@ class BandService:
         """Người dùng chủ động ngắt: không tự kết nối lại nữa (kể cả khi đang chờ nối lại)."""
         self.want_connected = False
         self._cancel_reconnect()
+        self._cancel_health()
         if self.band:
             await self.band.disconnect()
         self.live = {}
@@ -583,7 +788,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             resp.set_cookie("mb6_token", lan_token, httponly=True, samesite="Strict", max_age=30 * 86400)
         return resp
 
-    app = web.Application(middlewares=[guard])
+    app = web.Application(middlewares=[guard], client_max_size=MAX_UPLOAD)
     r = app.router
     S = service
 
@@ -690,6 +895,78 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
         await S.require().find_band(on)
         return ok(message=tr('Vòng tay đang rung.') if on else tr('Đã dừng rung.'))
 
+    def b64(value) -> bytes:
+        text = str(value or "")
+        if text.startswith("data:") and "," in text:
+            text = text.split(",", 1)[1]
+        try:
+            return base64.b64decode(text, validate=True)
+        except ValueError as e:
+            raise ApiError(tr('Tệp gửi lên bị hỏng, chọn lại tệp.')) from e
+
+    def image(value) -> bytes:
+        data = b64(value)
+        if len(data) > 3 * 1024 * 1024:
+            raise ApiError(tr('Ảnh xem trước quá lớn (tối đa 3 MB).'))
+        if not any(data.startswith(m) for m in IMAGE_TYPES):
+            raise ApiError(tr('Ảnh xem trước phải là PNG, JPEG hoặc GIF.'))
+        return data
+
+    async def health_get(req):
+        date = req.query.get("date") or dt.date.today().isoformat()
+        try:
+            dt.date.fromisoformat(date)
+        except ValueError as e:
+            raise ApiError(tr('Ngày không hợp lệ.')) from e
+        return ok(health=S.health_summary(date), status=S.health_status)
+
+    async def health_sync(_):
+        return ok(status=S.start_health_sync())
+
+    async def watchface_post(req):
+        b = await body(req)
+        data = b64(b.get("file"))
+        preview = image(b["preview"]) if b.get("preview") else None
+        message = await S.install_watchface(str(b.get("name") or "watchface.bin"), data, preview)
+        return ok(message=message, state=S.state())
+
+    def rgba(value, max_w: int, max_h: int) -> tuple[int, int, bytes]:
+        if not isinstance(value, dict):
+            raise ApiError(tr('Thiếu dữ liệu ảnh.'))
+        w, h = int(value.get("w", 0)), int(value.get("h", 0))
+        if not (0 < w <= max_w and 0 < h <= max_h):
+            raise ApiError(tr('Kích thước ảnh không hợp lệ.'))
+        return w, h, b64(value.get("rgba"))
+
+    async def wallpaper_post(req):
+        """Tạo mặt đồng hồ từ ảnh nền đã cắt sẵn trên trình duyệt (152x486) rồi cài lên vòng tay."""
+        b = await body(req)
+        _w, _h, background = rgba(b.get("background"), WF.SCREEN_W, WF.SCREEN_H)
+        preview = rgba(b.get("preview"), WF.SCREEN_W, WF.SCREEN_H)
+        digits = [rgba(d, WF.SCREEN_W, 200) for d in b.get("digits") or []]
+        hours = tuple(int(v) for v in b["hours"]) if b.get("hours") else None
+        minutes = tuple(int(v) for v in b["minutes"]) if b.get("minutes") else None
+        try:
+            data = WF.wallpaper_face(background, preview, digits, hours, minutes)
+        except ValueError as e:
+            raise ApiError(tr('Không tạo được mặt đồng hồ: {e}', e=e)) from e
+        shot = image(b["image"]) if b.get("image") else None
+        message = await S.install_watchface(tr('Ảnh nền tùy chỉnh'), data, shot)
+        return ok(message=message, state=S.state())
+
+    async def watchface_preview_get(_):
+        path = S.watchface_dir / "preview"
+        if not path.is_file():
+            raise web.HTTPNotFound()
+        data = path.read_bytes()
+        ctype = next((t for magic, t in IMAGE_TYPES.items() if data.startswith(magic)), "application/octet-stream")
+        return web.Response(body=data, content_type=ctype, headers={"Cache-Control": "no-cache"})
+
+    async def watchface_preview_post(req):
+        b = await body(req)
+        S.set_watchface_preview(image(b["image"]) if b.get("image") else None)
+        return ok(state=S.state())
+
     async def find_phone_stop(_):
         S.stop_beep()
         return ok()
@@ -770,6 +1047,12 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/prefs", prefs_h)
     r.add_post("/api/devices/forget", forget_h)
     r.add_post("/api/log/clear", log_clear)
+    r.add_get("/api/health", health_get)
+    r.add_post("/api/health/sync", health_sync)
+    r.add_post("/api/watchface", watchface_post)
+    r.add_post("/api/wallpaper", wallpaper_post)
+    r.add_get("/api/watchface/preview", watchface_preview_get)
+    r.add_post("/api/watchface/preview", watchface_preview_post)
     r.add_get("/api/cloud", cloud_status)
     r.add_post("/api/cloud/sync", cloud_sync)
     r.add_post("/api/cloud/cancel", cloud_cancel)

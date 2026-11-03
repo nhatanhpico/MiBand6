@@ -24,6 +24,18 @@
 - 10 báo thức: đọc từ vòng tay, chỉnh sửa, lưu lại
 - Đồng bộ giờ với máy tính (tự làm mỗi lần kết nối)
 
+**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness)
+- Giấc ngủ: tổng thời gian, ngủ sâu / nông / REM / thức theo từng giờ, 14 ngày gần đây
+- Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
+- Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim)
+- Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
+- Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
+
+**Mặt đồng hồ và ảnh nền** (**Cài đặt → Màn hình**)
+- Cài mặt đồng hồ tùy chỉnh (tệp `.bin` dành cho Mi Band 6, bắt đầu bằng `UIHH`), kèm ảnh xem trước
+- Ảnh nền tùy chỉnh: chọn ảnh, kéo để di chuyển, phóng to; phần bị cắt hiện tối đi quanh khung màn hình vòng tay (152 × 486), bên cạnh là ảnh đúng như trên vòng tay. Chọn vị trí và màu giờ, rồi **Cài lên vòng tay**: ứng dụng tự dựng một mặt đồng hồ từ ảnh đó
+- Vòng tay không cho biết mặt đồng hồ đang dùng, nên hình vòng tay ở Tổng quan hiện ảnh của mặt đã cài qua ứng dụng (hoặc ảnh xem trước bạn tự đặt cho mặt có sẵn)
+
 **Giữ kết nối**
 - Tự kết nối lại khi vòng tay mất kết nối (ra khỏi vùng sóng, máy Mac ngủ dậy…), thử lại thưa dần tới mỗi phút một lần
 - Tự kết nối với vòng tay đã nhớ khi server khởi động
@@ -230,6 +242,8 @@ Vòng tay không cho đọc lại bố cục hiện tại, nên ứng dụng ch�
 | "Vòng tay không phản hồi bước xác thực" | Vòng tay có thể vẫn đang nối với điện thoại. Thử chọn kiểu xác thực "Kiểu mới". |
 | Lỗi quyền Bluetooth | Cấp quyền Bluetooth cho Terminal như mục trên. |
 | Đồng bộ Mi Fitness báo không đọc được hồ sơ | Bấm **Đăng nhập lại** và quét mã bằng đúng tài khoản Xiaomi của Mi Fitness. Vẫn lỗi thì chép các dòng "Mi Fitness:" trong Nhật ký Bluetooth gửi kèm khi báo lỗi. |
+| Trang Sức khỏe trống | Kết nối vòng tay rồi bấm **Đồng bộ**. Lần đầu lấy tối đa 30 ngày nên có thể mất một lúc; tiến độ hiện dưới tiêu đề trang. |
+| Mặt đồng hồ / ảnh nền cài không được | Sạc vòng tay (vòng tay từ chối khi pin yếu) và xóa bớt mặt đồng hồ trên vòng tay nếu báo hết chỗ. Chi tiết từng bước có trong **Nhật ký Bluetooth**. |
 | Một cài đặt không có tác dụng | Mở **Nhật ký Bluetooth** cuối trang **Thiết bị**, bấm **Tải về** để xem vòng tay trả lời gì. |
 | Vòng tay mất ứng dụng Cài đặt | Vào **Cài đặt → Ứng dụng**, bấm **Về bố cục gốc** rồi **Lưu bố cục**. |
 | Trình duyệt báo không mở được localhost:8766 | Server chưa chạy hoặc đã tắt: chạy lại `uv run miband6-web`. Nếu cổng bận, server tự dùng cổng kế tiếp; xem đường dẫn in trong Terminal. |
@@ -251,8 +265,9 @@ uv run miband6-cli info -v        # lấy địa chỉ và key từ .env
 
 ## Chưa hỗ trợ
 
-- Tải lịch sử hoạt động, giấc ngủ, nhịp tim theo ngày từ vòng tay (chỉ đọc số liệu hiện tại).
-- Cập nhật firmware, cài mặt đồng hồ, thời tiết, điều khiển nhạc.
+- Đọc cài đặt hiện tại của vòng tay (ngôn ngữ, kiểu giờ, chế độ ban đêm…): Mi Band 6 chỉ cho ghi, không cho đọc qua Bluetooth, và Mi Fitness không lưu chúng trên máy chủ. Mục chưa từng được ứng dụng ghi hiện nhãn **Chưa đồng bộ** và để trống thay vì đoán; chọn đúng giá trị rồi bấm Lưu một lần.
+- Biết mặt đồng hồ đang dùng, bật đo SpO2 hay căng thẳng từ máy tính (giao thức không có lệnh này).
+- Cập nhật firmware, thời tiết, điều khiển nhạc, đường đi GPS của buổi tập.
 
 ## Cấu trúc mã nguồn
 
@@ -266,6 +281,9 @@ src/miband6/
   envfile.py    Đọc auth key từ tệp .env
   i18n.py       Dịch thông báo của server (tiếng Việt / tiếng Anh)
   xiaomi_cloud.py  Đăng nhập Xiaomi (QR) và API Mi Fitness: danh sách thiết bị, hồ sơ người dùng
+  health.py     Giải mã dữ liệu sức khỏe lấy từ vòng tay (hoạt động, giấc ngủ, PAI, SpO2, căng thẳng, buổi tập)
+  healthdb.py   Lưu dữ liệu sức khỏe (SQLite) và tổng hợp cho trang Sức khỏe
+  watchface.py  Dựng tệp mặt đồng hồ Mi Band 6 từ ảnh nền tùy chỉnh
   cli.py        Công cụ dòng lệnh
   web/server.py Server web (aiohttp): REST API + WebSocket, dùng chung vòng lặp với Bluetooth
   web/cloud.py  Đồng bộ hồ sơ từ Mi Fitness chạy nền
@@ -291,4 +309,4 @@ Phần ECDH được đối chiếu với OpenSSL (sect163r2); hai kiểu xác t
 
 ## Ghi công
 
-Giao thức Bluetooth của vòng tay Huami/Xiaomi do cộng đồng dịch ngược; ứng dụng này tham khảo cách hoạt động của dự án [Gadgetbridge](https://gadgetbridge.org/). Ứng dụng không liên quan tới Xiaomi hay Zepp Health. Thay đổi cài đặt vòng tay bằng công cụ không chính thức là rủi ro của người dùng.
+Giao thức Bluetooth của vòng tay Huami/Xiaomi do cộng đồng dịch ngược; ứng dụng này tham khảo cách hoạt động của dự án [Gadgetbridge](https://gadgetbridge.org/) (lấy dữ liệu sức khỏe, cài mặt đồng hồ). Định dạng tệp mặt đồng hồ Mi Band 6 theo mô tả của dự án [watchface-js](https://github.com/Nadeflore/watchface-js); `watchface.py` là mã viết riêng, không chép mã của dự án đó. Ứng dụng không liên quan tới Xiaomi hay Zepp Health. Thay đổi cài đặt vòng tay bằng công cụ không chính thức là rủi ro của người dùng.

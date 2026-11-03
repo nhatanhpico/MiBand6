@@ -122,6 +122,22 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
         return nil
     }
 
+    /// Ô chọn tệp trong trang (mặt đồng hồ .bin, ảnh nền): WKWebView chỉ mở hộp thoại khi ứng dụng làm việc này.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        guard let window else {
+            completionHandler(nil)
+            return
+        }
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
     // MARK: WKDownloadDelegate (nút "Tải về" nhật ký Bluetooth)
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,

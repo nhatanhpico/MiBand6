@@ -45,6 +45,7 @@
     </div>
     <nav class="nav" id="nav" aria-label="Mục chính">
       <a href="#overview"><svg class="ic"><use href="#i-pulse"/></svg><span>Tổng quan</span></a>
+      <a href="#health"><svg class="ic"><use href="#i-heart"/></svg><span>Sức khỏe</span></a>
       <a href="#settings"><svg class="ic"><use href="#i-sliders"/></svg><span>Cài đặt</span></a>
       <a href="#alarms"><svg class="ic"><use href="#i-alarm"/></svg><span>Báo thức</span></a>
       <a href="#tools"><svg class="ic"><use href="#i-bell"/></svg><span>Công cụ</span></a>
@@ -82,9 +83,11 @@
 
       <div id="overviewBody" hidden>
         <div class="hero">
-          <figure class="hero-band" aria-label="Màn hình vòng tay">
-            <svg id="band" class="band" viewBox="0 0 140 400" role="img" aria-label="Vòng tay đang hiển thị giờ, nhịp tim, bước chân và pin">
+          <figure class="hero-band" aria-label="Mặt đồng hồ">
+            <div class="band-wrap">
+            <svg id="band" class="band" viewBox="0 0 140 400" aria-hidden="true">
               <defs>
+                <clipPath id="screenClip"><rect x="27" y="67" width="86" height="266" rx="43"/></clipPath>
                 <linearGradient id="strapTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2422" stop-opacity="0"/><stop offset="1" stop-color="#26302e"/></linearGradient>
                 <linearGradient id="strapBottom" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26302e"/><stop offset="1" stop-color="#1c2422" stop-opacity="0"/></linearGradient>
                 <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3b4644"/><stop offset=".18" stop-color="#151a19"/><stop offset=".82" stop-color="#151a19"/><stop offset="1" stop-color="#2c3533"/></linearGradient>
@@ -93,17 +96,13 @@
               <rect x="32" y="300" width="76" height="110" rx="22" fill="url(#strapBottom)"/>
               <rect x="20" y="60" width="100" height="280" rx="50" fill="url(#bodyGrad)" stroke="#45514e" stroke-width="1"/>
               <rect x="27" y="67" width="86" height="266" rx="43" fill="#000"/>
-              <text id="bTime" x="70" y="132" class="b-time">--:--</text>
-              <text id="bDate" x="70" y="151" class="b-small"></text>
-              <text id="bHr" x="70" y="190" class="b-hr">♥ --</text>
-              <circle cx="70" cy="236" r="24" class="b-ring-bg"/>
-              <circle id="bRing" cx="70" cy="236" r="24" class="b-ring" transform="rotate(-90 70 236)" stroke-dasharray="0 151"/>
-              <text id="bSteps" x="70" y="240.5" class="b-steps">--</text>
-              <text id="bBatText" x="70" y="285" class="b-small"></text>
-              <rect x="52" y="292" width="34" height="11" rx="3" class="b-bat-frame"/>
-              <rect x="87" y="295.5" width="2" height="4" rx="1" class="b-bat-tip"/>
-              <rect id="bBat" x="54" y="294" width="0" height="7" rx="1.5" class="b-bat"/>
+              <image id="wfImage" x="27" y="67" width="86" height="266" preserveAspectRatio="xMidYMid slice" clip-path="url(#screenClip)" style="display:none"/>
             </svg>
+            <div class="wf-empty" id="wfEmpty">
+              <p>Chưa có ảnh mặt đồng hồ</p>
+              <a href="#settings/display">Đặt ảnh</a>
+            </div>
+            </div>
           </figure>
           <div class="hero-stats">
             <p class="hero-label">Bước chân hôm nay</p>
@@ -116,6 +115,7 @@
               <div class="mini dist"><span class="mini-value"><span id="dist" class="num">—</span> km</span><span class="mini-label">Quãng đường</span></div>
               <div class="mini cal"><span class="mini-value"><span id="cal" class="num">—</span> kcal</span><span class="mini-label">Năng lượng</span></div>
             </div>
+            <a class="hero-link" href="#health/steps">Xem lịch sử bước chân</a>
           </div>
         </div>
 
@@ -154,10 +154,90 @@
       </div>
     </section>
 
+    <!-- ============================================================ Sức khỏe -->
+    <section class="page" id="page-health" hidden>
+      <header class="page-head">
+        <div>
+          <p class="date-line" id="hSyncLine" role="status"></p>
+          <h1>Sức khỏe</h1>
+        </div>
+        <div class="head-actions">
+          <div class="day-nav">
+            <button id="hPrev" class="btn ghost small" type="button" aria-label="Ngày trước">‹</button>
+            <input type="date" id="hDate" aria-label="Ngày">
+            <button id="hNext" class="btn ghost small" type="button" aria-label="Ngày sau">›</button>
+          </div>
+          <button id="hSyncBtn" class="btn" data-conn><svg class="ic"><use href="#i-refresh"/></svg><span>Đồng bộ</span></button>
+        </div>
+      </header>
+      <p class="banner info" id="hEmpty" hidden>Chưa có dữ liệu. Kết nối vòng tay rồi bấm Đồng bộ để lấy dữ liệu vòng tay đã lưu: giấc ngủ, nhịp tim, bước chân, PAI, căng thẳng, SpO2 và các buổi tập.</p>
+      <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
+
+      <div class="hgrid">
+        <article class="card wide" id="health-sleep">
+          <header class="card-head"><h2>Giấc ngủ</h2><p class="card-sub" id="slRange"></p></header>
+          <p class="card-value"><span id="slTotal" class="num">—</span></p>
+          <div class="chart" id="slChart"></div>
+          <ul class="legend" id="slLegend"></ul>
+          <h3 class="card-h3">14 ngày gần đây</h3>
+          <div class="chart" id="slHistory"></div>
+        </article>
+
+        <article class="card wide" id="health-steps">
+          <header class="card-head"><h2>Bước chân</h2><p class="card-sub" id="stSub"></p></header>
+          <p class="card-value"><span id="stTotal" class="num">—</span> <span class="unit">bước</span></p>
+          <div class="chart" id="stHourly"></div>
+          <h3 class="card-h3">Mọi ngày đã ghi</h3>
+          <div class="chart" id="stHistory"></div>
+          <details class="table-wrap">
+            <summary>Xem dạng bảng</summary>
+            <table class="data-table"><thead><tr><th>Ngày</th><th>Bước chân</th></tr></thead><tbody id="stTable"></tbody></table>
+          </details>
+        </article>
+
+        <article class="card" id="health-hr">
+          <header class="card-head"><h2>Nhịp tim</h2><p class="card-sub" id="hrSub"></p></header>
+          <dl class="stats" id="hrStats"></dl>
+          <div class="chart" id="hrChart"></div>
+        </article>
+
+        <article class="card" id="health-stress">
+          <header class="card-head"><h2>Căng thẳng</h2><p class="card-sub" id="ssSub"></p></header>
+          <dl class="stats" id="ssStats"></dl>
+          <div class="chart" id="ssChart"></div>
+        </article>
+
+        <article class="card" id="health-pai">
+          <header class="card-head"><h2>PAI</h2><p class="card-sub">Điểm hoạt động cá nhân trong 7 ngày; giữ trên 100 để tốt cho tim mạch.</p></header>
+          <dl class="stats" id="paiStats"></dl>
+          <div class="chart" id="paiChart"></div>
+        </article>
+
+        <article class="card" id="health-spo2">
+          <header class="card-head"><h2>SpO2</h2><p class="card-sub">Nồng độ oxy trong máu ở các lần đo.</p></header>
+          <dl class="stats" id="spStats"></dl>
+          <table class="data-table"><thead><tr><th>Lúc đo</th><th>SpO2</th><th>Cách đo</th></tr></thead><tbody id="spTable"></tbody></table>
+        </article>
+
+        <article class="card wide" id="health-workouts">
+          <header class="card-head"><h2>Tập luyện</h2><p class="card-sub">Các buổi tập ghi trên vòng tay.</p></header>
+          <table class="data-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th></tr></thead><tbody id="woTable"></tbody></table>
+        </article>
+
+        <article class="card wide" id="health-measure">
+          <header class="card-head"><h2>Đo tự động</h2></header>
+          <dl class="facts" id="measureFacts"></dl>
+          <p class="card-sub">Mi Band 6 chỉ đo SpO2 khi bạn mở mục SpO2 trên vòng tay và bấm đo (ứng dụng không bật đo SpO2 từ xa được); kết quả hiện ở thẻ SpO2 sau lần đồng bộ kế tiếp. Nhịp tim và căng thẳng thì vòng tay tự đo theo cài đặt.</p>
+          <div class="tile-actions"><a class="btn" href="#settings/health">Mở cài đặt đo</a></div>
+        </article>
+      </div>
+    </section>
+
     <!-- ============================================================ Cài đặt -->
     <section class="page" id="page-settings" hidden>
       <header class="page-head"><h1>Cài đặt</h1></header>
       <p class="banner info conn-hint" hidden>Kết nối vòng tay ở mục Thiết bị để lưu thay đổi.</p>
+      <p class="banner info" id="unsyncedNote" hidden>Mi Band 6 chỉ nhận cài đặt, không cho đọc lại qua Bluetooth, và Mi Fitness cũng không lưu chúng trên máy chủ. Mục có nhãn “Chưa đồng bộ” chưa từng được ứng dụng này ghi nên chưa biết giá trị trên vòng tay: chọn đúng giá trị (ví dụ giá trị đang dùng trên vòng tay) rồi bấm Lưu một lần, từ đó ứng dụng luôn hiện đúng.</p>
       <div class="subtabs" role="tablist" aria-label="Nhóm cài đặt">
         <button role="tab" data-sub="profile">Hồ sơ</button>
         <button role="tab" data-sub="display">Màn hình</button>
@@ -214,6 +294,50 @@
 
       <!-- Màn hình -->
       <div class="subpage" id="sub-display" role="tabpanel" hidden>
+        <div class="group" id="wfGroup">
+          <div class="group-head"><h2>Mặt đồng hồ</h2><p>Cài mặt đồng hồ tùy chỉnh (tệp .bin dành cho Mi Band 6). Vòng tay không cho biết mặt đồng hồ nào đang dùng, nên ảnh ở trang Tổng quan là ảnh xem trước bạn chọn ở đây.</p></div>
+          <div class="rows">
+            <div class="row"><span class="row-label">Đang dùng</span><output id="wfCurrent" class="muted">Không rõ</output></div>
+            <label class="row"><span class="row-label">Tệp mặt đồng hồ (.bin)</span><input type="file" id="wfFile" accept=".bin,application/octet-stream"></label>
+            <label class="row"><span class="row-label">Ảnh xem trước (PNG, JPEG, GIF)</span><input type="file" id="wfPreview" accept="image/png,image/jpeg,image/gif"></label>
+            <div class="row" id="wfProgressRow" hidden><span class="row-label">Đang cài lên vòng tay</span><span class="wf-progress"><span class="goal-bar"><span id="wfBar"></span></span><span id="wfPct" class="num">0%</span></span></div>
+          </div>
+          <div class="group-foot">
+            <button id="wfClearBtn" class="btn ghost" type="button">Bỏ ảnh xem trước</button>
+            <button id="wfPreviewBtn" class="btn" type="button">Chỉ đặt ảnh xem trước</button>
+            <button id="wfInstallBtn" class="btn primary" data-conn>Cài lên vòng tay</button>
+          </div>
+        </div>
+        <div class="group" id="wpGroup">
+          <div class="group-head"><h2>Ảnh nền tùy chỉnh</h2><p>Chọn một ảnh, kéo để di chuyển, dùng thanh trượt để phóng to. Phần sáng là phần hiện trên màn hình vòng tay (152 × 486 điểm ảnh); phần tối sẽ bị cắt bỏ. Ứng dụng tạo một mặt đồng hồ gồm ảnh này và giờ, rồi cài lên vòng tay.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Ảnh</span><input type="file" id="wpFile" accept="image/*"></label>
+          </div>
+          <div class="wp-editor" id="wpEditor" hidden>
+            <figure class="wp-stage-wrap">
+              <canvas id="wpStage" class="wp-stage" aria-label="Kéo để di chuyển ảnh"></canvas>
+              <figcaption>Kéo ảnh để chọn phần hiện trên vòng tay</figcaption>
+            </figure>
+            <figure class="wp-result-wrap">
+              <canvas id="wpResult" class="wp-result" width="152" height="486" aria-label="Ảnh nền trên vòng tay"></canvas>
+              <figcaption>Trên vòng tay</figcaption>
+            </figure>
+          </div>
+          <div class="rows" id="wpControls" hidden>
+            <label class="row"><span class="row-label">Phóng to</span><input type="range" id="wpZoom" min="0" max="300" value="0"></label>
+            <div class="row"><span class="row-label">Cách đặt ảnh</span>
+              <div class="seg"><input type="radio" name="wpFit" id="wpCover" value="cover" checked><label for="wpCover">Lấp đầy màn hình</label><input type="radio" name="wpFit" id="wpContain" value="contain"><label for="wpContain">Vừa trọn ảnh</label></div></div>
+            <div class="row"><span class="row-label">Giờ</span>
+              <div class="seg"><input type="radio" name="wpTime" id="wpTimeTop" value="top" checked><label for="wpTimeTop">Trên</label><input type="radio" name="wpTime" id="wpTimeMid" value="middle"><label for="wpTimeMid">Giữa</label><input type="radio" name="wpTime" id="wpTimeBottom" value="bottom"><label for="wpTimeBottom">Dưới</label><input type="radio" name="wpTime" id="wpTimeOff" value="off"><label for="wpTimeOff">Không hiện</label></div></div>
+            <div class="row"><span class="row-label">Màu chữ số</span>
+              <div class="seg"><input type="radio" name="wpColor" id="wpWhite" value="light" checked><label for="wpWhite">Trắng</label><input type="radio" name="wpColor" id="wpBlack" value="dark"><label for="wpBlack">Đen</label></div></div>
+          </div>
+          <div class="group-foot" id="wpFoot" hidden>
+            <button id="wpResetBtn" class="btn ghost" type="button">Căn giữa lại</button>
+            <button id="wpPreviewBtn" class="btn" type="button">Chỉ đặt làm ảnh xem trước</button>
+            <button id="wpInstallBtn" class="btn primary" data-conn>Cài lên vòng tay</button>
+          </div>
+        </div>
         <div class="group">
           <div class="group-head"><h2>Ngôn ngữ và định dạng</h2></div>
           <div class="rows">

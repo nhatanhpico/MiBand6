@@ -243,16 +243,18 @@ input.pin { width: 150px; text-align: center; letter-spacing: .45em; font-varian
 }
 .hero-band { margin: 0; }
 .band { display: block; width: 100%; max-width: 200px; height: auto; margin: 0 auto; }
-.b-time { font: 700 30px var(--font); fill: #fff; text-anchor: middle; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.b-small { font: 500 10.5px var(--font); fill: #8e9b97; text-anchor: middle; }
-.b-hr { font: 700 17px var(--font); fill: var(--coral); text-anchor: middle; }
-.b-steps { font: 700 12px var(--font); fill: var(--amber); text-anchor: middle; font-variant-numeric: tabular-nums; }
-.b-ring-bg { fill: none; stroke: #222826; stroke-width: 5; }
-.b-ring { fill: none; stroke: var(--amber); stroke-width: 5; stroke-linecap: round; transition: stroke-dasharray .9s var(--ease); }
-.b-bat-frame { fill: none; stroke: #5c6763; stroke-width: 1.2; }
-.b-bat-tip { fill: #5c6763; }
-.b-bat { fill: var(--mint); transition: width .6s var(--ease); }
-.b-bat.low { fill: var(--coral); }
+/* mặt đồng hồ thật (ảnh xem trước) đặt vào khung màn hình của hình vòng tay */
+.band-wrap { position: relative; max-width: 200px; margin: 0 auto; }
+.wf-empty {
+  position: absolute; left: 19.3%; right: 19.3%; top: 16.75%; bottom: 16.75%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 0 10px; text-align: center; font-size: 12px; line-height: 1.35; color: var(--muted);
+}
+.wf-empty a { color: var(--amber); font-weight: 600; }
+.hero-link { display: inline-block; margin-top: 16px; color: var(--amber); font-size: 14px; font-weight: 500; text-underline-offset: 3px; }
+.wf-progress { display: inline-flex; align-items: center; gap: 10px; width: 260px; }
+.wf-progress .goal-bar { flex: 1; }
+.wf-progress .num { color: var(--text); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
 
 .hero-label { color: var(--muted); font-size: 14.5px; }
 .hero-steps { margin: 2px 0 18px; }
@@ -535,3 +537,91 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .cloud-card .btn { grid-column: 1 / -1; justify-self: stretch; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+/* ================================================================ cài đặt chưa đồng bộ */
+.sync-badge {
+  display: inline-block; margin-left: 10px; padding: 2px 8px; border-radius: 999px; vertical-align: 2px;
+  font-size: 12px; font-weight: 600; background: rgba(255, 181, 71, .14); color: var(--amber);
+}
+.switch:indeterminate { background: var(--surface-3); }
+.switch:indeterminate::before { transform: translateX(9px); opacity: .5; }
+select:invalid, select.unknown { color: var(--muted); }
+
+/* ================================================================ sức khỏe */
+.head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.day-nav { display: inline-flex; align-items: center; gap: 4px; }
+.day-nav input { width: 150px; }
+.day-nav .btn { width: 34px; padding: 0; font-size: 18px; }
+.hnote { color: var(--muted); font-size: 13.5px; margin: -12px 0 18px; }
+.hgrid {
+  --c-deep: #3987e5; --c-light: #199e70; --c-rem: #9085e9; --c-awake: #d95926;
+  --c-steps: #c98500; --c-hr: #e66767; --c-stress: #9085e9; --c-pai: #199e70;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
+}
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 22px 20px; min-width: 0; }
+.card.wide { grid-column: 1 / -1; }
+.card-head h2 { font-size: 16.5px; font-weight: 600; letter-spacing: -.01em; }
+.card-sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.card-value { margin: 10px 0 6px; font-size: 15px; color: var(--muted); }
+.card-value .num { font-size: 38px; font-weight: 700; letter-spacing: -.03em; color: var(--text); }
+.card-h3 { font-size: 13.5px; font-weight: 600; color: var(--muted); margin: 18px 0 4px; }
+.chart { position: relative; width: 100%; min-height: 40px; margin-top: 6px; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart .grid { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .axis { fill: var(--muted); font: 400 11px var(--font); font-variant-numeric: tabular-nums; }
+.chart .hit { fill: transparent; cursor: default; }
+.chart .hit:focus { outline: none; }
+.chart .hit:focus-visible { stroke: var(--amber); stroke-width: 1.5; }
+.chart .mark { transition: opacity .15s; }
+.chart .dim .mark { opacity: .55; }
+.chart .sel { fill: rgba(255, 255, 255, .06); }
+.chart .crosshair { stroke: var(--line-strong); stroke-width: 1; }
+.chart .empty-msg { fill: var(--muted); font: 400 13px var(--font); text-anchor: middle; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; padding: 0; margin: 10px 0 0; font-size: 13.5px; color: var(--muted); }
+.legend li { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 26px; margin: 10px 0 4px; }
+.stats div { display: flex; flex-direction: column-reverse; }
+.stats dt { color: var(--muted); font-size: 12.5px; }
+.stats dd { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stats dd small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+.data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.data-table th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12.5px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.data-table td { padding: 8px; border-bottom: 1px solid var(--line); }
+.data-table tr:last-child td { border-bottom: 0; }
+.data-table td.none { color: var(--muted); text-align: center; padding: 18px 8px; }
+.table-wrap { margin-top: 10px; }
+.table-wrap summary { cursor: pointer; color: var(--amber); font-size: 14px; }
+.table-wrap .data-table { max-height: 320px; }
+#health-workouts .data-table, #health-spo2 .data-table { display: block; overflow-x: auto; }
+.chart-tip {
+  position: fixed; z-index: 50; pointer-events: none; min-width: 120px; padding: 8px 10px; border-radius: 10px;
+  background: #0c1110; border: 1px solid var(--line-strong); box-shadow: 0 8px 24px rgba(0, 0, 0, .45); font-size: 12.5px;
+}
+.chart-tip div { display: flex; align-items: baseline; gap: 8px; }
+.chart-tip strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.chart-tip span { color: var(--muted); }
+.chart-tip i { width: 10px; height: 2px; border-radius: 1px; display: inline-block; align-self: center; }
+@media (max-width: 1100px) {
+  .hgrid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .card { padding: 16px; }
+  .head-actions { justify-content: flex-start; }
+  .hnote { margin-top: -6px; }
+}
+
+/* ================================================================ ảnh nền tùy chỉnh */
+.wp-editor { display: flex; gap: 22px; align-items: flex-start; padding: 6px 22px 16px; flex-wrap: wrap; }
+.wp-editor figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.wp-editor figcaption { color: var(--muted); font-size: 13px; }
+.wp-stage { width: min(100%, 420px); height: 540px; border-radius: 14px; background: #0b100f; cursor: grab; touch-action: none; }
+.wp-stage.dragging { cursor: grabbing; }
+.wp-stage-wrap { flex: 1 1 320px; }
+.wp-result { width: 152px; height: 486px; border-radius: 76px; background: #000; box-shadow: 0 0 0 6px #151a19, 0 0 0 7px #45514e; }
+#wpControls input[type="range"] { width: 260px; accent-color: var(--amber); }
+@media (max-width: 760px) {
+  .wp-editor { padding: 6px 16px 16px; }
+  .wp-stage { height: 460px; }
+}

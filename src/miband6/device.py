@@ -77,6 +77,12 @@ class MiBand6:
         self._hr_ping_task: asyncio.Task | None = None
         self._find_task: asyncio.Task | None = None
         self._notifying: set[str] = set()
+        # lấy dữ liệu sức khỏe (kênh 0x0004/0x0005) và cài mặt đồng hồ (0x1531/0x1532): mỗi việc một lúc
+        self._fetch_lock = asyncio.Lock()
+        self._fetch_q: asyncio.Queue | None = None
+        self._fetch: dict | None = None
+        self._fw_lock = asyncio.Lock()
+        self._fw_q: asyncio.Queue | None = None
         self._closing = False
         self.authenticated = False
         # client thay thế (vòng tay giả lập) cũng báo khi rớt kết nối, giống disconnected_callback của BleakClient
@@ -125,7 +131,7 @@ class MiBand6:
         self.log(tr('← {uuid}  {data}  (đọc)', uuid=uuid[4:8], data=_hex(data)))
         return data
 
-    async def _notify(self, uuid: str, handler, service: str | None = None) -> bool:
+    async def _notify(self, uuid: str, handler, service: str | None = None, quiet: bool = False) -> bool:
         ch = self._char(uuid, service)
         if ch is None:
             return False
@@ -135,7 +141,8 @@ class MiBand6:
 
         def _cb(_sender, data: bytearray, _uuid=uuid, _h=handler):
             data = bytes(data)
-            self.log(f"← {_uuid[4:8]}  {_hex(data)}")
+            if not quiet:   # kênh dữ liệu sức khỏe gửi hàng nghìn gói: không ghi từng gói vào nhật ký
+                self.log(f"← {_uuid[4:8]}  {_hex(data)}")
             try:
                 _h(data)
             except Exception as e:
@@ -535,6 +542,156 @@ class MiBand6:
             await self.stop_call()
         except asyncio.CancelledError:
             pass
+
+    # ------------------------------------------------- dữ liệu sức khỏe lưu trên vòng tay
+
+    def _on_fetch_control(self, data: bytes) -> None:
+        if self._fetch_q is not None:
+            self._fetch_q.put_nowait(data)
+
+    def _on_fetch_data(self, data: bytes) -> None:
+        f = self._fetch
+        if f is None or not data:
+            return
+        f["last"] = asyncio.get_running_loop().time()
+        if data[0] != (f["counter"] + 1) & 0xFF:
+            f["ok"] = False   # mất gói: kết quả lần này không dùng được
+            return
+        f["counter"] = data[0]
+        f["buf"] += data[1:]
+
+    async def _fetch_reply(self, cmd: int, timeout: float) -> bytes:
+        while True:
+            r = await asyncio.wait_for(self._fetch_q.get(), timeout)
+            if len(r) >= 2 and r[0] == 0x10 and r[1] == cmd:
+                return r
+
+    async def fetch_data(self, data_type: int, since: _dt.datetime,
+                         timeout: float = 20.0) -> tuple[_dt.datetime | None, bytes]:
+        """Lấy dữ liệu loại `data_type` (P.FETCH_*) vòng tay lưu từ `since`: (mốc của byte đầu, dữ liệu).
+
+        Không gửi lệnh xác nhận, nên vòng tay vẫn giữ dữ liệu cho Mi Fitness. Kênh này tách khỏi kênh
+        cấu hình nên không giữ self._lock (cài đặt vẫn ghi được trong lúc đồng bộ)."""
+        if not (self.has(P.CHAR_FETCH) and self.has(P.CHAR_ACTIVITY_DATA)):
+            raise MiBandError(tr('Vòng tay không có kênh lấy dữ liệu sức khỏe.'))
+        async with self._fetch_lock:
+            loop = asyncio.get_running_loop()
+            self._fetch_q = asyncio.Queue()
+            self._fetch = {"counter": -1, "buf": bytearray(), "ok": True, "last": loop.time()}
+            try:
+                await self._notify(P.CHAR_FETCH, self._on_fetch_control)
+                await self._notify(P.CHAR_ACTIVITY_DATA, self._on_fetch_data, quiet=True)
+                await self._write(P.CHAR_FETCH, P.fetch_start(data_type, since))
+                length, start = P.decode_fetch_start(await self._fetch_reply(P.FETCH_CMD_START, timeout))
+                if not length or start is None:
+                    return None, b""
+                await self._write(P.CHAR_FETCH, bytes([P.FETCH_CMD_DATA]))
+                while True:
+                    try:
+                        r = await self._fetch_reply(P.FETCH_CMD_DATA, timeout)
+                    except asyncio.TimeoutError:
+                        if loop.time() - self._fetch["last"] < timeout:
+                            continue   # dữ liệu vẫn đang về
+                        raise
+                    if not P.is_fetch_done(r):
+                        raise MiBandError(tr('Vòng tay báo lỗi khi gửi dữ liệu (mã {code:#04x}).', code=r[2]))
+                    break
+                if not self._fetch["ok"]:
+                    raise MiBandError(tr('Mất gói dữ liệu khi đồng bộ; thử lại sau.'))
+                data = bytes(self._fetch["buf"])
+                self.log(tr('Đã nhận {n} byte dữ liệu loại {type:#04x} từ {start}.',
+                            n=len(data), type=data_type, start=f"{start:%d/%m %H:%M}"))
+                return start, data
+            finally:
+                self._fetch_q = None
+                self._fetch = None
+
+    # ------------------------------------------------------------ mặt đồng hồ
+
+    def _on_fw_control(self, data: bytes) -> None:
+        if self._fw_q is not None:
+            self._fw_q.put_nowait(data)
+
+    async def _fw_reply(self, cmd: int, timeout: float) -> bytes:
+        while True:
+            r = await asyncio.wait_for(self._fw_q.get(), timeout)
+            if len(r) < 3 or r[0] != 0x10:
+                continue
+            if r[1] == P.FW_PROGRESS and len(r) >= 6:
+                if cmd == P.FW_PROGRESS:
+                    return r
+                continue
+            if r[2] != 0x01:
+                if r[2] == P.FW_ERR_LOW_BATTERY:
+                    raise MiBandError(tr('Pin vòng tay yếu, hãy sạc rồi cài lại.'))
+                if r[2] == P.FW_ERR_FREE_SPACE:
+                    raise MiBandError(tr('Vòng tay không đủ chỗ trống cho mặt đồng hồ này.'))
+                raise MiBandError(tr('Vòng tay từ chối bước {cmd:#04x} (mã {code:#04x}).', cmd=r[1], code=r[2]))
+            if r[1] == cmd:
+                return r
+
+    async def _wait_write_ready(self) -> None:
+        """Chờ hàng đợi ghi-không-phản-hồi của CoreBluetooth còn chỗ (bleak không tự làm việc này)."""
+        peripheral = getattr(getattr(self._client, "_backend", None), "_peripheral", None)
+        check = getattr(peripheral, "canSendWriteWithoutResponse", None)
+        if check is None:
+            await asyncio.sleep(0.01)
+            return
+        for _ in range(200):
+            if check():
+                return
+            await asyncio.sleep(0.005)
+
+    async def upload_watchface(self, data: bytes, progress=None, timeout: float = 30.0) -> None:
+        """Cài một mặt đồng hồ (.bin UIHH) lên vòng tay; vòng tay chuyển sang mặt mới khi xong."""
+        P.check_watchface(data)
+        if not (self.has(P.CHAR_FW_CONTROL) and self.has(P.CHAR_FW_DATA)):
+            raise MiBandError(tr('Vòng tay không có kênh cài mặt đồng hồ.'))
+        async with self._fw_lock:
+            self._fw_q = asyncio.Queue()
+            try:
+                await self._notify(P.CHAR_FW_CONTROL, self._on_fw_control)
+                await self._write(P.CHAR_FW_CONTROL, bytes([P.FW_REQUEST_PARAMS]))
+                r = await self._fw_reply(P.FW_REQUEST_PARAMS, timeout)
+                chunk = (r[4] | (r[5] << 8)) if len(r) >= 6 else 0
+                if chunk <= 0:
+                    raise MiBandError(tr('Vòng tay không cho biết cỡ khối dữ liệu.'))
+                await self.write_config(P.watchface_prepare(data))
+                await self._write(P.CHAR_FW_CONTROL, P.firmware_info(P.FW_TYPE_WATCHFACE, data, chunk))
+                await self._fw_reply(P.FW_SEND_INFO, timeout)
+                await self._write(P.CHAR_FW_CONTROL, bytes([P.FW_START_TRANSFER, 1]))
+                await self._fw_reply(P.FW_START_TRANSFER, timeout)
+
+                data_char = self._require(P.CHAR_FW_DATA)
+                props = set(getattr(data_char, "properties", []) or [])
+                with_response = "write" in props or not props
+                mtu = int(getattr(self._client, "mtu_size", 23) or 23)
+                packet = max(20, min(512, mtu - 3))
+                self.log(tr('Cài mặt đồng hồ: {size} byte, khối {chunk} byte, gói {packet} byte.',
+                            size=len(data), chunk=chunk, packet=packet))
+                offset, stalls = 0, 0
+                while offset < len(data):
+                    end = min(len(data), offset + chunk)
+                    for i in range(offset, end, packet):
+                        if not with_response:
+                            await self._wait_write_ready()
+                        await self._client.write_gatt_char(data_char, data[i:min(i + packet, end)],
+                                                           response=with_response)
+                    r = await self._fw_reply(P.FW_PROGRESS, timeout)
+                    received = int.from_bytes(r[2:6], "little")
+                    stalls = stalls + 1 if received <= offset else 0
+                    if stalls >= 3:
+                        raise MiBandError(tr('Vòng tay không nhận thêm dữ liệu; cài mặt đồng hồ bị dừng.'))
+                    offset = received
+                    if progress:
+                        progress(min(offset, len(data)), len(data))
+                await self._write(P.CHAR_FW_CONTROL, bytes([P.FW_COMPLETE]))
+                await self._fw_reply(P.FW_COMPLETE, timeout)
+                await self._write(P.CHAR_FW_CONTROL, bytes([P.FW_FINALIZE]))
+                await self._fw_reply(P.FW_FINALIZE, timeout)
+                self.log(tr('Đã cài xong mặt đồng hồ.'))
+            finally:
+                self._fw_q = None
 
     # ------------------------------------------------------------- báo thức
 

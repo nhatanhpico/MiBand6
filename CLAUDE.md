@@ -51,6 +51,13 @@ The band uses either **classic** auth (AES challenge on char `0x0009`) or **2021
 
 Only one server should hold the band. `serve()` probes the port first (`running_server()` checks `/api/meta` for `server == SERVER_ID`). A plain `miband6-web` then opens the running server's UI and exits. In `--app` mode it announces the existing server and takes over when that server goes away.
 
+### Health data, watch faces, wallpapers
+
+- **Fetch** (`MiBand6.fetch_data`, chars `0x0004` control / `0x0005` data, own `_fetch_lock`, not `self._lock`): `01 <type> <since>` → `10 01 01 <len> <start>` → `02` → numbered packets → `10 02 01`. **Never send the `03` ack**: it marks data as synced on the band and Mi Fitness would lose it. Instead `BandService._sync_health` keeps a per-type "since" in `HealthDB` (`sync` table) and repeats rounds until no new data. Decoders are pure functions in `health.py`; storage and summaries are in `healthdb.py` (one SQLite file per band under `<config dir>/health/`). `FakeBand.health` (`simulator.DemoHealth`) serves 10 days of synthetic data and counts `fetch_acks` (tests assert 0).
+- **Watch face upload** (`MiBand6.upload_watchface`, `0x1531`/`0x1532`, Gadgetbridge `UpdateFirmwareOperation2020`): Mi Band 6 accepts only `UIHH` files; a `0x39` config command (via `write_config`, so it's encrypted in 2021 mode) precedes `d0/d2/d3`, then chunks acked by `d4 <offset>`, then `d5`, `d6`.
+- **Wallpaper**: the browser crops the picture to 152×486 and renders digit images; `/api/wallpaper` sends raw RGBA to `watchface.wallpaper_face`, which builds a UIHH file (87-byte header template, protobuf-style varint parameters, `BM` images with 24-bit RGB565 + inverted alpha) per the watchface-js format description. Not verified on hardware.
+- The band can't report settings or the active watch face. The UI shows sections never written by this app as "Chưa đồng bộ" with nothing pre-selected (`SYNC_KEYS`/`markSync` in `app.js`), and refuses to save while a field is still unknown.
+
 ### Event flow
 
 Band notifications reach `MiBand6._on_*` handlers, which call `on_event(kind, data)`. That goes to `BandService.on_event`, which stores the value in `service.live[kind]` and pushes `{"type": kind, "data": ...}` to every WebSocket client at `/api/events`. `jsonable()` serializes the protocol dataclasses. The browser receives a full `state()` snapshot in the `hello` message and again after each state change.

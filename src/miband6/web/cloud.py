@@ -45,14 +45,16 @@ class CloudSync:
         self.status = {**status, "seq": self._seq}
         self.service.push({"type": "cloud", "status": self.status})
 
-    def start(self, write: bool = True, fresh: bool = False) -> dict:
+    def start(self, write: bool = True, fresh: bool = False, interactive: bool = True) -> dict:
+        """interactive=False: chạy ngầm khi kết nối vòng tay; chỉ dùng phiên đăng nhập đã lưu, không hiện mã QR."""
         if self.running:
             return self.status
         if fresh:
             self.factory.forget()
         self._cancel = threading.Event()
-        self._set(state="checking")
-        self._task = asyncio.ensure_future(self._run(write))
+        if interactive:
+            self._set(state="checking")
+        self._task = asyncio.ensure_future(self._run(write, interactive))
         return self.status
 
     def cancel(self) -> dict:
@@ -66,10 +68,10 @@ class CloudSync:
         self.cancel()
         self.factory.forget()
 
-    async def _run(self, write: bool) -> None:
+    async def _run(self, write: bool, interactive: bool = True) -> None:
         try:
-            raw = await (self._demo() if self.demo else self._fetch())
-            if self._cancel.is_set():
+            raw = await (self._demo() if self.demo else self._fetch(interactive))
+            if raw is None or self._cancel.is_set():
                 return
             values = profile_for_band(raw)
             if not values:
@@ -79,10 +81,14 @@ class CloudSync:
         except asyncio.CancelledError:
             pass
         except LoginError as e:
-            if not self._cancel.is_set():
+            if not interactive:
+                self.service.log(tr('Không tự lấy được hồ sơ Mi Fitness: {e}', e=e))
+            elif not self._cancel.is_set():
                 self._set(state="error", error=str(e))
         except Exception as e:  # noqa: BLE001 - lỗi mạng, máy chủ trả dữ liệu lạ…
-            if not self._cancel.is_set():
+            if not interactive:
+                self.service.log(tr('Không tự lấy được hồ sơ Mi Fitness: {e}', e=e))
+            elif not self._cancel.is_set():
                 self._set(state="error", error=tr('Không đồng bộ được với Mi Fitness: {e}', e=e))
 
     async def _demo(self) -> dict:
@@ -91,11 +97,12 @@ class CloudSync:
         await asyncio.sleep(0.6)
         return dict(DEMO_PROFILE)
 
-    async def _fetch(self) -> dict:
+    async def _fetch(self, interactive: bool = True) -> dict | None:
         login = self.factory()
         if await asyncio.to_thread(login.load):
             try:
-                self._set(state="fetching")
+                if interactive:
+                    self._set(state="fetching")
                 raw, trail = await asyncio.to_thread(fetch_profile, login)
             except SessionExpired:
                 self.factory.forget()
@@ -105,6 +112,8 @@ class CloudSync:
                     self._log(trail)
                     raise LoginError(NO_PROFILE())
                 return raw
+        if not interactive:
+            return None
         self._set(state="checking")
         q = await asyncio.to_thread(login.start_qr)
         self._set(state="login", qr="data:image/png;base64," + base64.b64encode(q["qr"]).decode(),

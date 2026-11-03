@@ -208,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
         if online && snap.connected {
             menu.addItem(item(t("Rung vòng tay"), #selector(findBand)))
+            menu.addItem(item(t("Đồng bộ dữ liệu sức khỏe"), #selector(syncHealth)))
         }
         if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
 
@@ -254,6 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     @objc private func disconnectBand() { events.post("/api/disconnect", done: reportError) }
 
     @objc private func findBand() { events.post("/api/find", ["on": true], done: reportError) }
+
+    @objc private func syncHealth() { events.post("/api/health/sync", done: reportError) }
 
     @objc private func toggleKeepConnected() {
         events.post("/api/prefs", ["keep_connected": !events.snapshot.keepConnected], done: reportError)
