@@ -199,7 +199,7 @@ $$(".subtabs button").forEach((b) => b.addEventListener("click", () => (location
 
 /* ============================================================ vòng tay + số liệu */
 
-const live = { hr: null, steps: null, battery: null, charging: false, hrHistory: [] };
+const live = { hr: null, steps: null, meters: null, calories: null, battery: null, charging: false, hrHistory: [] };
 
 /** Giờ như vòng tay hiện: theo kiểu 12/24 giờ đã lưu (mặc định 24 giờ). */
 function bandClock(now = new Date()) {
@@ -320,12 +320,9 @@ function drawSpark() {
 }
 
 function updateGoal() {
-  const goal = Number(STATE.profile.goal || 8000);
-  const pct = live.steps == null ? 0 : Math.min(100, (live.steps / goal) * 100);
-  $("#goalBar").style.width = `${pct}%`;
-  $("#goalBar").parentElement.setAttribute("aria-valuenow", String(Math.round(pct)));
-  $("#goalPct").textContent = `${Math.round(pct)}%`;
-  $("#goalLabel").textContent = fmtInt(goal);
+  // Goal progress is now shown only in the goal-glance card (ovGoalRing/ovSteps/ovGoalTarget),
+  // which is updated by renderOverview(). Trigger a re-render when live data changes.
+  renderOverview();
 }
 
 function render(kind, d) {
@@ -350,9 +347,8 @@ function render(kind, d) {
     }
     case "activity":
       live.steps = d.steps;
-      $("#steps").textContent = fmtInt(d.steps);
-      if (d.meters != null) $("#dist").textContent = fmtDec(d.meters / 1000);
-      if (d.calories != null) $("#cal").textContent = fmtInt(d.calories);
+      live.meters = d.meters;
+      live.calories = d.calories;
       updateGoal();
       break;
     case "heart_rate":
@@ -401,6 +397,7 @@ function applyState(st) {
   $$(".conn-hint").forEach((el) => (el.hidden = on));
   $("#overviewEmpty").hidden = on;
   $("#overviewBody").hidden = !on;
+  $("#deviceHero").hidden = !on;
 
   const status = $("#status");
   status.dataset.state = on ? "on" : st.busy || waiting ? "busy" : "off";
@@ -1318,7 +1315,16 @@ function wpDraw() {
   drawSim();
 }
 
-$("#wpPickBtn").onclick = () => $("#wpFile").click();
+function pickFile(inputId) {
+  const input = $(inputId);
+  const accept = input.accept || "";
+  if (window.webkit?.messageHandlers?.fileAccept) {
+    window.webkit.messageHandlers.fileAccept.postMessage(accept);
+  }
+  input.click();
+}
+
+$("#wpPickBtn").onclick = () => pickFile("#wpFile");
 $("#wpFile").onchange = async () => {
   const file = $("#wpFile").files[0];
   if (!file) return;
@@ -1380,7 +1386,7 @@ setInterval(() => { if (WP.img && !$("#sub-face").hidden) wpDraw(); }, 30000);  
 
 /* ---- tệp .bin */
 
-$("#wfPickBtn").onclick = () => $("#wfFile").click();
+$("#wfPickBtn").onclick = () => pickFile("#wfFile");
 $("#wfFile").onchange = async () => {
   const file = $("#wfFile").files[0];
   if (!file) return;
@@ -1747,8 +1753,10 @@ function renderOverview() {
   $("#ovGoalTarget").textContent = t("/ {n} bước", { n: fmtInt(v.target) });
   $("#ovGoalRing").style.setProperty("--progress", `${(v.pct || 0) * 3.6}deg`);
   $("#ovGoalRing").setAttribute("aria-label", t("Mục tiêu bước: {p}", { p: v.pct == null ? t("Chưa có dữ liệu") : `${v.pct}%` }));
-  const calories = STATE.connected ? STATE.live?.activity?.calories : null;
+  const calories = STATE.connected ? (live.calories ?? STATE.live?.activity?.calories) : null;
   $("#ovCalories").textContent = calories == null ? "—" : `${fmtInt(calories)} kcal`;
+  const meters = STATE.connected ? (live.meters ?? STATE.live?.activity?.meters) : null;
+  $("#ovDist").textContent = meters == null ? "—" : `${fmtDec(meters / 1000)} km`;
   const hr = v.day?.hr?.at(-1);
   const stress = v.day?.stress?.at(-1);
   $("#ovHr").textContent = hr ? `${hr[1]} ${t("nhịp/phút")}` : "—";

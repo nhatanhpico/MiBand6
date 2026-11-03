@@ -117,7 +117,7 @@
           <article class="card goal-glance">
             <header class="card-head"><h2>Mục tiêu hôm nay</h2><p class="card-sub">Dữ liệu vận động từ vòng tay</p></header>
             <div class="goal-glance-body"><div class="goal-orbit" id="ovGoalRing" role="img" aria-label="Tiến độ mục tiêu bước"><div><b id="ovSteps">—</b><span id="ovGoalTarget">—</span></div></div>
-              <dl class="glance-facts"><div><dt>Năng lượng</dt><dd id="ovCalories">—</dd><small>Ước tính của vòng tay</small></div><div><dt>Giờ đứng</dt><dd>—</dd><small>Chưa có trường dữ liệu được xác minh</small></div></dl>
+              <dl class="glance-facts"><div><dt>Quãng đường</dt><dd id="ovDist">—</dd><small>Ước tính của vòng tay</small></div><div><dt>Năng lượng</dt><dd id="ovCalories">—</dd><small>Ước tính của vòng tay</small></div></dl>
             </div>
             <div class="chart" id="ovStepsTrend"></div>
             <a class="hero-link" href="#health/steps">Xem lịch sử bước chân</a>
@@ -135,53 +135,7 @@
             <a class="hero-link" href="#health/sleep">Xem giấc ngủ</a>
           </article>
         </div>
-        <details class="device-details"><summary>Thiết bị &amp; đo trực tiếp</summary>
-        <div class="hero">
-          <figure class="hero-band" aria-label="Mặt đồng hồ">
-            <div class="band-wrap">
-            <svg id="band" class="band" viewBox="0 0 140 400" aria-hidden="true">
-              <defs>
-                <clipPath id="screenClip"><rect x="27" y="67" width="86" height="266" rx="43"/></clipPath>
-                <linearGradient id="strapTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2422" stop-opacity="0"/><stop offset="1" stop-color="#26302e"/></linearGradient>
-                <linearGradient id="strapBottom" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26302e"/><stop offset="1" stop-color="#1c2422" stop-opacity="0"/></linearGradient>
-                <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3b4644"/><stop offset=".18" stop-color="#151a19"/><stop offset=".82" stop-color="#151a19"/><stop offset="1" stop-color="#2c3533"/></linearGradient>
-              </defs>
-              <rect x="32" y="-10" width="76" height="110" rx="22" fill="url(#strapTop)"/>
-              <rect x="32" y="300" width="76" height="110" rx="22" fill="url(#strapBottom)"/>
-              <rect x="20" y="60" width="100" height="280" rx="50" fill="url(#bodyGrad)" stroke="#45514e" stroke-width="1"/>
-              <rect x="27" y="67" width="86" height="266" rx="43" fill="#000"/>
-              <image id="wfImage" x="27" y="67" width="86" height="266" preserveAspectRatio="xMidYMid slice" clip-path="url(#screenClip)" style="display:none"/>
-              <g id="bandDefault">
-                <text id="bTime" x="70" y="132" class="b-time">--:--</text>
-                <text id="bDate" x="70" y="151" class="b-small"></text>
-                <text id="bHr" x="70" y="190" class="b-hr">♥ --</text>
-                <circle cx="70" cy="236" r="24" class="b-ring-bg"/>
-                <circle id="bRing" cx="70" cy="236" r="24" class="b-ring" transform="rotate(-90 70 236)" stroke-dasharray="0 151"/>
-                <text id="bSteps" x="70" y="240.5" class="b-steps">--</text>
-                <text id="bBatText" x="70" y="285" class="b-small"></text>
-                <rect x="52" y="292" width="34" height="11" rx="3" class="b-bat-frame"/>
-                <rect x="87" y="295.5" width="2" height="4" rx="1" class="b-bat-tip"/>
-                <rect id="bBat" x="54" y="294" width="0" height="7" rx="1.5" class="b-bat"/>
-              </g>
-            </svg>
-            </div>
-            <figcaption class="band-cap" id="wfEmpty">Mặt mặc định của ứng dụng · <a href="#settings/face">Chọn mặt đồng hồ</a></figcaption>
-          </figure>
-          <div class="hero-stats">
-            <p class="hero-label">Bước chân hôm nay</p>
-            <p class="hero-steps"><span id="steps" class="num">—</span></p>
-            <div class="goal">
-              <div class="goal-bar" role="progressbar" aria-label="Tiến độ mục tiêu bước" aria-valuemin="0" aria-valuemax="100"><span id="goalBar"></span></div>
-              <p class="goal-text"><span id="goalPct">0%</span> mục tiêu <span id="goalLabel">8.000</span> bước</p>
-            </div>
-            <div class="hero-mini">
-              <div class="mini dist"><span class="mini-value"><span id="dist" class="num">—</span> km</span><span class="mini-label">Quãng đường</span></div>
-              <div class="mini cal"><span class="mini-value"><span id="cal" class="num">—</span> kcal</span><span class="mini-label">Năng lượng</span></div>
-            </div>
-            <a class="hero-link" href="#health/steps">Xem lịch sử bước chân</a>
-          </div>
-        </div>
-
+        <details class="device-details"><summary>Đo trực tiếp</summary>
         <div class="tiles">
           <article class="tile tile-hr">
             <header class="tile-head"><svg class="ic"><use href="#i-heart"/></svg><h2>Nhịp tim</h2></header>
@@ -201,18 +155,6 @@
               <span id="bat" class="num">—</span>
             </div>
             <p class="tile-note" id="batNote"></p>
-          </article>
-          <article class="tile tile-dev">
-            <header class="tile-head"><svg class="ic"><use href="#i-band"/></svg><h2>Thiết bị</h2></header>
-            <dl class="facts">
-              <dt>Tên</dt><dd id="iName">—</dd>
-              <dt>Firmware</dt><dd id="iFirmware">—</dd>
-              <dt>Phần cứng</dt><dd id="iHardware">—</dd>
-              <dt>Serial</dt><dd id="iSerial">—</dd>
-              <dt>Xác thực</dt><dd id="iProtocol">—</dd>
-              <dt>Giờ trên vòng</dt><dd id="iBandTime">—</dd>
-            </dl>
-            <div class="tile-actions"><button id="syncTimeBtn" class="btn" data-conn><svg class="ic"><use href="#i-clock"/></svg><span>Đồng bộ giờ</span></button></div>
           </article>
         </div>
         </details>
@@ -726,6 +668,51 @@
     <section class="page" id="page-device" hidden>
       <header class="page-head"><h1>Thiết bị</h1></header>
       <p class="lead">Vòng tay chỉ giữ một kết nối. Tắt Bluetooth trên điện thoại trong Cài đặt (hoặc thoát hẳn Mi Fitness / Zepp Life) trước khi kết nối từ máy tính.</p>
+
+      <div class="hero" id="deviceHero" hidden>
+        <figure class="hero-band" aria-label="Mặt đồng hồ">
+          <div class="band-wrap">
+          <svg id="band" class="band" viewBox="0 0 140 400" aria-hidden="true">
+            <defs>
+              <clipPath id="screenClip"><rect x="27" y="67" width="86" height="266" rx="43"/></clipPath>
+              <linearGradient id="strapTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2422" stop-opacity="0"/><stop offset="1" stop-color="#26302e"/></linearGradient>
+              <linearGradient id="strapBottom" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26302e"/><stop offset="1" stop-color="#1c2422" stop-opacity="0"/></linearGradient>
+              <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3b4644"/><stop offset=".18" stop-color="#151a19"/><stop offset=".82" stop-color="#151a19"/><stop offset="1" stop-color="#2c3533"/></linearGradient>
+            </defs>
+            <rect x="32" y="-10" width="76" height="110" rx="22" fill="url(#strapTop)"/>
+            <rect x="32" y="300" width="76" height="110" rx="22" fill="url(#strapBottom)"/>
+            <rect x="20" y="60" width="100" height="280" rx="50" fill="url(#bodyGrad)" stroke="#45514e" stroke-width="1"/>
+            <rect x="27" y="67" width="86" height="266" rx="43" fill="#000"/>
+            <image id="wfImage" x="27" y="67" width="86" height="266" preserveAspectRatio="xMidYMid slice" clip-path="url(#screenClip)" style="display:none"/>
+            <g id="bandDefault">
+              <text id="bTime" x="70" y="132" class="b-time">--:--</text>
+              <text id="bDate" x="70" y="151" class="b-small"></text>
+              <text id="bHr" x="70" y="190" class="b-hr">♥ --</text>
+              <circle cx="70" cy="236" r="24" class="b-ring-bg"/>
+              <circle id="bRing" cx="70" cy="236" r="24" class="b-ring" transform="rotate(-90 70 236)" stroke-dasharray="0 151"/>
+              <text id="bSteps" x="70" y="240.5" class="b-steps">--</text>
+              <text id="bBatText" x="70" y="285" class="b-small"></text>
+              <rect x="52" y="292" width="34" height="11" rx="3" class="b-bat-frame"/>
+              <rect x="87" y="295.5" width="2" height="4" rx="1" class="b-bat-tip"/>
+              <rect id="bBat" x="54" y="294" width="0" height="7" rx="1.5" class="b-bat"/>
+            </g>
+          </svg>
+          </div>
+          <figcaption class="band-cap" id="wfEmpty">Mặt mặc định của ứng dụng · <a href="#settings/face">Chọn mặt đồng hồ</a></figcaption>
+        </figure>
+        <div class="hero-dev">
+          <header class="tile-head"><svg class="ic"><use href="#i-band"/></svg><h2>Thiết bị</h2></header>
+          <dl class="facts">
+            <dt>Tên</dt><dd id="iName">—</dd>
+            <dt>Firmware</dt><dd id="iFirmware">—</dd>
+            <dt>Phần cứng</dt><dd id="iHardware">—</dd>
+            <dt>Serial</dt><dd id="iSerial">—</dd>
+            <dt>Xác thực</dt><dd id="iProtocol">—</dd>
+            <dt>Giờ trên vòng</dt><dd id="iBandTime">—</dd>
+          </dl>
+          <div class="tile-actions"><button id="syncTimeBtn" class="btn" data-conn><svg class="ic"><use href="#i-clock"/></svg><span>Đồng bộ giờ</span></button></div>
+        </div>
+      </div>
 
       <div class="group">
         <div class="group-head split">

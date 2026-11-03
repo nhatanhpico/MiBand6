@@ -288,7 +288,12 @@ input.pin { width: 150px; text-align: center; letter-spacing: .45em; font-varian
 .mini-value .num { font-size: 26px; font-weight: 700; color: var(--text); letter-spacing: -.02em; }
 .mini-label { font-size: 13px; color: var(--faint); }
 
-.tiles { display: grid; grid-template-columns: 1.25fr .8fr 1fr; gap: 16px; margin-top: 16px; }
+.hero-dev { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.hero-dev .tile-head .ic { color: var(--amber); }
+.hero-dev .facts { margin: 6px 0; }
+.hero-dev .tile-actions { margin-top: 6px; }
+
+.tiles { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-top: 16px; }
 .tile {
   display: flex; flex-direction: column; gap: 10px; min-width: 0;
   padding: 20px 22px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line);
@@ -450,9 +455,7 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .lang { flex-direction: column; }
   .main { padding: 32px 32px 64px; }
   .hero { grid-template-columns: 170px minmax(0, 1fr); gap: 28px; padding: 14px 28px; }
-  .hero-steps .num { font-size: 64px; }
   .tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .tile-dev { grid-column: 1 / -1; }
 }
 
 /* ================================================================ điện thoại: thanh trên + thanh tab dưới */
@@ -489,13 +492,7 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .page-head .btn { width: 40px; padding: 0; }
 
   .hero { grid-template-columns: 96px minmax(0, 1fr); gap: 18px; padding: 10px 18px; border-radius: 22px; }
-  .hero-steps { margin-bottom: 12px; }
-  .hero-steps .num { font-size: 46px; }
-  .hero-label, .goal-text { font-size: 13px; }
-  .hero-mini { gap: 18px; margin-top: 16px; }
-  .mini-value .num { font-size: 20px; }
   .tiles { grid-template-columns: minmax(0, 1fr); }
-  .tile-dev { grid-column: auto; }
 
   .group { border-radius: 16px; }
   .group-head { padding: 16px 16px 12px; }
@@ -921,7 +918,8 @@ select:invalid, select.unknown { color: var(--muted); }
 .device-details { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .device-details > summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 8px 0; }
 .device-details[open] > summary { margin-bottom: 16px; }
-.device-details .hero { margin-bottom: 16px; }
+.device-details .tiles { margin-top: 0; }
+#deviceHero { margin-bottom: 24px; }
 .metric-details { margin-top: 15px; }
 .metric-details > summary { cursor: pointer; font-size: 13px; color: var(--muted); min-height: 36px; padding-block: 8px; }
 .metric-details[open] > summary { margin-bottom: 10px; color: var(--text); }

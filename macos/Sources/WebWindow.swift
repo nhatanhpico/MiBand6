@@ -1,13 +1,15 @@
 import AppKit
+import UniformTypeIdentifiers
 import WebKit
 
 /// Cửa sổ chính: hiện giao diện web của server trong WKWebView. Đóng cửa sổ chỉ ẩn nó đi,
 /// ứng dụng (và kết nối Bluetooth) vẫn chạy trên thanh menu.
-final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
     var onClose: (() -> Void)?
     private let webView: WKWebView
     private var serverURL: URL?
     private var downloads: [ObjectIdentifier: URL] = [:]
+    private var pendingAccept: String = ""
     private var nativeMap: NativeMapController?
     private var pendingPage: String?   // trang cần mở khi giao diện tải xong (liên kết miband6://)
 
@@ -38,6 +40,7 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
         let map = NativeMapController(webView: webView)
         config.userContentController.add(WeakMessageHandler(map), name: "nativeMap")
         nativeMap = map
+        config.userContentController.add(WeakMessageHandler(self), name: "fileAccept")
         showMessage(t("Đang khởi động…"))
     }
 
@@ -151,18 +154,54 @@ final class WebWindowController: NSWindowController, NSWindowDelegate, WKNavigat
     }
 
     /// Ô chọn tệp trong trang (mặt đồng hồ .bin, ảnh nền): WKWebView chỉ mở hộp thoại khi ứng dụng làm việc này.
+    /// accept string được JS gửi trước qua fileAccept message handler, ví dụ "image/*" hoặc ".bin,application/octet-stream".
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = resolvedTypes(for: pendingAccept)
+        pendingAccept = ""
         guard let window else {
             completionHandler(nil)
             return
         }
         panel.beginSheetModal(for: window) { response in
             completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    /// Chuyển chuỗi HTML accept ("image/*", ".bin,application/octet-stream", …) thành danh sách UTType.
+    /// Trả về mảng rỗng nếu accept rỗng (không lọc).
+    private func resolvedTypes(for accept: String) -> [UTType] {
+        guard !accept.isEmpty else { return [] }
+        var types: [UTType] = []
+        for token in accept.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) {
+            if token == "image/*" {
+                types.append(.image)
+            } else if token == "video/*" {
+                types.append(.movie)
+            } else if token == "audio/*" {
+                types.append(.audio)
+            } else if token.hasPrefix(".") {
+                // phần mở rộng, ví dụ ".bin"
+                let ext = String(token.dropFirst())
+                if let t = UTType(filenameExtension: ext) { types.append(t) }
+            } else if token.contains("/") {
+                // MIME type, ví dụ "application/octet-stream"
+                if let t = UTType(mimeType: token) { types.append(t) }
+            }
+        }
+        return types
+    }
+
+    // MARK: WKScriptMessageHandler
+
+    /// Nhận tín hiệu "accept" từ JS trước khi mở hộp thoại chọn tệp (window.webkit.messageHandlers.fileAccept).
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "fileAccept", let accept = message.body as? String {
+            pendingAccept = accept
         }
     }
 
