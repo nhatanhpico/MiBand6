@@ -31,6 +31,8 @@ Rê chuột (hoặc chọn bằng phím Tab) lên cột, đoạn hay đường t
 
 Vòng tay chỉ giữ các buổi tập gần đây, và có thể xóa bớt sau khi Mi Fitness đồng bộ xong; lịch sử đầy đủ nằm trong tài khoản Mi Fitness. Bấm **Lấy lịch sử từ Mi Fitness** ở thẻ **Tập luyện**: ứng dụng dùng phiên đăng nhập Xiaomi đã lưu (hoặc hiện mã QR để đăng nhập, như nút **Đồng bộ** hồ sơ) rồi đọc các buổi tập 5 năm gần đây.
 
+Sau lần đầu, việc này **tự chạy ngầm** mỗi khi kết nối vòng tay (nhiều nhất mỗi giờ một lần): ứng dụng lấy các buổi tập mới kể từ lần trước, cùng hồ sơ nếu đã hơn 12 giờ. Chạy ngầm không bao giờ hiện mã QR; nếu chưa đăng nhập hoặc phiên bị Xiaomi từ chối thì bỏ qua và ghi vào **Nhật ký Bluetooth**.
+
 - Buổi tập trùng giờ bắt đầu (lệch không quá 3 phút) với buổi vòng tay đã ghi chỉ hiện một lần, dùng số liệu của vòng tay. Bấm lại nhiều lần không bị nhân đôi.
 - Mi Fitness dùng mã loại bài tập khác vòng tay. Ứng dụng học cách đổi mã từ các buổi có cả hai nguồn; mã chưa biết hiện là "Bài tập (mã Mi Fitness …)".
 - Ứng dụng chỉ đọc, không thay đổi gì trong tài khoản. Cách gọi API theo mô tả của dự án cộng đồng [mifit](https://github.com/Jenwein/mifit); Xiaomi không công bố API này nên có thể đổi bất cứ lúc nào.
@@ -40,9 +42,10 @@ Vòng tay chỉ giữ các buổi tập gần đây, và có thể xóa bớt sa
 Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời với điện thoại, Mi Fitness ghi lộ trình bằng GPS của điện thoại và lưu trong tài khoản. Sau khi **Lấy lịch sử từ Mi Fitness**, các buổi có lộ trình hiện nút **Bản đồ**.
 
 - Lần đầu mở, ứng dụng tải tệp lộ trình từ Mi Fitness (cần phiên đăng nhập Xiaomi còn hạn; nếu hết hạn, bấm **Lấy lịch sử từ Mi Fitness** để đăng nhập lại), giải mã rồi lưu trên máy; các lần sau mở ngay, không cần mạng cho phần lộ trình.
-- Kéo để di chuyển, cuộn chuột hoặc nút **+** / **−** để phóng to, nút khung vuông để xem trọn lộ trình. Chấm xanh là điểm bắt đầu, chấm đỏ là điểm kết thúc.
-- Bản đồ nền là ô ảnh của [OpenStreetMap](https://www.openstreetmap.org/copyright), tải trực tiếp từ máy chủ OpenStreetMap khi mở bản đồ (máy chủ đó biết khu vực đang xem, không nhận được lộ trình). Lộ trình chỉ nằm trên máy bạn.
-- Cách tải và đọc tệp lộ trình theo mô tả của dự án [mifit](https://github.com/Jenwein/mifit); hiện đọc được tệp phiên bản 1 và 2.
+- **Ứng dụng macOS** mở lộ trình trong cửa sổ **Apple Maps** (MapKit): kéo, chụm hoặc cuộn để phóng to, có la bàn và thước tỉ lệ; ghim xanh là điểm bắt đầu, ghim đỏ là điểm kết thúc. Bản đồ nền do Apple cung cấp; lộ trình chỉ được vẽ trên máy.
+- **Trình duyệt** dùng bản đồ dựng sẵn trong trang: kéo để di chuyển, cuộn chuột hoặc nút **+** / **−** để phóng to, nút khung vuông để xem trọn lộ trình. Bản đồ nền là ô ảnh của [OpenStreetMap](https://www.openstreetmap.org/copyright), tải trực tiếp từ máy chủ OpenStreetMap khi mở bản đồ (máy chủ đó biết khu vực đang xem, không nhận được lộ trình).
+- Đọc được tệp lộ trình phiên bản 1, 2 (theo mô tả của dự án [mifit](https://github.com/Jenwein/mifit)) và 3 (Mi Fitness hiện nay, thêm độ cao; kiểm tra trên tệp thật). Tệp phiên bản mới hơn được dò cỡ dữ liệu tự động; nếu vẫn không đọc được, ứng dụng giữ tệp đã giải mã trong `health/gps-unread/` (chỉ trên máy bạn) để sửa bộ đọc.
+- Quãng đường cộng từ các điểm GPS thường dài hơn số của Mi Fitness vài phần trăm vì GPS điện thoại dao động vài mét mỗi giây; Mi Fitness làm mượt lộ trình trước khi tính. Thẻ thống kê dùng số của Mi Fitness.
 
 ### Đo tự động
 

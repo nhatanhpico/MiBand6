@@ -29,12 +29,13 @@
 - Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); từ ô "Bước chân hôm nay" ở Tổng quan bấm **Xem lịch sử bước chân**
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
-- Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
+- Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Nếu đã đăng nhập Xiaomi, mỗi lần kết nối ứng dụng cũng tự lấy buổi tập mới (và hồ sơ) từ Mi Fitness ở chế độ nền.
+- Bản đồ lộ trình mở bằng **Apple Maps** trong ứng dụng macOS, bằng bản đồ OpenStreetMap trên trình duyệt. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
 - Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
 
 **Mặt đồng hồ và ảnh nền** (**Cài đặt → Mặt đồng hồ**; hướng dẫn chi tiết: [docs/mat-dong-ho.md](docs/mat-dong-ho.md))
 - Khung **mô phỏng Mi Band 6** (màn hình 152 × 486, bo góc như thật) hiện đúng thứ sẽ lên vòng tay trước khi cài
-- **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Chọn vị trí và màu giờ rồi **Cài lên vòng tay**: ứng dụng tự dựng một mặt đồng hồ từ ảnh đó
+- **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Hiện chỉ đặt được làm ảnh xem trước: **cài ảnh nền lên vòng tay đã bị tắt** vì mặt đồng hồ ứng dụng dựng từ ảnh làm Mi Band 6 bị treo (cách khôi phục: [docs/mat-dong-ho.md](docs/mat-dong-ho.md#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ))
 - **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); ảnh xem trước có trong tệp được đọc ra và hiện ở khung mô phỏng
 - Vòng tay không cho đọc mặt đồng hồ đang dùng (kể cả mặt có sẵn), nên hình vòng tay ở Tổng quan hiện mặt đã cài qua ứng dụng. Với mặt có sẵn: chụp ảnh màn hình vòng tay, chọn ở **Ảnh của bạn**, đặt Giờ là **Ẩn**, bấm **Chỉ đặt làm ảnh xem trước**
 
@@ -222,7 +223,7 @@ Vòng tay chỉ cho ghi hồ sơ, không cho đọc lại qua Bluetooth, nên l�
 1. Giao diện hiện mã QR đăng nhập Xiaomi. Quét bằng camera điện thoại và đăng nhập đúng tài khoản dùng trong Mi Fitness (hoặc bấm "Hoặc đăng nhập trong trình duyệt").
 2. Server đọc hồ sơ từ máy chủ Mi Fitness, điền vào các ô và ghi ngay vào vòng tay nếu đang kết nối. Nếu chưa kết nối, hồ sơ được ghi tự động ở lần kết nối tới.
 
-Server chỉ đọc, không thay đổi gì trong tài khoản. Phiên đăng nhập được giữ 12 giờ trong `~/Library/Caches/MiBand6Manager/xiaomi-session.json` (chỉ tài khoản của bạn đọc được) để lần sau khỏi quét lại; nút **Đăng nhập lại** trong hộp thoại bỏ phiên cũ. Nếu không đọc được hồ sơ, chi tiết từng lần gọi máy chủ nằm trong **Nhật ký Bluetooth** ở trang Thiết bị.
+Server chỉ đọc, không thay đổi gì trong tài khoản. Phiên đăng nhập được lưu trong `~/Library/Caches/MiBand6Manager/xiaomi-session.json` và, nếu bạn dùng tệp `.env`, cả trong `.env` dưới tên `MIBAND6_XIAOMI_SESSION` (cả hai chỉ tài khoản của bạn đọc được; `.env` không được đưa lên git) để lần sau khỏi quét lại. Khi token hết hạn, server tự đổi lấy token mới như app Mi Fitness (không cần quét lại); chỉ khi Xiaomi từ chối mới phải đăng nhập lại. Phiên này cho phép đọc dữ liệu Mi Fitness của bạn: đừng chia sẻ tệp `.env`; nút **Đăng nhập lại** trong hộp thoại bỏ phiên cũ. Nếu không đọc được hồ sơ, chi tiết từng lần gọi máy chủ nằm trong **Nhật ký Bluetooth** ở trang Thiết bị.
 
 ## Sắp xếp ứng dụng trên vòng tay
 

@@ -12,13 +12,15 @@ Bên trái là hình Mi Band 6 với màn hình đúng kích thước thật (15
 
 ## Dùng ảnh của bạn
 
+> **Cài ảnh nền lên vòng tay đang tắt.** Trên một Mi Band 6 thật, vòng tay nhận mặt đồng hồ ứng dụng dựng từ ảnh nhưng bị treo khi hiển thị nó (cả khi xem trước trong danh sách mặt đồng hồ trên vòng tay). Ảnh vẫn dùng được để **Chỉ đặt làm ảnh xem trước**. Nút **Cài lên vòng tay** chỉ còn dùng cho tệp `.bin`. Nếu vòng tay của bạn đã bị ảnh hưởng, xem [Khi vòng tay bị treo hoặc mất mặt đồng hồ](#khi-vòng-tay-bị-treo-hoặc-mất-mặt-đồng-hồ).
+
 1. Chọn thẻ **Ảnh của bạn**, bấm **Chọn ảnh…**. Ảnh lớn cỡ nào cũng được (ảnh chụp từ điện thoại vẫn được): ứng dụng tự thu nhỏ cho vừa màn hình vòng tay.
 2. Trong khung chỉnh, phần sáng hình viên thuốc là phần hiện trên vòng tay; phần tối sẽ bị cắt. Kéo ảnh để di chuyển, cuộn chuột hoặc dùng thanh **Phóng to**. Bàn phím: phím mũi tên để dịch (giữ Shift để dịch nhanh), `+` / `-` để phóng to, thu nhỏ.
 3. **Cách đặt ảnh**: **Lấp đầy** phủ kín màn hình (cắt bớt mép ảnh); **Trọn ảnh** giữ cả ảnh, chỗ trống để màu đen.
 4. **Giờ**: hiện giờ và phút xếp chồng ở trên, giữa hoặc dưới, hoặc **Ẩn**. **Màu chữ số**: trắng (ảnh tối) hoặc đen (ảnh sáng).
-5. Bấm **Cài lên vòng tay**. Thanh tiến độ cho biết phần đã gửi; vòng tay tự chuyển sang mặt mới khi xong.
+5. Bấm **Chỉ đặt làm ảnh xem trước** để trang **Tổng quan** hiện ảnh này.
 
-Ứng dụng dựng một tệp mặt đồng hồ Mi Band 6 từ ảnh và các chữ số giờ (định dạng theo mô tả của dự án [watchface-js](https://github.com/Nadeflore/watchface-js)). Cách này chưa được thử trên nhiều vòng tay; nếu vòng tay từ chối, **Nhật ký Bluetooth** ở trang **Thiết bị** cho biết bước nào lỗi.
+Ứng dụng dựng tệp mặt đồng hồ Mi Band 6 từ ảnh và các chữ số giờ theo mô tả định dạng của dự án [watchface-js](https://github.com/Nadeflore/watchface-js). Vòng tay chấp nhận tệp (mọi bước gửi đều báo thành công) nhưng không vẽ được, nên tệp sai ở phần nội dung chứ không ở cách gửi. Tính năng chỉ được bật lại khi đã tìm ra chỗ sai.
 
 ## Cài tệp .bin
 
@@ -27,6 +29,14 @@ Bên trái là hình Mi Band 6 với màn hình đúng kích thước thật (15
 3. Bấm **Cài lên vòng tay**.
 
 Cách cài giống Gadgetbridge. Vòng tay từ chối khi pin yếu hoặc không đủ chỗ trống: sạc vòng tay hoặc xóa bớt mặt đồng hồ trên vòng tay rồi thử lại.
+
+## Khi vòng tay bị treo hoặc mất mặt đồng hồ
+
+Nếu sau khi cài, vòng tay không còn mặt đồng hồ (mở thẳng vào menu ứng dụng) hoặc bị treo khi chọn mặt đó:
+
+1. Ở trang **Thiết bị**, bấm **Ngắt kết nối** để điện thoại nối được với vòng tay. Nếu Mi Fitness vẫn không thấy vòng tay, tắt Bluetooth trên máy Mac một lát.
+2. Mở **Mi Fitness** trên điện thoại → vòng tay → **Mặt đồng hồ**, cài một mặt bất kỳ trong cửa hàng. Mặt mới thay mặt bị lỗi. Nếu mặt lỗi có trong danh sách mặt đã cài, xóa nó ở đó.
+3. **Đừng khôi phục cài đặt gốc** vòng tay: làm vậy mã xác thực đổi và ứng dụng này phải lấy lại mã mới.
 
 ## Mặt đồng hồ có sẵn
 
