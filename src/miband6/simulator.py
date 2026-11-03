@@ -44,6 +44,7 @@ class FakeBand:
             FakeService(P.SVC_IMMEDIATE_ALERT, [P.CHAR_ALERT_LEVEL]),
         ]
         self.is_connected = False
+        self.disconnected_callback = None   # MiBand6 gắn vào, như BleakClient(disconnected_callback=…)
         self.callbacks = {}
         self.writes: list[tuple[str, bytes]] = []
         self.config_commands: list[bytes] = []   # lệnh cấu hình đã giải mã
@@ -225,6 +226,13 @@ class FakeBand:
 
     def press_find_phone(self):
         self._notify(P.CHAR_DEVICE_EVENT, bytes([P.EVENT_FIND_PHONE_START]))
+
+    def drop(self):
+        """Giả lập vòng tay mất kết nối (ra khỏi vùng phủ sóng, máy Mac ngủ…)."""
+        self.is_connected = False
+        self._hr_live = False
+        if self.disconnected_callback:
+            self.disconnected_callback(self)
 
 
 class DemoDevice:

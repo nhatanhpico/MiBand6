@@ -251,23 +251,37 @@ function render(kind, d) {
 /* ============================================================ trạng thái */
 
 const PROTO = { classic: () => t("Kiểu cũ"), "2021": () => t("Kiểu mới (2021)"), auto: () => t("Tự động") };
+let wasReconnecting = false;
 
 function applyState(st) {
   const wasConnected = STATE.connected;
   STATE = st;
   const on = st.connected;
+  const waiting = !on && !st.busy && st.reconnect;  // đang chờ tới lượt tự kết nối lại
   $$("[data-conn]").forEach((b) => (b.disabled = !on));
   $("#connectBtn").disabled = on || st.busy;
-  $("#disconnectBtn").disabled = !on;
+  $("#disconnectBtn").disabled = !(on || st.reconnect);  // khi đang chờ nối lại: bấm để thôi chờ
   $("#scanBtn").disabled = st.busy;
+  $("#keepConn").checked = st.settings?.keep_connected ?? true;
   $("#demoBanner").hidden = !st.demo;
   $$(".conn-hint").forEach((el) => (el.hidden = on));
   $("#overviewEmpty").hidden = on;
   $("#overviewBody").hidden = !on;
 
   const status = $("#status");
-  status.dataset.state = on ? "on" : st.busy ? "busy" : "off";
-  $("#statusText").textContent = on ? st.device?.name || "Mi Smart Band 6" : st.busy ? t("Đang kết nối…") : t("Chưa kết nối");
+  status.dataset.state = on ? "on" : st.busy || waiting ? "busy" : "off";
+  $("#statusText").textContent = on ? st.device?.name || "Mi Smart Band 6"
+    : st.busy ? t("Đang kết nối…") : waiting ? t("Đang chờ kết nối lại…") : t("Chưa kết nối");
+  if (waiting) {
+    const at = new Date(st.reconnect.at * 1000);
+    const time = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+    $("#connStatus").className = "conn-status";
+    $("#connStatus").textContent = t("Mất kết nối với vòng tay. Tự thử lại lúc {time} (lần {n}).", { time, n: st.reconnect.attempt });
+  } else if (on && wasReconnecting) {
+    $("#connStatus").className = "conn-status ok";
+    $("#connStatus").textContent = t("Đã tự kết nối lại với vòng tay.");
+  }
+  wasReconnecting = !!st.reconnect;
   if (!on) {
     $("#statusBat").textContent = "";
     live.hr = null;
@@ -306,7 +320,8 @@ function connectEvents() {
       case "state": applyState(msg.state); break;
       case "log": appendLog(msg.line); break;
       case "disconnected":
-        toast(t("Vòng tay đã ngắt kết nối. Bấm Kết nối để nối lại."), true);
+        toast(msg.reconnecting ? t("Vòng tay đã ngắt kết nối. Đang tự kết nối lại…")
+          : t("Vòng tay đã ngắt kết nối. Bấm Kết nối để nối lại."), true);
         stopFindPhone();
         break;
       case "cloud": renderCloud(msg.status); break;
@@ -337,7 +352,8 @@ $("#logSaveBtn").onclick = () => {
   a.href = URL.createObjectURL(blob);
   a.download = `miband6-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  // ứng dụng macOS (WKWebView) tải tệp bất đồng bộ: thu hồi blob ngay thì tệp tải về bị rỗng
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 };
 
 /* ============================================================ thiết bị: quét, kết nối */
@@ -444,6 +460,10 @@ $("#disconnectBtn").onclick = async () => {
     $("#connStatus").textContent = t("Đã ngắt kết nối.");
   } catch { /* đã báo */ }
 };
+
+$("#keepConn").onchange = () => quiet(run(null, async () => {
+  applyState((await api("/api/prefs", { keep_connected: $("#keepConn").checked })).state);
+}));
 
 /* ============================================================ tổng quan */
 

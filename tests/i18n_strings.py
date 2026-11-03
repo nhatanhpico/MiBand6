@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "src" / "miband6"
 STATIC = PKG / "web" / "static"
+SWIFT = ROOT / "macos" / "Sources"
 ATTRS = ("placeholder", "aria-label", "title", "data-empty")
 SKIP_TAGS = {"script", "style", "pre", "code", "textarea", "svg"}
 VOID = {"meta", "link", "input", "br", "img", "hr", "source", "use", "circle", "rect", "path", "stop"}
@@ -65,6 +66,14 @@ def js_strings() -> set[str]:
             for m in re.findall(r'\bt\("((?:[^"\\]|\\.)*)"', src)}
 
 
+def swift_strings() -> set[str]:
+    """t("…") trong ứng dụng macOS (macos/Sources/*.swift): menu, thông báo."""
+    out: set[str] = set()
+    for path in SWIFT.glob("*.swift"):
+        out |= {m.replace('\\"', '"') for m in re.findall(r'\bt\("((?:[^"\\]|\\.)*)"', path.read_text("utf-8"))}
+    return out
+
+
 def py_strings() -> set[str]:
     out: set[str] = set()
     for path in PKG.rglob("*.py"):
@@ -86,7 +95,8 @@ def label_strings() -> set[str]:
 
 
 def all_strings() -> dict[str, set[str]]:
-    return {"html": html_strings(), "js": js_strings(), "py": py_strings(), "labels": label_strings()}
+    return {"html": html_strings(), "js": js_strings(), "py": py_strings(), "labels": label_strings(),
+            "swift": swift_strings()}
 
 
 if __name__ == "__main__":

@@ -165,3 +165,127 @@ async def test_lan_mode_requires_token(tmp_path):
         assert r.status == 200 and "mb6_token" in r.cookies
         r = await c.get("/api/state", headers={"Host": "192.168.1.20:8766", "X-Token": "secret-token"})
         assert r.status == 200
+
+
+# ---------------------------------------------------------------- giữ kết nối (tự kết nối lại)
+
+async def wait_for(cond, timeout=3.0):
+    for _ in range(int(timeout / 0.02)):
+        if cond():
+            return True
+        await asyncio.sleep(0.02)
+    return cond()
+
+
+async def test_auto_reconnect_after_drop(client):
+    await connect(client)
+    s = client.service
+    s.reconnect_delays = (0.05,)
+    ws = await client.ws_connect("/api/events")
+    await ws.receive()  # hello
+    old = s.band
+    old._client.drop()  # vòng tay ra khỏi vùng phủ sóng
+    assert not s.connected and s.reconnect and s.reconnect["attempt"] == 1
+    msgs = []
+    while True:
+        msg = json.loads((await asyncio.wait_for(ws.receive(), 2)).data)
+        msgs.append(msg)
+        if msg["type"] == "disconnected":
+            break
+    assert msgs[-1]["reconnecting"] is True
+    assert await wait_for(lambda: s.connected and s.reconnect is None)
+    assert s.band is not old
+    assert any("Đã tự kết nối lại" in line for line in s.logs)
+    st = (await (await client.get("/api/state")).json())["state"]
+    assert st["connected"] and st["reconnect"] is None
+    await ws.close()
+
+
+async def test_disconnect_button_stops_reconnecting(client):
+    await connect(client)
+    s = client.service
+    s.reconnect_delays = (30,)
+    s.band._client.drop()
+    st = (await (await client.get("/api/state")).json())["state"]
+    assert st["reconnect"]["attempt"] == 1 and not st["connected"]
+    task = s._reconnect_task
+    r = await post(client, "/api/disconnect")
+    assert r.status == 200 and (await r.json())["state"]["reconnect"] is None
+    await asyncio.sleep(0)
+    assert task.cancelled() and not s.want_connected
+
+
+async def test_keep_connected_off_does_not_reconnect(client):
+    r = await post(client, "/api/prefs", {"keep_connected": False})
+    assert (await r.json())["state"]["settings"]["keep_connected"] is False
+    await connect(client)
+    client.service.band._client.drop()
+    await asyncio.sleep(0.05)
+    assert client.service.reconnect is None and client.service._reconnect_task is None
+    # bật lại: nối lại ngay vì lần ngắt vừa rồi không phải do người dùng bấm
+    client.service.reconnect_delays = (0.05,)
+    await post(client, "/api/prefs", {"keep_connected": True})
+    assert await wait_for(lambda: client.service.connected)
+
+
+async def test_reconnect_now_skips_the_wait(client):
+    await connect(client)
+    s = client.service
+    s.reconnect_delays = (30,)
+    s.band._client.drop()
+    assert s.reconnect["attempt"] == 1
+    r = await post(client, "/api/reconnect")  # ứng dụng macOS gọi khi máy vừa thức dậy
+    assert (await r.json())["started"] is True
+    assert await wait_for(lambda: s.connected)
+    r = await post(client, "/api/reconnect")
+    assert (await r.json())["started"] is False  # đang kết nối thì không làm gì
+
+
+async def test_reconnect_gives_up_after_repeated_auth_failures(client):
+    await connect(client)
+    s = client.service
+    s.reconnect_delays = (0.01,)
+    from miband6 import simulator
+
+    real = simulator.FakeBand
+
+    class WrongKeyBand(real):  # vòng tay đã bị ghép đôi lại: key cũ hết hiệu lực
+        def __init__(self, key, mode="both", with_2021_chars=True):
+            super().__init__(bytes(16), mode, with_2021_chars)
+
+    simulator.FakeBand = WrongKeyBand
+    try:
+        s.band._client.drop()
+        assert await wait_for(lambda: s._reconnect_task is None, 5)
+    finally:
+        simulator.FakeBand = real
+    assert not s.connected and s.reconnect is None
+    assert any("Ngừng tự kết nối lại" in line for line in s.logs)
+
+
+async def test_start_connects_to_remembered_band(tmp_path):
+    store = Store(tmp_path / "cfg.json")
+    store.remember_device("00000000-DEMO-0000-0000-000000000006", "Mi Smart Band 6 (demo)", KEY, "classic")
+    service = BandService(store, demo=True)
+    service.start()
+    assert await wait_for(lambda: service.connected)
+    assert service.device_meta["protocol"] == "classic"
+
+    store.data["settings"]["keep_connected"] = False
+    other = BandService(store, demo=True)
+    other.start()
+    assert other._reconnect_task is None
+    await service.disconnect()
+
+
+async def test_running_server_is_detected(client):
+    from miband6.web.server import running_server
+
+    port = client.server.port
+    assert await running_server(port) == f"http://localhost:{port}/"
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        free = sock.getsockname()[1]
+    assert await running_server(free) is None

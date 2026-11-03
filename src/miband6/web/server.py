@@ -3,19 +3,24 @@
     uv run miband6-web            # mở http://localhost:8766 trong trình duyệt
     uv run miband6-web --demo     # vòng tay giả lập, không dùng Bluetooth
     uv run miband6-web --lan      # cho thiết bị khác trong mạng Wi-Fi truy cập (cần mã truy cập)
+    miband6-web --app             # do ứng dụng macOS (macos/) gọi: không mở trình duyệt, báo địa chỉ qua stdout
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import dataclasses
 import datetime as dt
 import json
+import os
 import secrets
+import signal
 import socket
 import sys
 import tempfile
+import time
 import webbrowser
 from collections import deque
 from pathlib import Path
@@ -33,6 +38,10 @@ from .cloud import CloudSync
 STATIC = Path(__file__).parent / "static"
 DEFAULT_PORT = 8766
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+SERVER_ID = "miband6-manager"          # /api/meta trả về, để nhận ra server này đang chạy sẵn trên cổng
+READY_PREFIX = "MIBAND6_READY"         # dòng stdout báo địa chỉ cho ứng dụng macOS (chế độ --app)
+RECONNECT_DELAYS = (2, 5, 10, 20, 30, 60)   # giây chờ trước mỗi lần tự kết nối lại; lần sau cùng lặp mãi
+MAX_AUTH_FAILURES = 3                  # vòng tay từ chối xác thực ngần này lần liền thì thôi tự kết nối lại
 
 
 def jsonable(o):
@@ -88,6 +97,11 @@ class BandService:
         self.device_meta: dict = {}
         self._tasks: set[asyncio.Task] = set()
         self._stop_beep = True
+        # Giữ kết nối: True sau khi kết nối thành công, False khi người dùng bấm Ngắt kết nối
+        self.want_connected = False
+        self.reconnect: dict | None = None      # {"attempt": n, "at": epoch} khi đang chờ hoặc đang thử nối lại
+        self.reconnect_delays = RECONNECT_DELAYS
+        self._reconnect_task: asyncio.Task | None = None
         self.cloud = CloudSync(self, demo=demo, **({"login_factory": login_factory} if login_factory else {}))
 
     # ------------------------------------------------------------ tiện ích
@@ -102,6 +116,10 @@ class BandService:
     @property
     def connected(self) -> bool:
         return bool(self.band and self.band.is_connected and self.band.authenticated)
+
+    @property
+    def keep_connected(self) -> bool:
+        return bool(self.settings.get("keep_connected", True))
 
     def _spawn(self, coro) -> None:
         t = asyncio.ensure_future(coro)
@@ -147,6 +165,7 @@ class BandService:
             "saved_devices": devices,
             "last_device": self.store.data.get("last_device") or self.env_address,
             "env_key": bool(self.env_key),
+            "reconnect": None if self.connected else self.reconnect,
             "cloud": self.cloud.status,
         }
 
@@ -162,7 +181,10 @@ class BandService:
     def on_event(self, kind: str, data) -> None:
         if kind == "disconnected":
             self._stop_beep = True
-            self.push({"type": "disconnected"})
+            if self.busy:  # rớt giữa lúc đang kết nối: lỗi đã được báo qua kết quả của lần kết nối đó
+                return
+            reconnecting = self.want_connected and self.keep_connected and self._start_reconnect()
+            self.push({"type": "disconnected", "reconnecting": reconnecting})
             self.push_state()
             return
         self.live[kind] = data
@@ -210,6 +232,14 @@ class BandService:
                 for dev, rssi, is_band, name in results]
 
     async def connect(self, address: str, key_text: str, proto: str) -> str:
+        """Kết nối khi người dùng bấm Kết nối; thay cho vòng tự kết nối lại nếu nó đang chờ."""
+        if self.busy:
+            raise ApiError(tr('Đang kết nối, chờ một chút.'), 409)
+        self._cancel_reconnect()
+        self.want_connected = False
+        return await self._connect(address, key_text, proto)
+
+    async def _connect(self, address: str, key_text: str, proto: str) -> str:
         if self.busy:
             raise ApiError(tr('Đang kết nối, chờ một chút.'), 409)
         if not address:
@@ -228,14 +258,15 @@ class BandService:
         target, name = self.scan_cache.get(address, (address, saved.get("name") or P.MI_BAND6_NAME))
         self.busy = True
         self.push_state()
+        used = None
         try:
             if self.band:
                 await self.band.disconnect()
             client = None
             if self.demo:
-                from ..simulator import FakeBand
+                from .. import simulator
 
-                client = FakeBand(key, "both")
+                client = simulator.FakeBand(key, "both")
                 client.hr_delay = 6.0
             self.band = MiBand6(target, key, proto, on_event=self.on_event, log=self.log, client=client, name=name)
             used = await self.band.connect()
@@ -245,6 +276,9 @@ class BandService:
             raise ApiError(tr('Không kết nối được: {e}', e=e), 502) from e
         finally:
             self.busy = False
+            if used is None:
+                self.push_state()
+        self.want_connected = True
         self.device_meta = {"name": name, "address": address, "protocol": used}
         self.live = {}
         # key từ .env không bị chép vào config.json (và xóa key cũ đã lưu ở đó)
@@ -266,6 +300,85 @@ class BandService:
                 await job()
             except Exception as e:  # noqa: BLE001
                 self.log(tr('Lỗi khi đọc dữ liệu: {e}', e=e))
+
+    # ------------------------------------------------------------ giữ kết nối
+    def start(self) -> None:
+        """Gọi khi server vừa chạy: tự kết nối với vòng tay đã nhớ nếu đang bật Giữ kết nối."""
+        if self.keep_connected and self._reconnect_target():
+            self.want_connected = True
+            self._start_reconnect(first_delay=False)
+
+    def _reconnect_target(self) -> tuple[str, str, str] | None:
+        """(địa chỉ, auth key, giao thức) của vòng tay kết nối gần nhất, hoặc None nếu chưa đủ để tự kết nối."""
+        address = self.store.data.get("last_device") or self.env_address
+        if not address:
+            return None
+        saved = self.store.data.get("devices", {}).get(address, {})
+        key = saved.get("auth_key") or ""
+        if not key and not self.env_key:
+            return None
+        return address, key, saved.get("protocol") or self.env_protocol or PROTOCOL_AUTO
+
+    def _start_reconnect(self, first_delay: bool = True) -> bool:
+        if self._reconnect_task and not self._reconnect_task.done():
+            return True
+        if not self._reconnect_target():
+            return False
+        # đặt ngay để state() đẩy đi liền sau đó đã có thông tin chờ nối lại
+        self.reconnect = {"attempt": 1, "at": time.time() + (self.reconnect_delays[0] if first_delay else 0)}
+        self._reconnect_task = asyncio.ensure_future(self._reconnect_loop(first_delay))
+        return True
+
+    def _cancel_reconnect(self) -> None:
+        task, self._reconnect_task = self._reconnect_task, None
+        if task and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+        self.reconnect = None
+
+    def reconnect_now(self) -> bool:
+        """Thử nối lại ngay, bỏ qua thời gian chờ (ứng dụng macOS gọi khi máy vừa thức dậy)."""
+        if self.connected or self.busy or not (self.want_connected and self.keep_connected):
+            return False
+        self._cancel_reconnect()
+        started = self._start_reconnect(first_delay=False)
+        self.push_state()
+        return started
+
+    async def _reconnect_loop(self, first_delay: bool) -> None:
+        attempt = auth_failures = 0
+        try:
+            while not self.connected:
+                target = self._reconnect_target()
+                if target is None:
+                    return
+                delays = self.reconnect_delays
+                delay = delays[min(attempt, len(delays) - 1)] if (attempt or first_delay) else 0
+                attempt += 1
+                self.reconnect = {"attempt": attempt, "at": time.time() + delay}
+                self.push_state()
+                await asyncio.sleep(delay)
+                if self.connected:
+                    return
+                self.log(tr('Đang tự kết nối với vòng tay (lần {n})…', n=attempt))
+                try:
+                    await self._connect(*target)
+                except ApiError as e:
+                    if e.status == 400:  # auth key hoặc địa chỉ đã lưu không hợp lệ: thử nữa cũng vô ích
+                        self.log(tr('Ngừng tự kết nối lại: {e}', e=e))
+                        return
+                    auth_failures = auth_failures + 1 if e.status == 401 else 0
+                    if auth_failures >= MAX_AUTH_FAILURES:
+                        self.log(tr('Ngừng tự kết nối lại: vòng tay từ chối xác thực {n} lần liền.', n=auth_failures))
+                        return
+                    self.log(tr('Chưa kết nối lại được: {e}', e=e))
+                else:
+                    self.log(tr('Đã tự kết nối lại với vòng tay.'))
+                    return
+        finally:
+            if self._reconnect_task is asyncio.current_task():
+                self._reconnect_task = None
+                self.reconnect = None
+                self.push_state()
 
     # ------------------------------------------------------------ hồ sơ từ Mi Fitness
     async def _write_profile(self) -> None:
@@ -291,10 +404,21 @@ class BandService:
         return message
 
     async def disconnect(self) -> None:
+        """Người dùng chủ động ngắt: không tự kết nối lại nữa (kể cả khi đang chờ nối lại)."""
+        self.want_connected = False
+        self._cancel_reconnect()
         if self.band:
             await self.band.disconnect()
         self.live = {}
         self.push_state()
+
+    def set_keep_connected(self, on: bool) -> None:
+        self.settings["keep_connected"] = on
+        self.store.save()
+        if not on:
+            self._cancel_reconnect()
+        elif self.want_connected and not self.connected and not self.busy:
+            self._start_reconnect(first_delay=False)
 
     # ------------------------------------------------------------ cài đặt
     async def apply(self, section: str, b: dict) -> str:
@@ -488,6 +612,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             menu_always_visible=P.MENU_ALWAYS_VISIBLE,
             shortcuts_all=P.SHORTCUTS_ALL, shortcuts_default=P.SHORTCUTS_DEFAULT, hr_intervals=P.HR_INTERVALS,
             hr_thresholds=P.HR_ALERT_THRESHOLDS, max_alarms=P.MAX_ALARMS, platform=sys.platform,
+            server=SERVER_ID,
         )
 
     async def state(_):
@@ -505,6 +630,9 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     async def disconnect_h(_):
         await S.disconnect()
         return ok(state=S.state())
+
+    async def reconnect_h(_):
+        return ok(started=S.reconnect_now(), state=S.state())
 
     async def refresh_h(_):
         await S.require().refresh_all()
@@ -573,6 +701,9 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
         if b.get("lang") in ("vi", "en"):
             S.settings["ui_lang"] = set_lang(b["lang"])
         S.store.save()
+        if "keep_connected" in b:
+            S.set_keep_connected(bool(b["keep_connected"]))
+        S.push_state()  # trình duyệt khác và thanh menu của ứng dụng macOS cũng thấy thay đổi
         return ok(state=S.state())
 
     async def cloud_sync(req):
@@ -624,6 +755,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/scan", scan_h)
     r.add_post("/api/connect", connect_h)
     r.add_post("/api/disconnect", disconnect_h)
+    r.add_post("/api/reconnect", reconnect_h)
     r.add_post("/api/refresh", refresh_h)
     r.add_post("/api/time/sync", time_h)
     r.add_post("/api/hr/measure", hr_measure)
@@ -644,6 +776,8 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/cloud/forget", cloud_forget)
 
     async def on_shutdown(_app):
+        S.want_connected = False
+        S._cancel_reconnect()
         for ws in list(S.clients):
             await ws.close()
         if S.band and S.band.is_connected:
@@ -665,6 +799,33 @@ def lan_ip() -> str:
         return "127.0.0.1"
 
 
+async def running_server(port: int) -> str | None:
+    """Địa chỉ của một server Quản lý Mi Band 6 đang chạy sẵn trên cổng này (ví dụ ứng dụng macOS), nếu có."""
+    from aiohttp import ClientError, ClientSession, ClientTimeout
+
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=2)) as s:
+            async with s.get(f"http://127.0.0.1:{port}/api/meta") as r:
+                data = await r.json(content_type=None)
+    except (ClientError, asyncio.TimeoutError, ValueError, OSError):
+        return None
+    return f"http://localhost:{port}/" if isinstance(data, dict) and data.get("server") == SERVER_ID else None
+
+
+async def _watch_parent(stop: asyncio.Event) -> None:
+    """Chế độ --app: ứng dụng macOS bị tắt đột ngột thì server cũng thoát để nhả kết nối Bluetooth."""
+    parent = os.getppid()
+    while not stop.is_set():
+        if os.getppid() != parent:
+            stop.set()
+            return
+        await asyncio.sleep(2)
+
+
+def _announce(port: int) -> None:
+    print(f"{READY_PREFIX} http://127.0.0.1:{port}/", flush=True)
+
+
 async def serve(args) -> None:
     env_path = load_env(args.env)
     env_key, env_address, env_protocol = env_settings()
@@ -677,6 +838,26 @@ async def serve(args) -> None:
     if env_protocol not in (None, PROTOCOL_AUTO, PROTOCOL_CLASSIC, PROTOCOL_2021):
         print(tr('Cảnh báo: MIBAND6_PROTOCOL={env_protocol} không hợp lệ; dùng auto.', env_protocol=env_protocol))
         env_protocol = None
+    stop = asyncio.Event()
+    with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):  # Windows không có SIGTERM
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stop.set)
+    watcher = asyncio.ensure_future(_watch_parent(stop)) if args.app else None
+
+    # Chỉ một server được giữ vòng tay (vòng tay nhận một kết nối): nếu đã có server chạy sẵn thì dùng nó.
+    if not (args.lan or args.demo) and (existing := await running_server(args.port)):
+        if not args.app:
+            print(tr('Quản lý Mi Band 6 đã chạy sẵn tại {url} (có thể là ứng dụng macOS). Mở giao diện đó thay vì chạy thêm một server.', url=existing))
+            if not args.no_browser:
+                webbrowser.open(existing)
+            return
+        # ứng dụng macOS: hiện giao diện của server đang chạy, khi server đó tắt thì tự chạy server của mình
+        _announce(args.port)
+        while not stop.is_set() and await running_server(args.port):
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(stop.wait(), 3)
+        if stop.is_set():
+            return
+
     store = Store(Path(tempfile.gettempdir()) / "miband6-demo-config.json") if args.demo else Store()
     service = BandService(store, demo=args.demo, env_key=env_key, env_address=env_address, env_protocol=env_protocol)
     token = secrets.token_urlsafe(16) if args.lan else None
@@ -705,11 +886,16 @@ async def serve(args) -> None:
     if env_key:
         print(tr('  Auth key: đọc từ {path} (không lưu vào config.json)', path=env_path or tr('biến môi trường')))
     print(tr('Nhấn Ctrl+C để tắt server.'))
-    if not args.no_browser:
+    if args.app:
+        _announce(port)
+    elif not args.no_browser:
         webbrowser.open(local_url)
+    service.start()
     try:
-        await asyncio.Event().wait()
+        await stop.wait()
     finally:
+        if watcher:
+            watcher.cancel()
         await runner.cleanup()
 
 
@@ -724,6 +910,7 @@ def main() -> None:
     ap.add_argument("--lan", action="store_true", help=tr('Cho thiết bị khác trong mạng truy cập (có mã bảo vệ)'))
     ap.add_argument("--no-browser", action="store_true", help=tr('Không tự mở trình duyệt'))
     ap.add_argument("--env", metavar="TỆP", help=tr('Tệp .env chứa MIBAND6_AUTH_KEY (mặc định: .env trong thư mục dự án)'))
+    ap.add_argument("--app", action="store_true", help=argparse.SUPPRESS)  # do ứng dụng macOS gọi
     args = ap.parse_args()
     try:
         asyncio.run(serve(args))

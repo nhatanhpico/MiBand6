@@ -1,8 +1,9 @@
 # Quản lý Mi Band 6
 
-Ứng dụng web chạy trên máy tính để kết nối Xiaomi Mi Smart Band 6 qua Bluetooth LE, xem thông tin và thay đổi cài đặt của vòng tay, không cần điện thoại. Server Python chạy trên máy Mac giữ kết nối Bluetooth; giao diện mở trong trình duyệt.
+Ứng dụng chạy trên máy tính để kết nối Xiaomi Mi Smart Band 6 qua Bluetooth LE, xem thông tin và thay đổi cài đặt của vòng tay, không cần điện thoại. Server Python chạy trên máy giữ kết nối Bluetooth; giao diện dùng chung cho hai cách chạy:
 
-Chạy được trên macOS (Apple Silicon và Intel), Windows và Linux.
+- **Bản web**: `uv run miband6-web`, giao diện mở trong trình duyệt. Chạy được trên macOS (Apple Silicon và Intel), Windows và Linux.
+- **Ứng dụng macOS** (`Mi Band 6.app`): cửa sổ riêng và biểu tượng trên thanh menu, chạy nền để luôn giữ kết nối với vòng tay, có thể tự mở cùng macOS. Xem [Ứng dụng macOS](#ứng-dụng-macos).
 
 ## Ứng dụng làm được gì
 
@@ -22,6 +23,11 @@ Chạy được trên macOS (Apple Silicon và Intel), Windows và Linux.
 - Nhắc vận động (kèm giờ nghỉ trưa), Không làm phiền
 - 10 báo thức: đọc từ vòng tay, chỉnh sửa, lưu lại
 - Đồng bộ giờ với máy tính (tự làm mỗi lần kết nối)
+
+**Giữ kết nối**
+- Tự kết nối lại khi vòng tay mất kết nối (ra khỏi vùng sóng, máy Mac ngủ dậy…), thử lại thưa dần tới mỗi phút một lần
+- Tự kết nối với vòng tay đã nhớ khi server khởi động
+- Bật/tắt bằng **Giữ kết nối** ở trang **Thiết bị** (mặc định bật). Bấm **Ngắt kết nối** thì ứng dụng thôi tự nối lại cho tới khi bạn kết nối lần nữa
 
 **Công cụ**
 - Gửi thông báo có biểu tượng tới vòng tay, giả lập cuộc gọi đến
@@ -61,11 +67,48 @@ Các tùy chọn:
 
 Mặc định server chỉ nhận kết nối từ chính máy này, và từ chối yêu cầu do trang web khác gửi tới.
 
+Vòng tay chỉ nhận một kết nối, nên chỉ một server được giữ nó. Nếu ứng dụng macOS (hoặc một `uv run miband6-web` khác) đang chạy, lệnh `uv run miband6-web` không chạy server thứ hai mà mở giao diện của server đang chạy.
+
 Bản desktop cũ (Qt) vẫn còn: `uv run --extra desktop miband6-app`.
 
 ### Quyền Bluetooth trên macOS
 
-Lần quét đầu tiên, macOS sẽ hỏi "Terminal muốn sử dụng Bluetooth": chọn **Cho phép**. Nếu lỡ từ chối, vào **Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Bluetooth** và bật cho Terminal (hoặc VS Code / iTerm, tùy bạn chạy lệnh từ đâu).
+Lần quét đầu tiên, macOS sẽ hỏi "Terminal muốn sử dụng Bluetooth" (với ứng dụng macOS: "Mi Band 6 muốn sử dụng Bluetooth"): chọn **Cho phép**. Nếu lỡ từ chối, vào **Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Bluetooth** và bật cho Terminal (hoặc VS Code / iTerm, tùy bạn chạy lệnh từ đâu; hoặc Mi Band 6).
+
+## Ứng dụng macOS
+
+Ứng dụng dùng đúng server và giao diện của bản web, thêm phần vỏ macOS viết bằng Swift (`macos/`):
+
+- Cửa sổ riêng hiện giao diện quen thuộc; đóng cửa sổ thì ứng dụng vẫn chạy trên **thanh menu** và vẫn giữ kết nối với vòng tay.
+- Biểu tượng vòng tay trên thanh menu cho biết trạng thái (chấm đặc: đã kết nối, kèm % pin). Menu của nó có: trạng thái, pin/bước/nhịp tim, mở cửa sổ, mở trong trình duyệt, kết nối/ngắt kết nối, rung vòng tay, **Giữ kết nối**, **Mở cùng macOS**, nhật ký server.
+- Máy Mac vừa ngủ dậy thì ứng dụng nhờ server kết nối lại ngay.
+- Thông báo macOS khi mất kết nối quá một phút và khi đã nối lại; khi vòng tay bấm "Tìm điện thoại" (bấm vào thông báo để tắt âm thanh).
+- Server do ứng dụng chạy và dừng theo ứng dụng; nếu server thoát bất thường, ứng dụng chạy lại nó.
+
+### Đóng gói
+
+Cần uv và Xcode Command Line Tools (`xcode-select --install`):
+
+```bash
+cd ~/Project/MiBand6
+./macos/build.sh                  # tạo dist/Mi Band 6.app (khoảng 100 MB, có sẵn Python bên trong)
+open "dist/Mi Band 6.app"
+ditto "dist/Mi Band 6.app" "/Applications/Mi Band 6.app"   # cài vào thư mục Ứng dụng
+```
+
+Bản đóng gói chứa sẵn Python 3.12 và mọi thư viện, không cần thư mục dự án để chạy. Vì vậy **sửa code xong phải chạy lại `./macos/build.sh`** thì ứng dụng mới có thay đổi. Khi đang phát triển, dùng `./macos/build.sh --dev`: ứng dụng nhỏ, chạy thẳng mã nguồn và `.venv` của dự án, sửa code xong chỉ cần thoát và mở lại ứng dụng (bản này không chép sang máy khác được).
+
+`open "dist/Mi Band 6.app" --args --demo` mở ứng dụng với vòng tay giả lập, không dùng Bluetooth.
+
+### Dùng hằng ngày
+
+1. Mở ứng dụng, kết nối vòng tay ở trang **Thiết bị** như bản web (lần đầu macOS hỏi "Mi Band 6 muốn dùng Bluetooth": chọn **Cho phép**).
+2. Trên menu của biểu tượng vòng tay, bật **Mở cùng macOS**. Lần đăng nhập sau ứng dụng tự chạy, chỉ hiện trên thanh menu và tự nối lại vòng tay.
+3. Đóng cửa sổ khi không cần; mở lại bằng menu trên thanh menu, biểu tượng Dock hoặc mở ứng dụng lần nữa. **Thoát** (⌘Q) thì server dừng và vòng tay được ngắt kết nối.
+
+Ứng dụng dùng chung cấu hình với bản web (`~/Library/Application Support/MiBand6Manager/config.json`): vòng tay, auth key và cài đặt đã lưu ở bên này thì bên kia cũng thấy. Auth key trong tệp `.env` của dự án cũng được dùng. Nhật ký của server nằm ở `~/Library/Logs/MiBand6Manager/server.log` (menu **Mở nhật ký server**). Muốn mở giao diện trong trình duyệt khi ứng dụng đang chạy: menu **Mở trong trình duyệt**, hoặc chạy `uv run miband6-web` như thường lệ.
+
+Ứng dụng được ký ad-hoc (không có chứng chỉ Apple), nên sau mỗi lần đóng gói lại, macOS có thể hỏi lại quyền Bluetooth, và tùy chọn **Mở cùng macOS** có thể cần bật lại. Có chứng chỉ ký mã thì đặt `MIBAND6_SIGN_IDENTITY="Apple Development: …"` trước lệnh build để macOS nhớ quyền giữa các lần build.
 
 ## Lấy auth key
 
@@ -190,6 +233,10 @@ Vòng tay không cho đọc lại bố cục hiện tại, nên ứng dụng ch�
 | Một cài đặt không có tác dụng | Mở **Nhật ký Bluetooth** cuối trang **Thiết bị**, bấm **Tải về** để xem vòng tay trả lời gì. |
 | Vòng tay mất ứng dụng Cài đặt | Vào **Cài đặt → Ứng dụng**, bấm **Về bố cục gốc** rồi **Lưu bố cục**. |
 | Trình duyệt báo không mở được localhost:8766 | Server chưa chạy hoặc đã tắt: chạy lại `uv run miband6-web`. Nếu cổng bận, server tự dùng cổng kế tiếp; xem đường dẫn in trong Terminal. |
+| Vòng tay cứ tự kết nối lại khi đang muốn dùng với điện thoại | Bấm **Ngắt kết nối** (ứng dụng thôi tự nối lại), hoặc tắt **Giữ kết nối** ở trang **Thiết bị** / trên menu của ứng dụng macOS. |
+| Nhật ký ghi "Ngừng tự kết nối lại: vòng tay từ chối xác thực…" | Auth key đã hết hiệu lực (vòng tay vừa được ghép đôi lại với app của hãng): lấy key mới rồi bấm **Kết nối**. |
+| (Ứng dụng macOS) cửa sổ ghi "Đang khởi động…" mãi | Xem nhật ký server (menu **Mở nhật ký server**). Nếu vừa chuyển thư mục dự án, đóng gói lại bằng `./macos/build.sh`. |
+| (Ứng dụng macOS) không thấy biểu tượng trên thanh menu | Thanh menu quá chật (máy có tai thỏ) nên macOS ẩn bớt biểu tượng: tắt bớt biểu tượng khác, hoặc mở ứng dụng lần nữa để hiện cửa sổ. |
 | (Bản desktop) uv báo không có bản PySide6 phù hợp | PySide6 mới cần macOS 14 trở lên. Trên macOS cũ hơn, sửa `PySide6-Essentials>=6.6` trong `pyproject.toml` thành `PySide6-Essentials>=6.6,<6.8`, xóa `uv.lock` rồi chạy lại. |
 
 ## Dòng lệnh
@@ -226,11 +273,13 @@ src/miband6/
   web/static/i18n/en.json  Bản dịch tiếng Anh (khóa là chuỗi tiếng Việt gốc)
   web/static/fonts/        Phông Be Vietnam Pro (SIL OFL), không cần mạng
   gui/          Bản desktop cũ (Qt, tùy chọn)
+macos/          Ứng dụng macOS: vỏ Swift (thanh menu, cửa sổ WKWebView) chạy server ở trên làm tiến trình con
+  Sources/      Mã Swift; build.sh đóng gói thành dist/Mi Band 6.app
 tools/mifitness_key.py  Lấy auth key từ tài khoản Mi Fitness
 tests/          Kiểm thử giao thức, mã hóa, toàn bộ luồng kết nối và giao diện
 ```
 
-Thêm chuỗi giao diện mới thì viết bằng tiếng Việt (trong HTML, `t("…")` ở app.js hoặc `tr('…')` ở Python) rồi thêm bản dịch vào `en.json`. `uv run python tests/i18n_strings.py` liệt kê các chuỗi còn thiếu; kiểm thử cũng báo lỗi nếu thiếu.
+Thêm chuỗi giao diện mới thì viết bằng tiếng Việt (trong HTML, `t("…")` ở app.js hoặc ở mã Swift, `tr('…')` ở Python) rồi thêm bản dịch vào `en.json`. `uv run python tests/i18n_strings.py` liệt kê các chuỗi còn thiếu; kiểm thử cũng báo lỗi nếu thiếu.
 
 Chạy kiểm thử:
 

@@ -17,7 +17,7 @@ def _reset_lang():
     set_lang("vi")
 
 
-@pytest.mark.parametrize("group", ["html", "js", "py", "labels"])
+@pytest.mark.parametrize("group", ["html", "js", "py", "labels", "swift"])
 def test_every_string_has_english(group):
     strings = i18n_strings.all_strings()[group]
     assert strings, group

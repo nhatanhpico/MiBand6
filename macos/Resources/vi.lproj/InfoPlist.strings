@@ -1,0 +1,3 @@
+/* Chuỗi tiếng Việt của Info.plist (giống bản gốc trong macos/Info.plist). */
+"NSBluetoothAlwaysUsageDescription" = "Mi Band 6 dùng Bluetooth để kết nối và giữ kết nối với vòng tay Xiaomi Mi Smart Band 6.";
+"NSHumanReadableCopyright" = "Không liên quan tới Xiaomi hay Zepp Health.";

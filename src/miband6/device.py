@@ -79,6 +79,9 @@ class MiBand6:
         self._notifying: set[str] = set()
         self._closing = False
         self.authenticated = False
+        # client thay thế (vòng tay giả lập) cũng báo khi rớt kết nối, giống disconnected_callback của BleakClient
+        if client is not None and hasattr(client, "disconnected_callback"):
+            client.disconnected_callback = self._on_disconnect
 
     # ------------------------------------------------------------------ helpers
 
