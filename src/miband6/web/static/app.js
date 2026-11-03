@@ -135,7 +135,7 @@ const quiet = (p) => p.catch(() => {});
 /* ============================================================ điều hướng */
 
 const PAGES = ["overview", "health", "settings", "alarms", "tools", "device"];
-const SUBS = ["profile", "display", "apps", "health"];
+const SUBS = ["profile", "display", "face", "apps", "health"];
 
 function route() {
   const [page0, sub0] = (location.hash.slice(1) || "").split("/");
@@ -146,6 +146,7 @@ function route() {
     const sub = SUBS.includes(sub0) ? sub0 : "profile";
     $$(".subtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === sub)));
     $$(".subpage").forEach((s) => (s.hidden = s.id !== `sub-${sub}`));
+    if (sub === "face") requestAnimationFrame(() => (WP.img ? wpDraw() : drawSim()));
   }
   window.scrollTo({ top: 0 });
   if (page === "health") {
@@ -172,14 +173,16 @@ function renderWatchface(info) {
   else img.removeAttribute("href");
   img.style.display = has ? "" : "none";
   $("#wfEmpty").hidden = has;
-  let current = t("Không rõ");
+  let current = t("Chưa cài mặt đồng hồ nào qua ứng dụng");
   if (info?.name) {
     const when = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(info.installed * 1000));
-    current = t("{name} (cài lúc {when})", { name: info.name, when });
+    current = t("Cài gần nhất qua ứng dụng: {name}, {when}", { name: info.name, when });
   } else if (has) {
     current = t("Mặt đồng hồ có sẵn (đã đặt ảnh xem trước)");
   }
-  $("#wfCurrent").textContent = current;
+  $("#faceCurrent").textContent = current;
+  loadCurrentFace(info);
+  faceButtons();
 }
 setInterval(drawBand, 15000);
 
@@ -941,7 +944,11 @@ $("#findPhone").addEventListener("close", () => {
   quiet(api("/api/find-phone/stop", {}));
 });
 
-/* ============================================================ mặt đồng hồ */
+/* ============================================================ mặt đồng hồ: mô phỏng, ảnh nền, tệp .bin */
+
+/* Mi Band 6 không cho đọc mặt đồng hồ đang hiện. Khung mô phỏng hiện: ảnh đang chỉnh, ảnh xem trước trong
+   tệp .bin vừa chọn, hoặc mặt đồng hồ đã cài qua ứng dụng. Mọi ảnh gửi đi đều là ảnh 152 × 486 vẽ lại từ
+   khung mô phỏng, nên ảnh gốc lớn đến đâu cũng được tự thu nhỏ. */
 
 const readBase64 = (file) => new Promise((resolve, reject) => {
   const r = new FileReader();
@@ -949,6 +956,24 @@ const readBase64 = (file) => new Promise((resolve, reject) => {
   r.onerror = () => reject(r.error);
   r.readAsDataURL(file);
 });
+const loadImage = (src) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => resolve(img);
+  img.onerror = () => reject(new Error(t("Không mở được ảnh này. Chọn ảnh PNG hoặc JPEG.")));
+  img.src = src;
+});
+
+const WP = { W: 152, H: 486, R: 76, img: null, base: 1, scale: 1, ox: 0, oy: 0, k: 1 };
+const SIM = { source: null, binB64: null, binName: "", binPreview: null, current: null, currentKey: null };
+const DIGIT_W = 44;
+const DIGIT_H = 64;
+const DIGIT_X = (152 - 2 * DIGIT_W) / 2;
+const WP_ROWS = { top: 40, middle: 177, bottom: 314 };
+let wpDigits = null;
+let wpDigitsColor = "";
+let wpDrag = null;
+
+const faceMode = () => radio("faceMode") || "photo";
 
 function renderWatchfaceProgress(d) {
   const pct = d.total ? Math.round((d.sent / d.total) * 100) : 0;
@@ -957,39 +982,61 @@ function renderWatchfaceProgress(d) {
   $("#wfPct").textContent = `${pct}%`;
 }
 
-$("#wfInstallBtn").onclick = () => quiet(run($("#wfInstallBtn"), async () => {
-  const file = $("#wfFile").files[0];
-  if (!file) throw new Error(t("Chọn tệp mặt đồng hồ (.bin) trước."));
-  const preview = $("#wfPreview").files[0];
-  renderWatchfaceProgress({ sent: 0, total: 1 });
-  try {
-    const r = await api("/api/watchface", { name: file.name, file: await readBase64(file), preview: preview ? await readBase64(preview) : null });
-    applyState(r.state);
-    return r;
-  } finally {
-    $("#wfProgressRow").hidden = true;
+/** Ảnh của mặt đồng hồ đã cài qua ứng dụng (hoặc ảnh xem trước tự đặt), hiện khi chưa chọn gì mới. */
+function loadCurrentFace(info) {
+  const key = info?.preview ? String(info.version || 0) : "";
+  if (key === SIM.currentKey) return;
+  SIM.currentKey = key;
+  SIM.current = null;
+  if (key) loadImage(`/api/watchface/preview?v=${key}`).then((img) => { SIM.current = img; drawSim(); }).catch(() => {});
+  drawSim();
+}
+
+function drawCover(g, img) {
+  const s = Math.max(WP.W / img.width, WP.H / img.height);
+  g.drawImage(img, (WP.W - img.width * s) / 2, (WP.H - img.height * s) / 2, img.width * s, img.height * s);
+}
+
+function drawSim() {
+  const g = $("#simScreen").getContext("2d");
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, WP.W, WP.H);
+  let source = null;
+  if (faceMode() === "photo" && WP.img) {
+    wpBackground(g);
+    wpDrawTime(g);
+    source = "photo";
+  } else if (faceMode() === "bin" && SIM.binPreview) {
+    drawCover(g, SIM.binPreview);
+    source = "bin";
+  } else if (SIM.current) {
+    drawCover(g, SIM.current);
+    source = "current";
   }
+  SIM.source = source;
+  $("#simEmpty").hidden = !!source;
+  $("#simCaption").textContent = ({
+    photo: () => t("Mô phỏng ảnh nền của bạn trên Mi Band 6"),
+    bin: () => t("Mô phỏng: ảnh xem trước trong tệp .bin"),
+    current: () => t("Mặt đồng hồ đã cài qua ứng dụng"),
+  }[source] || (() => t("Mô phỏng màn hình Mi Band 6 (152 × 486)")))();
+  faceButtons();
+}
+
+function faceButtons() {
+  const ready = faceMode() === "photo" ? !!WP.img : !!SIM.binB64;
+  $("#faceInstallBtn").disabled = !ready || !STATE.connected;
+  $("#facePreviewBtn").disabled = !(SIM.source === "photo" || SIM.source === "bin");
+  $("#wfClearBtn").disabled = !STATE.watchface?.preview;
+}
+
+$$('input[name="faceMode"]').forEach((el) => el.addEventListener("change", () => {
+  $("#modePhoto").hidden = faceMode() !== "photo";
+  $("#modeBin").hidden = faceMode() !== "bin";
+  if (faceMode() === "photo" && WP.img) wpDraw(); else drawSim();
 }));
-$("#wfPreviewBtn").onclick = () => quiet(run($("#wfPreviewBtn"), async () => {
-  const preview = $("#wfPreview").files[0];
-  if (!preview) throw new Error(t("Chọn ảnh xem trước trước (ảnh chụp mặt đồng hồ đang dùng)."));
-  applyState((await api("/api/watchface/preview", { image: await readBase64(preview) })).state);
-}, t("Đã đặt ảnh xem trước.")));
-$("#wfClearBtn").onclick = () => quiet(run($("#wfClearBtn"), async () => {
-  applyState((await api("/api/watchface/preview", { image: null })).state);
-}, t("Đã bỏ ảnh xem trước.")));
 
-/* ============================================================ ảnh nền tùy chỉnh */
-
-/* Tọa độ tính theo điểm ảnh của màn hình vòng tay (152 × 486). Ảnh nằm tại (ox, oy) với tỉ lệ scale. */
-const WP = { W: 152, H: 486, R: 76, img: null, base: 1, scale: 1, ox: 0, oy: 0, k: 1 };
-const DIGIT_W = 44;
-const DIGIT_H = 64;
-const DIGIT_X = (152 - 2 * DIGIT_W) / 2;
-const WP_ROWS = { top: 40, middle: 177, bottom: 314 };
-let wpDigits = null;
-let wpDigitsColor = "";
-let wpDrag = null;
+/* ---- ảnh của bạn: cắt, phóng to, vị trí giờ */
 
 async function wpMakeDigits() {
   const color = radio("wpColor") || "light";
@@ -1011,10 +1058,10 @@ async function wpMakeDigits() {
   });
   wpDigitsColor = color;
 }
-/** Vị trí hàng giờ và hàng phút (góc trên trái), hoặc null nếu không hiện giờ. */
+/** Vị trí hàng giờ và hàng phút (góc trên trái), hoặc null nếu ẩn giờ. */
 function wpTimeRows() {
   const pos = radio("wpTime");
-  if (pos === "off" || !WP_ROWS[pos]) return null;
+  if (!WP_ROWS[pos]) return null;
   return [[DIGIT_X, WP_ROWS[pos]], [DIGIT_X, WP_ROWS[pos] + DIGIT_H + 4]];
 }
 function wpDrawTime(g) {
@@ -1024,6 +1071,12 @@ function wpDrawTime(g) {
   [pad(now.getHours()), pad(now.getMinutes())].forEach((txt, r) => {
     [...txt].forEach((ch, i) => g.drawImage(wpDigits[Number(ch)], rows[r][0] + i * DIGIT_W, rows[r][1]));
   });
+}
+function wpBackground(g) {
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, WP.W, WP.H);
+  g.imageSmoothingQuality = "high";
+  g.drawImage(WP.img, WP.ox, WP.oy, WP.img.width * WP.scale, WP.img.height * WP.scale);
 }
 function wpClamp() {
   const w = WP.img.width * WP.scale;
@@ -1046,8 +1099,7 @@ function wpReset() {
 function wpZoomTo(scale) {
   const s1 = WP.scale;
   const s2 = Math.max(WP.base, Math.min(WP.base * 4, scale));
-  // giữ nguyên điểm ở giữa màn hình khi phóng to
-  WP.ox = WP.W / 2 - ((WP.W / 2 - WP.ox) * s2) / s1;
+  WP.ox = WP.W / 2 - ((WP.W / 2 - WP.ox) * s2) / s1;   // giữ nguyên điểm giữa màn hình
   WP.oy = WP.H / 2 - ((WP.H / 2 - WP.oy) * s2) / s1;
   WP.scale = s2;
   $("#wpZoom").value = Math.round((s2 / WP.base - 1) * 100);
@@ -1063,71 +1115,52 @@ function wpScreenPath(g, x, y, k) {
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
 }
+/** Khung chỉnh (cả ảnh, phần bị cắt tối đi) rồi khung mô phỏng. */
 function wpDraw() {
   if (!WP.img) return;
-  // khung chỉnh: cả ảnh (phần bị cắt tối đi) và khung màn hình vòng tay ở giữa
   const stage = $("#wpStage");
   const box = stage.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  stage.width = Math.round(box.width * dpr);
-  stage.height = Math.round(box.height * dpr);
-  const g = stage.getContext("2d");
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, box.width, box.height);
-  const k = (WP.k = Math.min(1, (box.height - 32) / WP.H, (box.width - 32) / WP.W));
-  const wx = (box.width - WP.W * k) / 2;
-  const wy = (box.height - WP.H * k) / 2;
-  g.imageSmoothingQuality = "high";
-  g.drawImage(WP.img, wx + WP.ox * k, wy + WP.oy * k, WP.img.width * WP.scale * k, WP.img.height * WP.scale * k);
-  g.save();
-  g.translate(wx, wy);
-  g.scale(k, k);
-  wpDrawTime(g);
-  g.restore();
-  g.beginPath();
-  g.rect(0, 0, box.width, box.height);
-  wpScreenPath(g, wx, wy, k);
-  g.fillStyle = "rgba(8, 11, 10, .72)";
-  g.fill("evenodd");
-  g.beginPath();
-  wpScreenPath(g, wx, wy, k);
-  g.strokeStyle = "rgba(255, 255, 255, .55)";
-  g.lineWidth = 1;
-  g.stroke();
-
-  // kết quả đúng 152 × 486 điểm ảnh như trên vòng tay
-  const out = $("#wpResult").getContext("2d");
-  wpBackground(out);
-  wpDrawTime(out);
+  if (box.width && box.height) {
+    const dpr = window.devicePixelRatio || 1;
+    stage.width = Math.round(box.width * dpr);
+    stage.height = Math.round(box.height * dpr);
+    const g = stage.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, box.width, box.height);
+    const k = (WP.k = Math.min(0.8, (box.height - 24) / WP.H, (box.width - 24) / WP.W));
+    const wx = (box.width - WP.W * k) / 2;
+    const wy = (box.height - WP.H * k) / 2;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(WP.img, wx + WP.ox * k, wy + WP.oy * k, WP.img.width * WP.scale * k, WP.img.height * WP.scale * k);
+    g.beginPath();
+    g.rect(0, 0, box.width, box.height);
+    wpScreenPath(g, wx, wy, k);
+    g.fillStyle = "rgba(8, 11, 10, .72)";
+    g.fill("evenodd");
+    g.beginPath();
+    wpScreenPath(g, wx, wy, k);
+    g.strokeStyle = "rgba(255, 255, 255, .6)";
+    g.lineWidth = 1;
+    g.stroke();
+  }
+  drawSim();
 }
-function wpBackground(g) {
-  g.fillStyle = "#000";
-  g.fillRect(0, 0, WP.W, WP.H);
-  g.imageSmoothingQuality = "high";
-  g.drawImage(WP.img, WP.ox, WP.oy, WP.img.width * WP.scale, WP.img.height * WP.scale);
-}
-const bytesToBase64 = (u8) => {
-  let s = "";
-  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
-  return btoa(s);
-};
-const rgbaOf = (canvas) => ({
-  w: canvas.width, h: canvas.height,
-  rgba: bytesToBase64(new Uint8Array(canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data.buffer)),
-});
 
-$("#wpFile").onchange = () => {
+$("#wpPickBtn").onclick = () => $("#wpFile").click();
+$("#wpFile").onchange = async () => {
   const file = $("#wpFile").files[0];
   if (!file) return;
-  const img = new Image();
-  img.onload = async () => {
+  try {
+    const img = await loadImage(URL.createObjectURL(file));
     WP.img = img;
-    ["#wpEditor", "#wpControls", "#wpFoot"].forEach((sel) => ($(sel).hidden = false));
+    $("#wpName").textContent = `${file.name} · ${img.width} × ${img.height}`;
+    $("#wpName").classList.add("chosen");
+    $("#wpAdjust").hidden = false;
     await wpMakeDigits();
     wpReset();
-  };
-  img.onerror = () => toast(t("Không mở được ảnh này. Chọn ảnh PNG hoặc JPEG."), true);
-  img.src = URL.createObjectURL(file);
+  } catch (e) {
+    toast(e.message, true);
+  }
 };
 const stageEl = $("#wpStage");
 stageEl.tabIndex = 0;
@@ -1170,14 +1203,48 @@ $$('input[name="wpFit"]').forEach((el) => el.addEventListener("change", () => WP
 $$('input[name="wpTime"]').forEach((el) => el.addEventListener("change", wpDraw));
 $$('input[name="wpColor"]').forEach((el) => el.addEventListener("change", async () => { await wpMakeDigits(); wpDraw(); }));
 $("#wpResetBtn").onclick = () => WP.img && wpReset();
-window.addEventListener("resize", () => { if (WP.img && !$("#sub-display").hidden) wpDraw(); });
+window.addEventListener("resize", () => { if (WP.img && !$("#sub-face").hidden) wpDraw(); });
+setInterval(() => { if (WP.img && !$("#sub-face").hidden) wpDraw(); }, 30000);   // giờ trong mô phỏng chạy theo đồng hồ
 
-$("#wpPreviewBtn").onclick = () => quiet(run($("#wpPreviewBtn"), async () => {
-  wpDraw();
-  applyState((await api("/api/watchface/preview", { image: $("#wpResult").toDataURL("image/png") })).state);
-}, t("Đã đặt ảnh xem trước.")));
-$("#wpInstallBtn").onclick = () => quiet(run($("#wpInstallBtn"), async () => {
-  if (!WP.img) throw new Error(t("Chọn ảnh trước."));
+/* ---- tệp .bin */
+
+$("#wfPickBtn").onclick = () => $("#wfFile").click();
+$("#wfFile").onchange = async () => {
+  const file = $("#wfFile").files[0];
+  if (!file) return;
+  SIM.binB64 = null;
+  SIM.binPreview = null;
+  $("#wfInfo").hidden = true;
+  try {
+    const b64 = await readBase64(file);
+    const r = await api("/api/watchface/inspect", { file: b64 });
+    SIM.binB64 = b64;
+    SIM.binName = file.name;
+    $("#wfName").textContent = `${file.name} · ${fmtInt(Math.round(r.size / 1024))} KB`;
+    $("#wfName").classList.add("chosen");
+    if (r.preview) SIM.binPreview = await loadImage(r.preview);
+    $("#wfInfo").textContent = r.preview ? t("Đã đọc ảnh xem trước trong tệp.") : t("Không đọc được ảnh xem trước trong tệp này (ảnh nén); tệp vẫn cài được.");
+    $("#wfInfo").hidden = false;
+  } catch (e) {
+    $("#wfName").textContent = t("Chưa chọn tệp");
+    $("#wfName").classList.remove("chosen");
+    toast(e.message, true);
+  }
+  drawSim();
+};
+
+/* ---- cài lên vòng tay / chỉ đặt ảnh xem trước */
+
+const bytesToBase64 = (u8) => {
+  let s = "";
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+const rgbaOf = (canvas) => ({
+  w: canvas.width, h: canvas.height,
+  rgba: bytesToBase64(new Uint8Array(canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data.buffer)),
+});
+function wallpaperPayload() {
   wpDraw();
   const bg = document.createElement("canvas");
   bg.width = WP.W;
@@ -1186,20 +1253,34 @@ $("#wpInstallBtn").onclick = () => quiet(run($("#wpInstallBtn"), async () => {
   const pv = document.createElement("canvas");   // ảnh nhỏ để chọn mặt đồng hồ trên vòng tay
   pv.width = WP.W / 2;
   pv.height = Math.round(WP.H / 2);
-  pv.getContext("2d").drawImage($("#wpResult"), 0, 0, pv.width, pv.height);
+  pv.getContext("2d").drawImage($("#simScreen"), 0, 0, pv.width, pv.height);
   const rows = wpTimeRows();
+  return {
+    background: rgbaOf(bg), preview: rgbaOf(pv), image: $("#simScreen").toDataURL("image/png"),
+    digits: rows ? wpDigits.map(rgbaOf) : [], hours: rows ? rows[0] : null, minutes: rows ? rows[1] : null,
+  };
+}
+
+$("#faceInstallBtn").onclick = () => quiet(run($("#faceInstallBtn"), async () => {
   renderWatchfaceProgress({ sent: 0, total: 1 });
   try {
-    const r = await api("/api/wallpaper", {
-      background: rgbaOf(bg), preview: rgbaOf(pv), image: $("#wpResult").toDataURL("image/png"),
-      digits: rows ? wpDigits.map(rgbaOf) : [], hours: rows ? rows[0] : null, minutes: rows ? rows[1] : null,
-    });
+    const r = faceMode() === "photo"
+      ? await api("/api/wallpaper", wallpaperPayload())
+      : await api("/api/watchface", { name: SIM.binName, file: SIM.binB64, preview: SIM.binPreview ? $("#simScreen").toDataURL("image/png") : null });
     applyState(r.state);
     return r;
   } finally {
     $("#wfProgressRow").hidden = true;
+    faceButtons();
   }
 }));
+$("#facePreviewBtn").onclick = () => quiet(run($("#facePreviewBtn"), async () => {
+  drawSim();
+  applyState((await api("/api/watchface/preview", { image: $("#simScreen").toDataURL("image/png") })).state);
+}, t("Đã đặt ảnh xem trước.")).finally(faceButtons));
+$("#wfClearBtn").onclick = () => quiet(run($("#wfClearBtn"), async () => {
+  applyState((await api("/api/watchface/preview", { image: null })).state);
+}, t("Đã bỏ ảnh xem trước.")).finally(faceButtons));
 
 /* ============================================================ sức khỏe */
 

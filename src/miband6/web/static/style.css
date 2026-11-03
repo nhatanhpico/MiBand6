@@ -252,9 +252,7 @@ input.pin { width: 150px; text-align: center; letter-spacing: .45em; font-varian
 }
 .wf-empty a { color: var(--amber); font-weight: 600; }
 .hero-link { display: inline-block; margin-top: 16px; color: var(--amber); font-size: 14px; font-weight: 500; text-underline-offset: 3px; }
-.wf-progress { display: inline-flex; align-items: center; gap: 10px; width: 260px; }
-.wf-progress .goal-bar { flex: 1; }
-.wf-progress .num { color: var(--text); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+
 
 .hero-label { color: var(--muted); font-size: 14.5px; }
 .hero-steps { margin: 2px 0 18px; }
@@ -612,16 +610,44 @@ select:invalid, select.unknown { color: var(--muted); }
   .hnote { margin-top: -6px; }
 }
 
-/* ================================================================ ảnh nền tùy chỉnh */
-.wp-editor { display: flex; gap: 22px; align-items: flex-start; padding: 6px 22px 16px; flex-wrap: wrap; }
-.wp-editor figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.wp-editor figcaption { color: var(--muted); font-size: 13px; }
-.wp-stage { width: min(100%, 420px); height: 540px; border-radius: 14px; background: #0b100f; cursor: grab; touch-action: none; }
+/* ================================================================ mặt đồng hồ: mô phỏng + chọn ảnh / tệp */
+.face-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; padding: 26px 26px 24px; align-items: start; }
+.sim { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; position: sticky; top: 24px; }
+.sim-band { position: relative; width: 200px; height: 640px; }
+.sim-frame { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* màn hình 152 × 486 điểm, góc bo 76 như vòng tay thật; hiện đúng kích thước */
+.sim-screen { position: absolute; left: 24px; top: 77px; width: 152px; height: 486px; border-radius: 76px; background: #000; image-rendering: auto; }
+.sim-empty {
+  position: absolute; left: 24px; top: 77px; width: 152px; height: 486px; border-radius: 76px;
+  display: flex; align-items: center; justify-content: center; padding: 0 18px; text-align: center;
+  color: var(--muted); font-size: 12.5px; line-height: 1.45;
+}
+.sim figcaption { color: var(--muted); font-size: 12.5px; text-align: center; max-width: 240px; }
+.face-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.face-head h2 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.face-head p { margin-top: 3px; font-size: 14px; }
+.face-tabs { align-self: flex-start; }
+.face-mode { display: flex; flex-direction: column; gap: 12px; }
+.face-hint { color: var(--muted); font-size: 13.5px; max-width: 62ch; }
+.pick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pick-name { color: var(--muted); font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.pick-name.chosen { color: var(--text); }
+.wp-stage { display: block; width: 100%; height: 420px; border-radius: 14px; background: #0b100f; cursor: grab; touch-action: none; }
 .wp-stage.dragging { cursor: grabbing; }
-.wp-stage-wrap { flex: 1 1 320px; }
-.wp-result { width: 152px; height: 486px; border-radius: 76px; background: #000; box-shadow: 0 0 0 6px #151a19, 0 0 0 7px #45514e; }
-#wpControls input[type="range"] { width: 260px; accent-color: var(--amber); }
-@media (max-width: 760px) {
-  .wp-editor { padding: 6px 16px 16px; }
-  .wp-stage { height: 460px; }
+.rows.compact { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.rows.compact .row { padding-left: 16px; padding-right: 16px; }
+.rows.compact .row:first-child { border-top: 0; }
+.rows.compact input[type="range"] { width: min(260px, 50%); accent-color: var(--amber); }
+#wpResetBtn { align-self: flex-start; }
+.face-progress { display: flex; align-items: center; gap: 12px; max-width: 420px; }
+.face-progress .goal-bar { flex: 1; }
+.face-progress .num { font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+.face-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
+.face-note { color: var(--muted); font-size: 13px; max-width: 70ch; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 4px; }
+.link-btn { align-self: flex-start; background: none; border: 0; padding: 0; color: var(--amber); font: 500 13.5px var(--font); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn:disabled { opacity: .4; cursor: default; }
+@media (max-width: 900px) {
+  .face-layout { grid-template-columns: minmax(0, 1fr); padding: 20px 16px; }
+  .sim { position: static; }
+  .wp-stage { height: 380px; }
 }

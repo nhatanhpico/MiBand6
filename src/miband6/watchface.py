@@ -168,3 +168,88 @@ def parse(data: bytes) -> tuple[dict, list[bytes]]:
     pos += 4 * count
     ends = offsets[1:] + [len(data) - pos]
     return params, [data[pos + a:pos + b] for a, b in zip(offsets, ends)]
+
+
+# ---------------------------------------------------------------- ảnh xem trước của tệp .bin có sẵn
+
+
+def decode_image(img: bytes) -> tuple[int, int, bytes] | None:
+    """(rộng, cao, RGBA) của một ảnh trong tệp mặt đồng hồ; None nếu là kiểu chưa hỗ trợ (ảnh nén)."""
+    import struct
+
+    if len(img) < 16 or img[:2] != b"BM":
+        return None
+    fmt, w, h, row, bpp, ncolors, transparent = struct.unpack_from("<7H", img, 2)
+    if fmt in (0x65, 0xFFFF) or not w or not h:
+        return None
+    out = bytearray(w * h * 4)
+    if ncolors:
+        if bpp not in (1, 2, 4, 8):
+            return None
+        palette = [bytes([img[16 + i * 4], img[17 + i * 4], img[18 + i * 4], 0 if i == transparent - 1 else 255])
+                   for i in range(ncolors)]
+        base = 16 + ncolors * 4
+        per = 8 // bpp
+        mask = (1 << bpp) - 1
+        for y in range(h):
+            for x in range(w):
+                if bpp < 8:
+                    byte = img[base + y * row + x // per]
+                    ci = (byte >> (8 - ((x % per) + 1) * bpp)) & mask
+                else:
+                    ci = img[base + y * row + x]
+                if ci < ncolors:
+                    out[(y * w + x) * 4:(y * w + x) * 4 + 4] = palette[ci]
+        return w, h, bytes(out)
+    if bpp not in (16, 24, 32):
+        return None
+    step = bpp // 8
+    for y in range(h):
+        for x in range(w):
+            p = 16 + y * row + x * step
+            if step == 4:
+                r, g, b, a = img[p], img[p + 1], img[p + 2], img[p + 3]
+            else:
+                if step == 3:
+                    a, v = img[p], (img[p + 1] << 8) | img[p + 2]
+                else:
+                    a, v = 0, img[p] | (img[p + 1] << 8)
+                if fmt == 0x13:   # 4:4:4:4 ABGR
+                    a, b, g, r = (v & 0xF000) >> 8, (v & 0x0F00) >> 4, v & 0x00F0, (v & 0x000F) << 4
+                elif fmt in (0x1C, 0x09):   # 5:6:5 RGB
+                    r, g, b = (v & 0xF800) >> 8, (v & 0x07E0) >> 3, (v & 0x001F) << 3
+                else:   # 5:6:5 BGR
+                    b, g, r = (v & 0xF800) >> 8, (v & 0x07E0) >> 3, (v & 0x001F) << 3
+            i = (y * w + x) * 4
+            out[i:i + 4] = bytes([r, g, b, 0xFF - a])   # trong tệp, 0 là đặc
+    return w, h, bytes(out)
+
+
+def png(width: int, height: int, rgba: bytes) -> bytes:
+    """Mã hóa RGBA thành PNG (để trình duyệt hiện ảnh xem trước)."""
+    import struct
+    import zlib
+
+    raw = b"".join(b"\x00" + rgba[y * width * 4:(y + 1) * width * 4] for y in range(height))
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+def preview_png(data: bytes) -> bytes | None:
+    """Ảnh xem trước (hoặc ảnh nền) lưu trong một tệp mặt đồng hồ Mi Band 6, dạng PNG; None nếu không đọc được."""
+    try:
+        params, images = parse(data)
+        bg = params.get(BACKGROUND) or {}
+        for key in (BG_PREVIEW_EN, BG_PREVIEW_CN, BG_IMAGE):
+            ref = bg.get(key)
+            if isinstance(ref, dict) and 0 <= ref.get(3, 0) < len(images):
+                decoded = decode_image(images[ref.get(3, 0)])
+                if decoded:
+                    return png(*decoded)
+    except (ValueError, IndexError, KeyError, TypeError):
+        pass
+    return None

@@ -478,6 +478,8 @@ class BandService:
             self.watchface_busy = False
         self.watchface_dir.mkdir(parents=True, exist_ok=True)
         (self.watchface_dir / "current.bin").write_bytes(data)
+        if preview is None:
+            preview = WF.preview_png(data)   # ảnh xem trước có sẵn trong tệp, nếu đọc được
         info = {"name": name[:120], "size": len(data), "installed": int(time.time()), "preview": False}
         if preview is not None:
             (self.watchface_dir / "preview").write_bytes(preview)
@@ -923,6 +925,16 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     async def health_sync(_):
         return ok(status=S.start_health_sync())
 
+    async def watchface_inspect(req):
+        """Kiểm tra tệp .bin và trả ảnh xem trước bên trong nó (để mô phỏng trước khi cài)."""
+        data = b64((await body(req)).get("file"))
+        try:
+            P.check_watchface(data)
+        except ValueError as e:
+            raise ApiError(str(e)) from e
+        shot = WF.preview_png(data)
+        return ok(size=len(data), preview=("data:image/png;base64," + base64.b64encode(shot).decode()) if shot else None)
+
     async def watchface_post(req):
         b = await body(req)
         data = b64(b.get("file"))
@@ -1050,6 +1062,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_get("/api/health", health_get)
     r.add_post("/api/health/sync", health_sync)
     r.add_post("/api/watchface", watchface_post)
+    r.add_post("/api/watchface/inspect", watchface_inspect)
     r.add_post("/api/wallpaper", wallpaper_post)
     r.add_get("/api/watchface/preview", watchface_preview_get)
     r.add_post("/api/watchface/preview", watchface_preview_post)

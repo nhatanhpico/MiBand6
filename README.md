@@ -31,10 +31,11 @@
 - Tự đồng bộ khi kết nối và mỗi 30 phút; bấm **Đồng bộ** để lấy ngay. Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
 - Vòng tay tự đo nhịp tim và căng thẳng theo **Cài đặt → Sức khỏe**; SpO2 thì Mi Band 6 chỉ đo khi bấm đo trên vòng tay (không bật từ xa được), kết quả hiện sau lần đồng bộ kế tiếp
 
-**Mặt đồng hồ và ảnh nền** (**Cài đặt → Màn hình**)
-- Cài mặt đồng hồ tùy chỉnh (tệp `.bin` dành cho Mi Band 6, bắt đầu bằng `UIHH`), kèm ảnh xem trước
-- Ảnh nền tùy chỉnh: chọn ảnh, kéo để di chuyển, phóng to; phần bị cắt hiện tối đi quanh khung màn hình vòng tay (152 × 486), bên cạnh là ảnh đúng như trên vòng tay. Chọn vị trí và màu giờ, rồi **Cài lên vòng tay**: ứng dụng tự dựng một mặt đồng hồ từ ảnh đó
-- Vòng tay không cho biết mặt đồng hồ đang dùng, nên hình vòng tay ở Tổng quan hiện ảnh của mặt đã cài qua ứng dụng (hoặc ảnh xem trước bạn tự đặt cho mặt có sẵn)
+**Mặt đồng hồ và ảnh nền** (**Cài đặt → Mặt đồng hồ**)
+- Khung **mô phỏng Mi Band 6** (màn hình 152 × 486, bo góc như thật) hiện đúng thứ sẽ lên vòng tay trước khi cài
+- **Ảnh của bạn**: chọn ảnh (ảnh lớn cỡ nào cũng được, ứng dụng tự thu nhỏ), kéo để di chuyển, cuộn chuột hoặc kéo thanh trượt để phóng to; phần bị cắt hiện tối đi quanh khung màn hình. Chọn vị trí và màu giờ rồi **Cài lên vòng tay**: ứng dụng tự dựng một mặt đồng hồ từ ảnh đó
+- **Tệp .bin**: cài mặt đồng hồ tùy chỉnh dành cho Mi Band 6 (bắt đầu bằng `UIHH`); ảnh xem trước có trong tệp được đọc ra và hiện ở khung mô phỏng
+- Vòng tay không cho đọc mặt đồng hồ đang dùng (kể cả mặt có sẵn), nên hình vòng tay ở Tổng quan hiện mặt đã cài qua ứng dụng. Với mặt có sẵn: chụp ảnh màn hình vòng tay, chọn ở **Ảnh của bạn**, đặt Giờ là **Ẩn**, bấm **Chỉ đặt làm ảnh xem trước**
 
 **Giữ kết nối**
 - Tự kết nối lại khi vòng tay mất kết nối (ra khỏi vùng sóng, máy Mac ngủ dậy…), thử lại thưa dần tới mỗi phút một lần

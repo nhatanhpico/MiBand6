@@ -246,3 +246,33 @@ async def test_wallpaper_endpoint(client):
     assert len(images) == 12
     r = await post(client, "/api/wallpaper", {"background": img(100, 100), "preview": img(10, 10)})
     assert r.status == 400
+
+
+def test_preview_extracted_from_bin():
+    bg = bytes([10, 120, 200, 255]) * (152 * 486)
+    data = WF.wallpaper_face(bg, (76, 243, bytes([250, 20, 20, 255]) * (76 * 243)), [], None, None)
+    shot = WF.preview_png(data)
+    assert shot.startswith(b"\x89PNG")
+    w, h, rgba = WF.decode_image(WF.parse(data)[1][1])
+    assert (w, h) == (76, 243) and rgba[:4] == bytes([248, 20, 16, 255])
+    # ảnh 8 bit có bảng màu, màu số 2 là màu trong suốt
+    indexed = b"BM" + b"".join(v.to_bytes(2, "little") for v in (0x64, 2, 1, 2, 8, 2, 2)) \
+        + bytes([255, 0, 0, 0, 0, 0, 255, 0]) + bytes([0, 1])
+    assert WF.decode_image(indexed) == (2, 1, bytes([255, 0, 0, 255, 0, 0, 255, 0]))
+    assert WF.preview_png(b"UIHH\x01" + bytes(100)) is None
+
+
+async def test_inspect_and_auto_preview(client):
+    fake = await connected(client)
+    bg = bytes([10, 120, 200, 255]) * (152 * 486)
+    face = WF.wallpaper_face(bg, (76, 243, bytes([250, 20, 20, 255]) * (76 * 243)), [], None, None)
+    b64 = base64.b64encode(face).decode()
+    body = await (await post(client, "/api/watchface/inspect", {"file": b64})).json()
+    assert body["size"] == len(face) and body["preview"].startswith("data:image/png;base64,")
+    r = await post(client, "/api/watchface/inspect", {"file": base64.b64encode(b"nope" * 10).decode()})
+    assert r.status == 400
+    # cài không kèm ảnh xem trước: dùng ảnh có sẵn trong tệp
+    r = await post(client, "/api/watchface", {"name": "blue.bin", "file": b64})
+    assert (await r.json())["state"]["watchface"]["preview"] and fake.installed_watchface == face
+    shot = await (await client.get("/api/watchface/preview")).read()
+    assert shot == WF.preview_png(face)

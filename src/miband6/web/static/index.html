@@ -28,6 +28,8 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
   <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5Z"/><path d="m9.5 13.5 2.5-2.5 2.5 2.5M12 11v5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-4.5 3.5 3 3-2.5L20 17"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l2 2M14 9l2 2"/></symbol>
 </svg>
 
@@ -99,8 +101,8 @@
               <image id="wfImage" x="27" y="67" width="86" height="266" preserveAspectRatio="xMidYMid slice" clip-path="url(#screenClip)" style="display:none"/>
             </svg>
             <div class="wf-empty" id="wfEmpty">
-              <p>Chưa có ảnh mặt đồng hồ</p>
-              <a href="#settings/display">Đặt ảnh</a>
+              <p>Vòng tay không cho đọc mặt đồng hồ đang dùng</p>
+              <a href="#settings/face">Chọn mặt đồng hồ</a>
             </div>
             </div>
           </figure>
@@ -241,6 +243,7 @@
       <div class="subtabs" role="tablist" aria-label="Nhóm cài đặt">
         <button role="tab" data-sub="profile">Hồ sơ</button>
         <button role="tab" data-sub="display">Màn hình</button>
+        <button role="tab" data-sub="face">Mặt đồng hồ</button>
         <button role="tab" data-sub="apps">Ứng dụng</button>
         <button role="tab" data-sub="health">Sức khỏe</button>
       </div>
@@ -294,50 +297,6 @@
 
       <!-- Màn hình -->
       <div class="subpage" id="sub-display" role="tabpanel" hidden>
-        <div class="group" id="wfGroup">
-          <div class="group-head"><h2>Mặt đồng hồ</h2><p>Cài mặt đồng hồ tùy chỉnh (tệp .bin dành cho Mi Band 6). Vòng tay không cho biết mặt đồng hồ nào đang dùng, nên ảnh ở trang Tổng quan là ảnh xem trước bạn chọn ở đây.</p></div>
-          <div class="rows">
-            <div class="row"><span class="row-label">Đang dùng</span><output id="wfCurrent" class="muted">Không rõ</output></div>
-            <label class="row"><span class="row-label">Tệp mặt đồng hồ (.bin)</span><input type="file" id="wfFile" accept=".bin,application/octet-stream"></label>
-            <label class="row"><span class="row-label">Ảnh xem trước (PNG, JPEG, GIF)</span><input type="file" id="wfPreview" accept="image/png,image/jpeg,image/gif"></label>
-            <div class="row" id="wfProgressRow" hidden><span class="row-label">Đang cài lên vòng tay</span><span class="wf-progress"><span class="goal-bar"><span id="wfBar"></span></span><span id="wfPct" class="num">0%</span></span></div>
-          </div>
-          <div class="group-foot">
-            <button id="wfClearBtn" class="btn ghost" type="button">Bỏ ảnh xem trước</button>
-            <button id="wfPreviewBtn" class="btn" type="button">Chỉ đặt ảnh xem trước</button>
-            <button id="wfInstallBtn" class="btn primary" data-conn>Cài lên vòng tay</button>
-          </div>
-        </div>
-        <div class="group" id="wpGroup">
-          <div class="group-head"><h2>Ảnh nền tùy chỉnh</h2><p>Chọn một ảnh, kéo để di chuyển, dùng thanh trượt để phóng to. Phần sáng là phần hiện trên màn hình vòng tay (152 × 486 điểm ảnh); phần tối sẽ bị cắt bỏ. Ứng dụng tạo một mặt đồng hồ gồm ảnh này và giờ, rồi cài lên vòng tay.</p></div>
-          <div class="rows">
-            <label class="row"><span class="row-label">Ảnh</span><input type="file" id="wpFile" accept="image/*"></label>
-          </div>
-          <div class="wp-editor" id="wpEditor" hidden>
-            <figure class="wp-stage-wrap">
-              <canvas id="wpStage" class="wp-stage" aria-label="Kéo để di chuyển ảnh"></canvas>
-              <figcaption>Kéo ảnh để chọn phần hiện trên vòng tay</figcaption>
-            </figure>
-            <figure class="wp-result-wrap">
-              <canvas id="wpResult" class="wp-result" width="152" height="486" aria-label="Ảnh nền trên vòng tay"></canvas>
-              <figcaption>Trên vòng tay</figcaption>
-            </figure>
-          </div>
-          <div class="rows" id="wpControls" hidden>
-            <label class="row"><span class="row-label">Phóng to</span><input type="range" id="wpZoom" min="0" max="300" value="0"></label>
-            <div class="row"><span class="row-label">Cách đặt ảnh</span>
-              <div class="seg"><input type="radio" name="wpFit" id="wpCover" value="cover" checked><label for="wpCover">Lấp đầy màn hình</label><input type="radio" name="wpFit" id="wpContain" value="contain"><label for="wpContain">Vừa trọn ảnh</label></div></div>
-            <div class="row"><span class="row-label">Giờ</span>
-              <div class="seg"><input type="radio" name="wpTime" id="wpTimeTop" value="top" checked><label for="wpTimeTop">Trên</label><input type="radio" name="wpTime" id="wpTimeMid" value="middle"><label for="wpTimeMid">Giữa</label><input type="radio" name="wpTime" id="wpTimeBottom" value="bottom"><label for="wpTimeBottom">Dưới</label><input type="radio" name="wpTime" id="wpTimeOff" value="off"><label for="wpTimeOff">Không hiện</label></div></div>
-            <div class="row"><span class="row-label">Màu chữ số</span>
-              <div class="seg"><input type="radio" name="wpColor" id="wpWhite" value="light" checked><label for="wpWhite">Trắng</label><input type="radio" name="wpColor" id="wpBlack" value="dark"><label for="wpBlack">Đen</label></div></div>
-          </div>
-          <div class="group-foot" id="wpFoot" hidden>
-            <button id="wpResetBtn" class="btn ghost" type="button">Căn giữa lại</button>
-            <button id="wpPreviewBtn" class="btn" type="button">Chỉ đặt làm ảnh xem trước</button>
-            <button id="wpInstallBtn" class="btn primary" data-conn>Cài lên vòng tay</button>
-          </div>
-        </div>
         <div class="group">
           <div class="group-head"><h2>Ngôn ngữ và định dạng</h2></div>
           <div class="rows">
@@ -376,6 +335,83 @@
             <label class="row"><span class="row-label">Mã 6 số</span><input id="dPw" class="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="••••••"></label>
           </div>
           <div class="group-foot"><button class="btn primary" data-save="password" data-conn>Lưu vào vòng tay</button></div>
+        </div>
+      </div>
+
+      <!-- Mặt đồng hồ -->
+      <div class="subpage" id="sub-face" role="tabpanel" hidden>
+        <div class="group face">
+          <div class="face-layout">
+            <figure class="sim">
+              <div class="sim-band">
+                <svg class="sim-frame" viewBox="0 0 200 640" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="simStrapTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2422" stop-opacity="0"/><stop offset="1" stop-color="#26302e"/></linearGradient>
+                    <linearGradient id="simStrapBottom" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26302e"/><stop offset="1" stop-color="#1c2422" stop-opacity="0"/></linearGradient>
+                    <linearGradient id="simBody" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3b4644"/><stop offset=".14" stop-color="#151a19"/><stop offset=".86" stop-color="#151a19"/><stop offset="1" stop-color="#2c3533"/></linearGradient>
+                  </defs>
+                  <rect x="44" y="-20" width="112" height="120" rx="30" fill="url(#simStrapTop)"/>
+                  <rect x="44" y="540" width="112" height="120" rx="30" fill="url(#simStrapBottom)"/>
+                  <rect x="10" y="63" width="180" height="514" rx="90" fill="url(#simBody)" stroke="#45514e" stroke-width="1"/>
+                </svg>
+                <canvas id="simScreen" class="sim-screen" width="152" height="486" aria-label="Màn hình Mi Band 6 mô phỏng"></canvas>
+                <div class="sim-empty" id="simEmpty"><p>Chọn ảnh hoặc tệp .bin để xem trước trên vòng tay</p></div>
+              </div>
+              <figcaption id="simCaption">Mô phỏng màn hình Mi Band 6 (152 × 486)</figcaption>
+            </figure>
+
+            <div class="face-panel">
+              <div class="face-head">
+                <h2>Mặt đồng hồ</h2>
+                <p id="faceCurrent" class="muted">Chưa cài mặt đồng hồ nào qua ứng dụng</p>
+              </div>
+              <div class="seg face-tabs" role="radiogroup" aria-label="Nguồn mặt đồng hồ">
+                <input type="radio" name="faceMode" id="fmPhoto" value="photo" checked><label for="fmPhoto">Ảnh của bạn</label>
+                <input type="radio" name="faceMode" id="fmBin" value="bin"><label for="fmBin">Tệp .bin</label>
+              </div>
+
+              <div id="modePhoto" class="face-mode">
+                <p class="face-hint">Dùng ảnh của bạn làm ảnh nền, kèm giờ. Ảnh lớn được tự thu nhỏ cho vừa màn hình vòng tay.</p>
+                <div class="pick">
+                  <button class="btn" id="wpPickBtn" type="button"><svg class="ic"><use href="#i-image"/></svg><span>Chọn ảnh…</span></button>
+                  <span class="pick-name" id="wpName">Chưa chọn ảnh</span>
+                  <input type="file" id="wpFile" accept="image/*" hidden>
+                </div>
+                <div id="wpAdjust" hidden>
+                  <canvas id="wpStage" class="wp-stage" aria-label="Kéo để di chuyển ảnh"></canvas>
+                  <p class="face-hint">Kéo ảnh để chọn phần hiện trên vòng tay; cuộn chuột hoặc dùng thanh trượt để phóng to. Phần tối sẽ bị cắt.</p>
+                  <div class="rows compact">
+                    <label class="row"><span class="row-label">Phóng to</span><input type="range" id="wpZoom" min="0" max="300" value="0"></label>
+                    <div class="row"><span class="row-label">Cách đặt ảnh</span>
+                      <div class="seg"><input type="radio" name="wpFit" id="wpCover" value="cover" checked><label for="wpCover">Lấp đầy</label><input type="radio" name="wpFit" id="wpContain" value="contain"><label for="wpContain">Trọn ảnh</label></div></div>
+                    <div class="row"><span class="row-label">Giờ</span>
+                      <div class="seg"><input type="radio" name="wpTime" id="wpTimeTop" value="top" checked><label for="wpTimeTop">Trên</label><input type="radio" name="wpTime" id="wpTimeMid" value="middle"><label for="wpTimeMid">Giữa</label><input type="radio" name="wpTime" id="wpTimeBottom" value="bottom"><label for="wpTimeBottom">Dưới</label><input type="radio" name="wpTime" id="wpTimeOff" value="off"><label for="wpTimeOff">Ẩn</label></div></div>
+                    <div class="row"><span class="row-label">Màu chữ số</span>
+                      <div class="seg"><input type="radio" name="wpColor" id="wpWhite" value="light" checked><label for="wpWhite">Trắng</label><input type="radio" name="wpColor" id="wpBlack" value="dark"><label for="wpBlack">Đen</label></div></div>
+                  </div>
+                  <button id="wpResetBtn" class="btn ghost small" type="button">Căn giữa lại</button>
+                </div>
+              </div>
+
+              <div id="modeBin" class="face-mode" hidden>
+                <p class="face-hint">Tệp mặt đồng hồ dành cho Mi Band 6 (bắt đầu bằng “UIHH”). Ảnh xem trước có trong tệp được hiện ở khung mô phỏng.</p>
+                <div class="pick">
+                  <button class="btn" id="wfPickBtn" type="button"><svg class="ic"><use href="#i-file"/></svg><span>Chọn tệp .bin…</span></button>
+                  <span class="pick-name" id="wfName">Chưa chọn tệp</span>
+                  <input type="file" id="wfFile" accept=".bin,application/octet-stream" hidden>
+                </div>
+                <p class="face-hint" id="wfInfo" hidden></p>
+              </div>
+
+              <div class="face-progress" id="wfProgressRow" hidden><span class="goal-bar"><span id="wfBar"></span></span><span id="wfPct" class="num">0%</span></div>
+              <div class="face-actions">
+                <button id="faceInstallBtn" class="btn primary" type="button" disabled>Cài lên vòng tay</button>
+                <button id="facePreviewBtn" class="btn" type="button" disabled>Chỉ đặt làm ảnh xem trước</button>
+              </div>
+              <p class="face-note">Mi Band 6 không cho ứng dụng đọc mặt đồng hồ đang hiện trên vòng tay (kể cả mặt có sẵn), nên ứng dụng chỉ biết mặt đồng hồ cài qua đây. Đang dùng mặt có sẵn? Chụp ảnh màn hình vòng tay, chọn ảnh đó ở “Ảnh của bạn”, đặt Giờ là Ẩn rồi bấm “Chỉ đặt làm ảnh xem trước”.</p>
+              <button class="link-btn" id="wfClearBtn" type="button">Bỏ ảnh xem trước đã đặt</button>
+            </div>
+          </div>
         </div>
       </div>
 
