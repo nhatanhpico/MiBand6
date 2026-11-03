@@ -239,6 +239,7 @@ function route() {
     if (sub === "face") requestAnimationFrame(() => (WP.img ? wpDraw() : drawSim()));
   }
   window.scrollTo({ top: 0 });
+  $(".main")?.scrollTo({ top: 0 });
   if (page === "overview") quiet(loadOverview());
   if (page === "health") {
     healthAnchor = sub0 || "";
@@ -2041,6 +2042,7 @@ function showTip(x, y, rows) {
   tip.style.top = `${Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 14))}px`;
 }
 const hideTip = () => (tip.hidden = true);
+$(".main")?.addEventListener("scroll", hideTip, { passive: true });
 function hoverable(el, rows) {
   el.setAttribute("tabindex", "0");
   el.addEventListener("pointermove", (e) => showTip(e.clientX, e.clientY, rows()));

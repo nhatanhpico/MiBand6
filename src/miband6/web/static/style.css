@@ -57,9 +57,19 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; }
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 /* như một ứng dụng: không bôi đen chữ khi giữ chuột hay bấm ⌘A, không kéo ảnh ra ngoài (ô nhập liệu vẫn chọn được) */
-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
 input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
 img, svg, a { -webkit-user-drag: none; }
 html.i18n-pending body { visibility: hidden; }
@@ -80,15 +90,27 @@ a { color: inherit; }
 .muted { color: var(--muted); }
 
 /* ================================================================ khung */
-.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; }
+.app {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
 
 .rail {
-  position: sticky; top: 0; height: 100vh; height: 100dvh;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex-shrink: 0;
   display: flex; flex-direction: column; gap: 18px;
   padding: 26px 16px 18px;
   background: var(--rail);
   border-right: 1px solid var(--line);
 }
+.rail::-webkit-scrollbar { display: none; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
 .brand-mark { width: 26px; height: 26px; fill: none; stroke: var(--amber); stroke-width: 1.8; }
 .brand-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
@@ -190,7 +212,16 @@ a { color: inherit; }
 .lang button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); }
 
 /* cột nội dung: giãn theo cửa sổ tới 1480px rồi nằm giữa (lề hai bên bằng nhau), không dồn sang trái */
-.main { padding: 40px clamp(20px, 3.4vw, 56px) 72px; width: 100%; max-width: 1480px; min-width: 0; margin-inline: auto; }
+.main {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 40px max(clamp(20px, 3.4vw, 56px), calc((100% - 1380px) / 2)) 72px;
+  width: 100%;
+  min-width: 0;
+}
 /* biểu đồ vẽ theo bề rộng lúc vẽ; trong lúc đổi cỡ cửa sổ thì co theo khung cho tới khi được vẽ lại */
 .chart svg { max-width: 100%; height: auto; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
@@ -520,14 +551,21 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
 
 /* ================================================================ điện thoại: thanh trên + thanh tab dưới */
 @media (max-width: 760px) {
-  .app { grid-template-columns: minmax(0, 1fr); }
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
   .rail {
-    position: sticky; top: 0; z-index: 20; height: auto;
+    position: relative; top: auto; z-index: 20; height: auto;
     flex-direction: row; align-items: center; gap: 10px;
     padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top));
     /* không dùng backdrop-filter ở đây: nó biến thanh này thành khối chứa của thanh tab cố định bên dưới */
     background: rgba(19, 26, 25, .97);
     border-right: 0; border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
   }
   .brand { padding: 0; }
   .brand-mark { width: 22px; height: 22px; }
@@ -544,7 +582,12 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   .nav a { flex: 1; flex-direction: column; gap: 3px; padding: 7px 2px; font-size: 11px; border-radius: 10px; }
   .nav a[aria-current="page"] { background: transparent; color: var(--amber); }
   .nav .ic { width: 22px; height: 22px; }
-  .main { padding: 20px 14px calc(96px + env(safe-area-inset-bottom)); }
+  .main {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    padding: 20px 14px calc(96px + env(safe-area-inset-bottom));
+  }
   h1 { font-size: 27px; }
   .page-head { margin-bottom: 18px; }
   .page-head .btn span { display: none; }
