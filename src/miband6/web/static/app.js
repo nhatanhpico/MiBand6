@@ -4019,6 +4019,27 @@ $("#cloudRetryBtn").addEventListener("click", () => startCloud(false));
 $("#cloudReloginBtn").addEventListener("click", () => startCloud(true));
 $("#cloudCancelBtn").addEventListener("click", cancelCloud);
 $("#cloudDialog").addEventListener("cancel", (ev) => { ev.preventDefault(); cancelCloud(); });
+$("#cloudDialog").addEventListener("close", () => { if (cloudOpen) cancelCloud(); });
+
+// Bấm ra ngoài hộp thoại (vào backdrop) để đóng
+document.querySelectorAll("dialog").forEach((dlg) => {
+  let startedOutside = false;
+  dlg.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target !== dlg) { startedOutside = false; return; }
+    const r = dlg.getBoundingClientRect();
+    startedOutside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  });
+  dlg.addEventListener("click", (e) => {
+    if (e.button !== 0 || !startedOutside || e.target !== dlg || !dlg.open) return;
+    const r = dlg.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+      dlg.close();
+    }
+    startedOutside = false;
+  });
+  dlg.addEventListener("pointercancel", () => { startedOutside = false; });
+});
 
 $("#nativeAppNotice").hidden = !!window.webkit?.messageHandlers?.nativeMap || localStorage.getItem("mb6_hide_app_notice") === "1";
 $("#nativeAppClose").onclick = () => {
