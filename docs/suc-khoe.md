@@ -1,6 +1,6 @@
 # Trang Sức khỏe
 
-Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bước chân, nhịp tim, căng thẳng, PAI, SpO2 và các buổi tập, kèm một bản **phân tích sức khỏe**, **mức sẵn sàng**, **trạng thái tinh thần** (ước tính), **cường độ vận động** và **nhịp sinh học** dựa trên tất cả số liệu đó. Trang có trong cả bản web (`uv run miband6-web`) lẫn ứng dụng macOS.
+Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bước chân, nhịp tim, căng thẳng, PAI, SpO2 và các buổi tập, kèm một bản **phân tích sức khỏe**, **mức sẵn sàng**, **trạng thái tinh thần** (ước tính), **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường, có mô hình cá nhân), **giấc ngủ tối nay**, **cường độ vận động** và **nhịp sinh học** dựa trên tất cả số liệu đó. Trang có trong cả bản web (`uv run miband6-web`) lẫn ứng dụng macOS.
 
 ## Đồng bộ
 
@@ -276,4 +276,6 @@ Dùng giấc ngủ chính mỗi đêm (giấc dài nhất kết thúc trong ngà
 | Giấc ngủ trống trong khi vòng tay có | Chọn đúng ngày thức dậy (giấc đêm qua nằm ở ngày hôm nay). Bấm **Đồng bộ** nếu vừa thức dậy. |
 | Giờ ngủ lệch vài phút so với vòng tay | Vòng tay làm tròn theo cách riêng; tổng thời gian thường khớp tới từng phút. |
 | Thẻ Căng thẳng trống | Bật **Theo dõi căng thẳng** ở **Cài đặt vòng tay → Sức khỏe**. |
+| Trạng thái tinh thần có độ tin cậy thấp hoặc nhắc bật Theo dõi căng thẳng | Vòng tay có ít hoặc không có số đo căng thẳng trong 3 ngày qua. Bật **Theo dõi căng thẳng** ở **Cài đặt vòng tay → Sức khỏe** để vòng tay tự đo cả ngày, hoặc đo tay trên vòng tay rồi đồng bộ. |
+| Thẻ Tín hiệu cơ thể ghi mô hình cá nhân chưa dùng | Cần ít nhất 21 đêm có nhịp tim khi ngủ (không tính 3 đêm gần nhất), và mô hình phải dự đoán tốt hơn mức nền. Với nhiều người, nhịp tim khi ngủ ít phụ thuộc giờ ngủ hay tải vận động; khi đó ứng dụng chỉ so với mức nền, vẫn đúng. |
 | Dòng dưới tiêu đề ghi "chưa lấy được: …" | Mục đó lỗi ở lần đồng bộ (thường do mất kết nối giữa chừng); bấm **Đồng bộ** lại. Chi tiết nằm trong **Nhật ký Bluetooth** ở trang **Thiết bị**. |

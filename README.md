@@ -25,14 +25,14 @@
 - Đồng bộ giờ với máy tính (tự làm mỗi lần kết nối)
 
 **Hôm nay** (trang mở ra khi khởi động): mọi thứ xem hằng ngày trên một màn hình, kể cả khi vòng tay chưa kết nối (hiện số liệu đã đồng bộ, kèm băng báo kết nối và lý do nếu tự kết nối lại đã dừng)
-- **Điểm sẵn sàng** kèm lời khuyên và thời gian hồi phục, **giấc ngủ đêm qua** (thời lượng, điểm ngủ, các giai đoạn)
+- **Điểm sẵn sàng** kèm lời khuyên và thời gian hồi phục, **giấc ngủ đêm qua** (thời lượng, điểm ngủ, các giai đoạn) và giờ nên lên giường tối nay
 - Ô **bước chân** (vòng tiến độ mục tiêu, quãng đường, năng lượng), **nhịp tim** (số mới nhất, nhịp tim nghỉ so với mức nền), **căng thẳng**, **pin vòng tay**, và **chu kỳ** nếu hồ sơ là nữ và đã ghi kỳ kinh
 - Bước chân 7 ngày và giấc ngủ 7 đêm (bấm một cột để mở ngày đó), đo nhịp tim ngay hoặc theo dõi liên tục; nút **Đồng bộ** và **Tìm vòng tay** ở đầu trang
 
-**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness, chia thẻ **Giấc ngủ / Vận động / Tim mạch / Tập luyện / Phân tích**; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
-- **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
+**Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness, chia thẻ **Giấc ngủ / Vận động / Tim mạch / Cơ thể / Tập luyện / Chu kỳ** (hồ sơ nữ) hoặc **Sinh lý** (hồ sơ nam) **/ Xu hướng / Phân tích**; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
+- **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, nhịp tim lúc nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
 - **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Con số của hôm nay cũng nằm ở đầu trang **Tổng quan** (trang mở ra khi khởi động), hiện cả khi vòng tay chưa kết nối; bấm vào để xem chi tiết. Thêm **trạng thái tinh thần** ước tính (mức căng lấy từ chính các số đo căng thẳng của vòng tay, cả đo tay), **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường của bạn, báo khi cao nhiều đêm liền, kèm **mô hình cá nhân** học từ các đêm trước để biết phần nào do đi ngủ muộn, ngủ ngắn hay tập nặng), **nhịp tim cao / thấp bất thường khi nghỉ**, **giấc ngủ tối nay** (nên lên giường lúc nào), **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
-- Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức và **REM ước tính từ nhịp tim** (chưa xác minh được REM của hãng qua bộ giải mã Bluetooth hiện tại; tắt được) theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
+- Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / REM / thức theo từng giờ (REM lấy từ điểm REM vòng tay ghi từ bản firmware 11/2026; dữ liệu cũ không có thì **ước tính từ nhịp tim**, tắt được); 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); bấm ô **Bước chân** ở trang Hôm nay để mở thẻ Vận động
 - Theo **hồ sơ** (Cài đặt vòng tay → Hồ sơ): nhịp tim tối đa nhập tay hoặc ước tính theo tuổi và giới tính, nhu cầu ngủ theo tuổi, **BMI** (ngưỡng cho người châu Á)
 - **Nhật ký riêng**, chỉ lưu trên máy: hồ sơ nữ có thẻ **Chu kỳ** (ghi ngày có kinh, dự đoán kỳ tiếp theo và ngày dễ thụ thai theo lịch; điểm sẵn sàng trừ phần nhịp tim nghỉ tăng ở pha hoàng thể), hồ sơ nam có thẻ **Sinh lý** (ghi ngày xuất tinh, tần suất, so sánh giấc ngủ đêm sau với các đêm khác). Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth nên phải ghi tay
@@ -290,7 +290,7 @@ uv run miband6-cli info -v        # lấy địa chỉ và key từ .env
 ## Chưa hỗ trợ
 
 - Đọc cài đặt hiện tại của vòng tay (ngôn ngữ, kiểu giờ, chế độ ban đêm…): Mi Band 6 chỉ cho ghi, không cho đọc qua Bluetooth, và Mi Fitness không lưu chúng trên máy chủ. Mục chưa từng được ứng dụng ghi hiện nhãn **Chưa đồng bộ** và để trống thay vì đoán; chọn đúng giá trị rồi bấm Lưu một lần.
-- Biết mặt đồng hồ đang dùng, bật đo SpO2 hay căng thẳng từ máy tính (giao thức không có lệnh này).
+- Biết mặt đồng hồ đang dùng; đo SpO2 hay căng thẳng một lần ngay từ máy tính (giao thức không có lệnh này). Theo dõi căng thẳng tự động cả ngày thì bật được ở **Cài đặt vòng tay → Sức khỏe**.
 - Cập nhật firmware.
 
 ## Cấu trúc mã nguồn

@@ -1,7 +1,9 @@
 # COMPREHENSIVE TECHNICAL EVALUATION: MI SMART BAND 6 MANAGER
-> **Report Date:** November 4, 2026  
-> **Target Version:** 1.0.0  
+> **Report Date:** November 4, 2026 (updated the same day after the mental-state fix and the body-signal features)
+> **Target Version:** 1.0.0
 > **Evaluation Scope:** Biomedical health tracking fidelity, hardware feature maximization of Xiaomi Mi Smart Band 6, and mathematical/algorithmic robustness.
+
+> **Update summary.** A user measured "Relaxed" (26) on the band while the Mental state card said "Stress" with tension 100. Cause: the stress factor needed at least 6 automatic readings per day and ignored manual readings, so tension came from resting heart rate alone. Tension now comes from the band's own stress readings (automatic and manual), a raised sleeping heart rate is reported as a physical body signal, and a personal model explains sleeping-HR changes. Gaps 2 and 3 of section 3.2 and roadmap phase 1 below had already been implemented and are marked as done. The Vietnamese version of this report is [DANH_GIA.md](DANH_GIA.md).
 
 ---
 
@@ -21,9 +23,9 @@ The **Mi Smart Band 6 Manager** (`miband6`) is an exceptionally engineered, stan
 
 ### System Scorecard:
 * **Architecture & Security:** **9.8 / 10** — Pure function layering, hand-rolled NIST B-163 ECDH & AES-128-ECB cryptography, zero-loss non-acknowledging BLE health sync.
-* **Health Tracking Fidelity:** **9.2 / 10** — Robust handling of sensor noise, sleep onset/wake edge compensation, menstrual cycle luteal RHR offset, and time-weighted TRIMP.
-* **Hardware Maximization:** **8.8 / 10** — Comprehensive coverage of BLE transport, custom UIHH watch face synthesis, Open-Meteo weather push, and Happy Eyeballs GPS sync. Minor untapped potential in 2-way music control and camera remote triggers.
-* **Algorithmic Rigor:** **9.5 / 10** — Grounded in peer-reviewed physiological literature (Banister fatigue impulse-response, Edwards TRIMP, Phillips SRI, Roenneberg MCTQ, WHO Asian BMI).
+* **Health Tracking Fidelity:** **9.2 / 10** — Robust handling of sensor noise, sleep onset/wake edge compensation, menstrual cycle luteal RHR offset, time-weighted TRIMP, a mental state anchored to the band's own stress readings, and multi-night sleeping-HR body signals.
+* **Hardware Maximization:** **8.8 / 10** — Comprehensive coverage of BLE transport, custom UIHH watch face synthesis, Open-Meteo weather push, Happy Eyeballs GPS sync, and a two-way music bridge to Apple Music, Spotify and macOS media. Camera remote trigger, world clock, event reminders and nocturnal SpO2 remain untapped.
+* **Algorithmic Rigor:** **9.5 / 10** — Grounded in peer-reviewed physiological literature (Banister fatigue impulse-response, Edwards TRIMP, Phillips SRI, Roenneberg MCTQ, WHO Asian BMI) plus a cross-validated personal model that is only used when it beats the plain baseline.
 
 ```mermaid
 quadrantChart
@@ -40,7 +42,9 @@ quadrantChart
     "Readiness Guardrails & Clamping": [0.78, 0.94]
     "REM Sleep Inference (HR Dynamics)": [0.82, 0.88]
     "GPS Sync via Happy Eyeballs & Maps": [0.80, 0.91]
-    "2-Way Desktop Music Bridge": [0.45, 0.35]
+    "Mental State from Band Stress": [0.40, 0.86]
+    "Personal Sleeping-HR Model (LOO)": [0.70, 0.84]
+    "2-Way Desktop Music Bridge": [0.45, 0.80]
     "Overnight Continuous SpO2 Toggle": [0.65, 0.40]
 ```
 
@@ -53,21 +57,22 @@ The codebase enforces a unidirectional dependency hierarchy:
 1. **`protocol.py` (Pure Protocol):** Completely decoupled from Bluetooth I/O. Contains binary packet encoders/decoders, UUID mappings, and constants. Can be unit-tested deterministically without network or mocked devices.
 2. **`crypto.py` (Low-Level Cryptography):** Handcrafted NIST B-163 (sect163r2) ECDH in little-endian format (tested against OpenSSL), AES-128-ECB, and chunked frame encoders/decoders with CRC32 verification.
 3. **`device.py` (Async BLE Client):** Wraps Bleak into the `MiBand6` abstraction. Features `known_peripheral` retrieval via macOS CoreBluetooth to bypass unnecessary scanning when the OS already maintains an active connection.
-4. **`health.py` & `insights.py` (Data Science & Algorithms):** Pure mathematical models for sleep stage extraction, circadian strain, Banister recovery curves, and daily readiness scoring.
+4. **`health.py`, `insights.py` & `models.py` (Data Science & Algorithms):** Pure mathematical models for sleep stage extraction, circadian strain, Banister recovery curves, daily readiness scoring, mental state, body signals, resting-HR episodes and the sleep plan. `models.py` holds the pure-Python ridge regression with leave-one-out validation (no NumPy, so the macOS bundle stays small).
 5. **`healthdb.py` (Encrypted/Local Persistence):** Per-device SQLite databases stored at `~/Library/Application Support/MiBand6Manager/health/` with strict `0o600` POSIX permissions.
 6. **`web/server.py` & `web/static/` (Full-Stack UI):** Single-process `aiohttp` server with WebSocket event streaming (`/api/events`) and zero-build vanilla JS/CSS frontend.
 
 ### 2.2. Empirical Verification Results
 * **Internationalization Consistency (`tests/i18n_strings.py`):**
-  - HTML strings: 348 (0 missing)
-  - JS strings: 375 (0 missing)
-  - Python strings: 313 (0 missing)
+  - HTML strings: 371 (0 missing)
+  - JS strings: 419 (0 missing)
+  - Python strings: 389 (0 missing)
   - Options/Labels: 53 (0 missing)
   - Swift macOS wrapper: 50 (0 missing)
   - **Verdict:** 100% translation synchronization between Vietnamese and English.
-* **Core Pure Unit Tests (`pytest`):**
-  - **50 out of 50 core unit tests passed in 0.75s** across `test_device.py`, `test_insights.py`, `test_personal.py`, and `test_protocol_crypto.py`.
-  - Cryptographic key exchange, packet fragmentation, and algorithmic bounds verified with zero errors.
+* **Test suite (`pytest`):**
+  - **208 tests passed, 2 skipped** (the two need macOS: the Swift compiler and macOS scripting). The suite was run in UTC and in UTC+8; two tests that depended on the time of day or on background-sync timing were fixed.
+  - `tests/test_gui_demo.py` (legacy Qt app) needs Qt's display libraries and runs on a desktop machine.
+  - New coverage: the user's mismatch case (relaxed band stress with a +8 bpm night), resting HR alone never producing "Stress", the personal model learning a planted bedtime effect end to end from band-shaped data, multi-night body signals, resting-HR episodes and the sleep plan.
 
 ---
 
@@ -89,15 +94,27 @@ The codebase enforces a unidirectional dependency hierarchy:
    * *Implementation:* For female profiles logging menstrual dates, the algorithm dynamically subtracts this hormonal offset from night RHR before evaluating against the 30-day baseline, preventing false "unrecovered" alerts.
 5. **WHO Asian BMI Cutoffs:**
    * Uses WHO Western Pacific criteria (18.5–22.9 normal, 23–24.9 overweight, $\ge 25$ obese) rather than generic Western cutoffs (25/30), addressing metabolic risk thresholds specific to Asian populations.
+6. **Mental State Anchored to the Band's Stress Index:**
+   * *Biomedical Reality:* The band computes its stress index from HRV, the direct marker of autonomic tension. A raised sleeping heart rate has many physical causes (alcohol, late meals, late nights, hard training, oncoming illness).
+   * *Implementation:* Tension uses every stress reading of the last 72 h, automatic and manual, weighted towards recent ones and compared with the user's usual level. Sleeping HR only corroborates when the band also measures stress; on its own it is capped below the "tense" threshold and reported as a physical sign.
+7. **Body Signals with a Personal Model:**
+   * *Biomedical Reality:* Resting heart rate rises for several nights before and during infections (Mishra et al. 2020, Quer et al. 2021).
+   * *Implementation:* Sleeping HR is compared with a robust personal baseline (median, MAD-based SD) over the last 3 nights; 2 of 3 high nights is "watch", 3 in a row "alert". A ridge regression learns how bedtime, sleep length and training load move the user's own sleeping HR, so only the unexplained part is flagged.
+8. **Heart Rate at Rest and Tonight's Sleep:**
+   * Apple-style episodes (≥ 120 or < 40 bpm for ≥ 10 minutes while awake, still and outside workouts) appear in the health analysis. A sleep plan counts back from the usual wake time with gradual sleep-debt repayment.
 
 ### 3.2. Identified Gaps & Areas for Improvement
 
-1. **Absence of Sleep Breathing Quality / Nocturnal SpO2 Toggle:**
+1. **Absence of Sleep Breathing Quality / Nocturnal SpO2 Toggle (open):**
    * While `decode_spo2` correctly handles both manual and auto flags, the settings UI lacks a dedicated BLE control command to enable continuous overnight SpO2 monitoring (sleep apnea risk indicator).
-2. **Fragmented Sleep / Daytime Naps:**
-   * `sleep_sessions` successfully isolates episodes $\ge 20$ minutes. However, the Daily Readiness and Circadian models currently prioritize the primary nocturnal sleep session. A restorative afternoon nap (30–60 minutes) should ideally reduce calculated 7-day sleep debt.
-3. **Recovery Index Sensitivity to Sparse Sampling:**
-   * Recovery index calculates the fractional point of nocturnal HR minimum (`hr_low_at`). On devices with 10-minute or 30-minute monitoring intervals (without Sleep Assist enabled), the sample resolution is too sparse to locate the true physiological nadir. The system should require $\ge 70\%$ minute-level nocturnal coverage before weighting this metric.
+2. **Fragmented Sleep / Daytime Naps (done):**
+   * Finished naps of 20 minutes or more count once, by wake day, in the sleep balance and the 7-day sleep debt; the mental state and the sleep plan use the same totals.
+3. **Recovery Index Sensitivity to Sparse Sampling (done):**
+   * The recovery index needs valid HR on at least 70% of sleep minutes, at least 30 readings and contiguous 5-minute windows (`RECOVERY_MIN_HR_COVERAGE`).
+4. **Dependence on Stress Readings (new, mitigated):**
+   * Without all-day stress monitoring the mental state rests on few readings. The card shows how many readings it used, lowers its confidence and asks the user to enable Stress monitoring.
+5. **Thresholds Are Not Clinically Validated (new):**
+   * The mental-state mapping, the body-signal rules, the resting-HR episode thresholds and the sleep-plan rules are design choices documented in `docs/suc-khoe.md`. The personal model needs at least 21 nights and has not been compared with real outcomes (self-reported mood, diagnosed illness).
 
 ---
 
@@ -108,6 +125,7 @@ The codebase enforces a unidirectional dependency hierarchy:
 | **BLE Classic Authentication (AES-128)** | ✅ **100% Complete** | Handshake verified on characteristic `0x0009`. |
 | **BLE 2021 Authentication (ECDH B-163)** | ✅ **100% Complete** | 48-byte public key exchange, CRC32 chunked transport on endpoint `0x0090`. |
 | **Raw Health Telemetry Fetching** | ✅ **100% Complete** | Chars `0x0004`/`0x0005` stream steps, HR, PAI, stress, SpO2, and workout headers. |
+| **Stress Readings (automatic + manual)** | ✅ **100% Complete** | Both are fetched; the stress chart, the health analysis and the mental state use both. All-day stress monitoring can be switched on from Band settings → Health. |
 | **Custom Watchface Flashing (UIHH)** | ✅ **100% Complete** | Dedicated Mi Band 6 header (device ID 148), live status simulation, layer preview. |
 | **Custom Wallpaper Synthesis** | ✅ **100% Complete** | Client-side crop/scale to 152×486, RGB565 bitmap generation, varint parameter trees. |
 | **Weather Dispatch (Open-Meteo)** | ✅ **100% Complete** | Chunked type 1 encoding: Current, 7-day forecast, AQI, UV/Sun, and Wind/Humidity. |
@@ -119,8 +137,8 @@ The codebase enforces a unidirectional dependency hierarchy:
 | **Find Band & Find Phone** | ✅ **100% Complete** | Virtual incoming call vibration trigger, bidirectional ACK response on phone search. |
 | **Rich Notifications & Call Alerts** | ✅ **100% Complete** | UTF-8 boundary-safe truncation, app icon mapping (Telegram, Zalo, WhatsApp, etc.). |
 | **Cloud Workouts & GPS Track Rendering** | ✅ **100% Complete** | Happy Eyeballs racing downloads on Xiaomi FDS, binary GPS decoding, MapKit + OSM. |
-| **Two-Way Music Control Bridge** | ⚠️ *Untapped Potential* | Band sends `0xFE` events; macOS can bridge these directly to Spotify/Apple Music. |
-| **Remote Camera Shutter Trigger** | ⚠️ *Untapped Potential* | `takephoto` menu item exists; BLE event can be mapped to webcam shutter or Keynote clicks. |
+| **Two-Way Music Control Bridge** | ✅ **Complete** | Band music events (`0xFE`) drive Apple Music, Spotify or the macOS media source (e.g. YouTube in Chrome); title, artist and play state are pushed back while the band's music screen is open. Off by default (App settings). |
+| **Remote Camera Shutter Trigger** | ⚠️ *Untapped Potential* | Only the `takephoto` menu item exists; the BLE event could be mapped to a webcam shutter or Keynote clicks. |
 | **World Clock Management** | ⚠️ *No Management UI* | Band supports world clocks, but desktop client lacks an interface to push city lists. |
 | **Event Reminders Memory** | ⚠️ *No Management UI* | Band has onboard reminder storage, but no protocol endpoint is exposed in UI. |
 | **Manual Static Brightness Slider** | ⚠️ *Night Mode Only* | Supports auto/scheduled night dimming, but lacks a manual 1–5 level brightness control. |
@@ -134,15 +152,23 @@ graph TD
     subgraph Data Pipeline & Health Insights
         RawBLE["Raw BLE Samples (0x0005)"] --> HealthDB[("Local SQLite Database")]
         HealthDB --> Preprocess["Pre-processing (Telemetry Validation)"]
-        
+
         Preprocess --> SleepModel["Sleep Engine (Onset/Wake Edge Adjust + REM Inference)"]
         Preprocess --> TRIMPModel["Workload Engine (Edwards TRIMP + Banister Fatigue)"]
-        Preprocess --> BaselineModel["Baseline Engine (30-Day RHR + Luteal Offset)"]
-        
+        Preprocess --> BaselineModel["Baseline Engine (robust 30-night RHR + Luteal Offset)"]
+        Preprocess --> StressModel["Stress Evidence (auto + manual, 72 h, recency-weighted)"]
+
         SleepModel --> ReadinessCalc["Daily Readiness Engine"]
         TRIMPModel --> ReadinessCalc
         BaselineModel --> ReadinessCalc
-        
+
+        BaselineModel --> RHRModel["Personal Sleeping-HR Model (ridge, leave-one-out)"]
+        TRIMPModel --> RHRModel
+        SleepModel --> RHRModel
+        RHRModel --> BodySignals["Body Signals (1 / 2 of 3 / 3 nights)"]
+        StressModel --> Mind["Mental State"]
+        BodySignals --> Mind
+
         ReadinessCalc --> ClampCheck{"Physiological Metric < 40?"}
         ClampCheck -- Yes --> Clamp["Clamp Score <= 59 (Easy / Rest)"]
         ClampCheck -- No --> FinalScore["Output Final Readiness Score & Plan"]
@@ -153,6 +179,7 @@ graph TD
 * **Mathematical Formulation:**
   $$\text{Readiness} = \frac{\sum w_i \cdot S_i}{\sum w_i}$$
   *Contributors: Resting HR (18%), Sleep Restoration Index (8%), Previous Night Sleep (20%), 14-Day Sleep Balance (14%), Banister Recovery Hours (15%), ACWR Activity Balance (10%), HRV/Stress Balance (15%).*
+* **Resting-HR baseline:** median of up to 30 previous nights, SD = 1.4826 × MAD with a 2 bpm floor, so a few sick or alcohol nights inside the baseline do not distort it; a night needs at least 10 HR readings.
 * **Safety Guardrails (Clamping):**
   - If any primary physiological contributor (Night RHR, Sleep Duration, Recovery Hours, or Stress Balance) drops below $40$, the final score is strictly capped at $\le 59$ (*Easy training* or *Rest*). This prevents a deceptive 9-hour sleep from masking severe systemic strain or tachycardia.
   - **ACWR Protection:** ACWR is intentionally excluded from triggering the $\le 59$ clamp. In commercial fitness wearables, sudden routine shifts disproportionately spike ACWR without representing true acute injury risk (Impellizzeri et al., 2020).
@@ -162,7 +189,7 @@ graph TD
   $$A(t) = \sum \text{TRIMP}_i \cdot e^{-\frac{t - t_i}{\tau}} \quad (\tau = 36.0\text{ hours})$$
   $$\text{Steady State} = \max(\text{Chronic Daily Load}, 30) \cdot \frac{\tau}{24}$$
   $$\text{Recovery Hours} = \tau \cdot \ln\left(\frac{A(t)}{\text{Steady State}}\right) \quad (\text{bounded } [0, 96] \text{ hours})$$
-* **Scientific Evaluation:** Adapting Banister’s two-component model into an acute fatigue depletion model ($\tau = 36$h) accurately captures the recovery tail of endurance and resistance workouts. Calculating TRIMP continuously across the current day ensures that the readiness score immediately reflects workout depletion, matching Garmin Training Readiness and Apple Watch protocols.
+* **Scientific Evaluation:** Adapting Banister’s two-component model into an acute fatigue depletion model ($\tau = 36$h) accurately captures the recovery tail of endurance and resistance workouts. Calculating TRIMP continuously across the current day ensures that the readiness score immediately reflects workout depletion, matching Garmin Training Readiness and Apple Watch protocols. Today's result is recomputed hourly even while the band is not connected.
 
 ### 5.3. REM Sleep Inference via Cardiorespiratory Dynamics
 * **Biomedical Foundation:** Firmware on the Mi Band 6 does not expose a validated raw REM byte over BLE. During REM sleep, skeletal muscles exhibit atonia (near-zero movement), while autonomic sympathetic activation causes heart rate elevation and heightened beat-to-beat variability compared to deep NREM sleep (Somers et al., 1993).
@@ -171,15 +198,29 @@ graph TD
   2. Establishes NREM baseline using a rolling 30th percentile within a 61-minute window.
   3. Detects candidate REM minutes: Light sleep stage, low accelerometer intensity ($\le 25$), latency $> 60$ minutes from onset, and heart rate elevation $\ge 4.0$ bpm above baseline OR volatility $\ge 1.6 \times$ nocturnal median.
   4. Merges adjacent bouts ($\le 10$ minutes apart), discards transient spikes ($< 6$ minutes), and applies dynamic threshold elevation if total REM exceeds $30\%$ of sleep.
-* **Caveat:** Because the model relies on HR elevation during physical immobility, acute alcohol ingestion, high late-night carbohydrate meals, or mild febrile states can artificially elevate nocturnal HR and cause false REM classifications. The codebase transparently documents these limitations in `docs/suc-khoe.md`.
+* **Caveat:** Because the model relies on HR elevation during physical immobility, acute alcohol ingestion, high late-night carbohydrate meals, or mild febrile states can artificially elevate nocturnal HR and cause false REM classifications. The codebase transparently documents these limitations in `docs/suc-khoe.md`. Since a firmware change on 2026-11-03 the band writes a REM byte, which is used instead when present.
 
 ### 5.4. Chronobiology & Circadian Metrics
 * **Social Jetlag (SJL):** Calculated as $|MSF - MSW|$, measuring the difference in midsleep timing between workdays and free days (Wittmann et al., 2006).
 * **Sleep-Corrected Chronotype ($MSF_{sc}$):** Adjusts for weekend catch-up sleep:
   $$MSF_{sc} = MSF - \frac{SD_f - SD_{week}}{2} \quad \text{where } SD_{week} = \frac{5 \cdot SD_w + 2 \cdot SD_f}{7}$$
-* **Sleep Regularity Index (SRI):** Implements Phillips et al. (2017) by computing the minute-by-minute probability of being in the identical sleep/wake state 24 hours later across a 14-day wear window:
+* **Sleep Regularity Index (SRI):** Implements Phillips et al. (2017) by computing the minute-by-minute probability of being in the identical sleep/wake state 24 hours later across a 14-day wear window, counting only minutes with the band on the wrist:
   $$\text{SRI} = -100 + 200 \times P(\text{state}_t == \text{state}_{t+24h})$$
 * **Composite Phase Deviation (CPD):** Evaluates day-to-day circadian instability (Fischer et al., 2016).
+
+### 5.5. Mental State
+* **Stress evidence:** each reading of the last 72 h (automatic and manual) is weighted $0.5^{\text{age}/24\text{h}}$. Tension $= \text{clamp}((\bar{s} - 35)/50) + 0.5 \cdot \text{high share}$, so the band's "medium" level (60) gives 0.5, plus up to 0.25 when well above the user's usual level.
+* **Resting HR:** corroborates only when tension is at least 0.3; without stress readings it is capped at 0.45, below the 0.5 "tense" threshold.
+* **States:** overloaded / tense / fatigued / calm / balanced from tension and fatigue (sleep and circadian strain); "calm" also requires no raised sleeping HR. Confidence depends on the number of stress readings and recent nights.
+
+### 5.6. Body Signals & Personal Sleeping-HR Model
+* **Model:** $d_k = a + \sum_j b_j x_{kj}$, where $d_k$ is a night's sleeping-HR deviation from its own baseline, and $x$ is previous-day load vs usual, load in the 4 h before sleep, later bedtime and shorter sleep (0 = a usual night). Ridge penalty 4 on standardized features; nights more than 3.5 robust SDs away are excluded.
+* **Gating:** at least 21 training nights and a leave-one-out MAE at least 5% below an intercept-only model; otherwise the app compares with the baseline only and says so. Effects are reported only with $|t| \ge 2$.
+* **Signals:** a night is high at $\ge 3$ bpm and $\ge 2$ SD above baseline (unexplained part when the model is active): one night "ok", 2 of 3 "watch", 3 in a row "alert".
+
+### 5.7. Heart Rate at Rest & Tonight's Sleep
+* **Resting episodes:** consecutive readings ≤ 10 minutes apart, all ≥ 120 or < 40 bpm, spanning ≥ 10 minutes, with no steps in the 5 minutes before each reading, outside sleep and outside workouts plus 30 minutes. "Nothing unusual" is only stated with ≥ 144 closely spaced resting readings in the week.
+* **Sleep plan:** sleep need by age plus a third of the 7-day sleep debt (max 60 minutes), counted back from the median wake time of the same kind of day, minus typical night-time wakefulness and 15 minutes to fall asleep; never more than 60 minutes earlier than the usual bedtime.
 
 ---
 
@@ -188,22 +229,18 @@ graph TD
 ```mermaid
 timeline
     title Recommended Implementation Milestones
-    Phase 1 : High-Impact Quick Wins : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt
-    Phase 2 : Protocol Expansion : Remote Camera Shutter Event Listener : Nocturnal SpO2 Auto-Measurement Config : World Clock & Event Reminder UI
-    Phase 3 : Advanced Telemetry : Alcohol / Stress Quality Modifiers : PDF Health Export for Clinical Review : Full Validation Against PSG Reference
+    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model
+    Phase 1 : Protocol Expansion : Remote Camera Shutter Event Listener : Nocturnal SpO2 Auto-Measurement Config : World Clock & Event Reminder UI
+    Phase 2 : Advanced Telemetry : Mood / Illness Journal to check the body-signal thresholds : PDF Health Export for Clinical Review : Full Validation Against PSG Reference
 ```
 
-### 6.1. Phase 1: High-Impact Quick Wins (Recommended Immediate Focus)
-1. **Desktop Music Control Bridge:**
-   * Subscribe to BLE event `0xFE` in `device.py`.
-   * Bridge signals on macOS via AppleScript / `MPNowPlayingInfoCenter` to control Spotify and Apple Music (Play, Pause, Next, Previous).
-   * Stream current track title and artist back to the band's media screen.
-2. **User-Configurable $HR_{max}$:**
-   * Allow manual override of $HR_{max}$ in `#settings/profile` rather than forcing Tanaka/Gulati age-predicted defaults. This significantly refines TRIMP calculation for trained athletes.
-3. **Daytime Naps Accounting:**
-   * Integrate detected daytime sleep episodes ($\ge 20$ minutes) into weekly sleep debt reconciliation.
+### 6.1. Done Since the Original Report
+1. **Desktop Music Control Bridge:** band events control Apple Music, Spotify or the macOS media source; track info and play state are sent back to the band.
+2. **User-Configurable $HR_{max}$:** a measured maximum heart rate can be saved locally (Band settings → Profile → Heart rate zones) and is used for TRIMP and HR zones.
+3. **Daytime Naps Accounting:** finished naps count in the sleep balance and the 7-day sleep debt.
+4. **Mental state, body signals, personal model, resting-HR episodes, sleep plan:** see sections 3.1 and 5.5–5.7.
 
-### 6.2. Phase 2: Secondary Protocol Extensions
+### 6.2. Next: Protocol Extensions
 1. **Remote Camera Shutter Binding:**
    * Map the `takephoto` menu event to macOS system shortcuts or presentation slide-advance commands.
 2. **Sleep Breathing / All-Day SpO2 GATT Configuration:**
@@ -211,5 +248,9 @@ timeline
 3. **World Clock & Event Reminders Desktop Manager:**
    * Implement UI managers in the web interface to push custom timezones and calendar reminders directly to the band's non-volatile memory.
 
+### 6.3. Next: Validation
+1. **Outcome journal:** let the user log mood and illness days to check whether body signals and the mental state predict them on their own data.
+2. **Reference comparison:** follow `docs/algorithm-validation.md` (H10/ECG for HR, PSG for sleep) before claiming accuracy.
+
 ---
-*Evaluation compiled autonomously via static analysis, regression test execution, and protocol verification of the Mi Band 6 Manager repository.*
+*Evaluation compiled autonomously via static analysis, regression test execution, and protocol verification of the Mi Band 6 Manager repository; updated after the mental-state fix.*
