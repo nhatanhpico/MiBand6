@@ -64,8 +64,8 @@ Hệ thống được thiết kế theo mô hình phân tầng nghiêm ngặt t�
 
 ### 2.2. Kết quả kiểm thử thực nghiệm
 * **Tính toàn vẹn dịch thuật i18n (`tests/i18n_strings.py`):**
-  - HTML: 379 chuỗi (thiếu 0)
-  - JS: 451 chuỗi (thiếu 0)
+  - HTML: 376 chuỗi (thiếu 0)
+  - JS: 454 chuỗi (thiếu 0)
   - Python: 407 chuỗi (thiếu 0)
   - Options/Labels: 53 chuỗi (thiếu 0)
   - Swift macOS: 50 chuỗi (thiếu 0)
@@ -254,7 +254,7 @@ graph LR
 ```mermaid
 timeline
     title Lộ trình đề xuất tối ưu hóa ứng dụng
-    Đã xong : Desktop Music Bridge (0xFE) : Cho phép nhập HRmax thủ công : Gộp giấc ngủ trưa (Naps) vào nợ ngủ : Trạng thái tinh thần theo căng thẳng vòng tay : Tín hiệu cơ thể & mô hình cá nhân : Nguy cơ bệnh bằng máy học : Nhịp tim trực tiếp trên trang Sức khỏe : Học từ 1 năm dữ liệu
+    Đã xong : Desktop Music Bridge (0xFE) : Cho phép nhập HRmax thủ công : Gộp giấc ngủ trưa (Naps) vào nợ ngủ : Trạng thái tinh thần theo căng thẳng vòng tay : Tín hiệu cơ thể & mô hình cá nhân : Nguy cơ bệnh bằng máy học : Nhịp tim trực tiếp trên trang Sức khỏe : Học từ 1 năm dữ liệu : Trang Sức khỏe đọc trong một cái nhìn
     Giai đoạn 1 : Hoàn thiện BLE : Remote Camera Shutter : Lệnh bật SpO2 tự động đêm : Giao diện nhắc việc & Giờ thế giới
     Giai đoạn 2 : Mở rộng thuật toán : Nhật ký tâm trạng / ốm để kiểm tra ngưỡng tín hiệu cơ thể : Xuất báo cáo PDF bác sĩ : Benchmark với dữ liệu PSG/ECG
 ```
@@ -265,6 +265,7 @@ timeline
 3. **Cộng bù giấc ngủ trưa (Naps):** các giấc ngủ ngắn đã kết thúc được tính vào cân bằng giấc ngủ và nợ ngủ 7 ngày.
 4. **Trạng thái tinh thần, tín hiệu cơ thể, mô hình cá nhân, nhịp tim lúc nghỉ, kế hoạch ngủ:** xem mục 3.1 và 5.6–5.8.
 5. **Mô hình nguy cơ bệnh, nhịp tim trực tiếp, học từ lịch sử dài:** xem mục 3.1 (điểm 9–11), 5.9 và 5.10.
+6. **Trang Sức khỏe đọc trong một cái nhìn:** mỗi thẻ cho thấy số liệu và nhãn trạng thái màu trước tiên; lời giải thích nằm sau nút (i) và tự hiện với mục nên chú ý / cần lưu ý (các mục này lên đầu). Bấm biểu đồ không còn đổi ngày đang xem (chỉ nút ngày và ‹ ›), và ngày mới hiện ngay trong lúc tải số liệu.
 
 ### 6.2. Tiếp theo: mở rộng giao thức
 1. **Remote Camera Shutter:**

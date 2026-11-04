@@ -9,17 +9,19 @@ Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bư�
 - **Mi Fitness vẫn đồng bộ bình thường.** Ứng dụng chỉ sao chép: nó không gửi lệnh xác nhận "đã lấy xong", nên vòng tay vẫn giữ nguyên dữ liệu cho Mi Fitness.
 - Dữ liệu được lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/` (mỗi vòng tay một tệp SQLite, chỉ tài khoản của bạn đọc được) và không gửi đi đâu.
 
-Chọn ngày bằng nút ngày ở đầu trang (mở lịch; ngày có chấm xanh là ngày có dữ liệu, có sẵn nút **Hôm qua** / **Hôm nay**) hoặc hai nút ‹ ›; bấm vào một cột trong biểu đồ nhiều ngày để xem ngày đó.
+Chọn ngày bằng nút ngày ở đầu trang (mở lịch; ngày có chấm xanh là ngày có dữ liệu, có sẵn nút **Hôm qua** / **Hôm nay**) hoặc hai nút ‹ ›. Đây là cách duy nhất để đổi ngày: bấm hay rê chuột lên biểu đồ chỉ hiện số liệu của cột đó, không đổi ngày đang xem. Ngày mới hiện ngay trên nút ngày; các thẻ mờ đi tới khi số liệu của ngày đó về.
+
+Mỗi thẻ cho thấy số liệu và trạng thái trước tiên. Câu giải thích, cách tính, chú thích nguồn dữ liệu nằm sau nút **(i)** cạnh tiêu đề thẻ (bấm lần nữa để ẩn). Riêng những mục **Nên chú ý** / **Cần lưu ý** (phân tích sức khỏe, trạng thái tinh thần, tín hiệu cơ thể, nhịp sinh học, cường độ vận động, điểm ngủ thấp) tự hiện lời giải thích, vì đó là lúc cần biết lý do.
 
 ## Các thẻ
 
-Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng dụng nhớ thẻ mở lần trước). Những gì xem hằng ngày (điểm sẵn sàng, giấc ngủ đêm qua, bước chân, nhịp tim, căng thẳng, pin, chu kỳ) nằm gọn ở trang **Hôm nay**; bấm từng ô ở đó để mở đúng thẻ ở đây, bấm một cột trong biểu đồ 7 ngày để mở ngày đó.
+Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng dụng nhớ thẻ mở lần trước). Những gì xem hằng ngày (điểm sẵn sàng, giấc ngủ đêm qua, bước chân, nhịp tim, căng thẳng, pin, chu kỳ) nằm gọn ở trang **Hôm nay**; bấm từng ô (hoặc nút **Chi tiết** của biểu đồ 7 ngày) để mở đúng thẻ ở đây.
 
 | Thẻ | Nội dung |
 | --- | --- |
 | **Giấc ngủ** | Đêm của ngày đang xem: giờ ngủ, giờ dậy, tổng thời gian, phần ngủ sâu, độ liền mạch, nhịp tim khi ngủ, **điểm ngủ**; sơ đồ các giai đoạn (thức, ngủ nông, ngủ sâu, REM ước tính) theo giờ; **giấc ngủ tối nay** (khi xem hôm nay: nên lên giường lúc nào); 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ và mức trung bình của bạn; **nhịp sinh học** (lệch múi giờ xã hội, chronotype, SRI, CPD, giờ ngủ từng đêm) |
 | **Vận động** | Bước theo giờ trong ngày; mọi ngày vòng tay đã ghi so với mục tiêu (**Xem dạng bảng** để xem số liệu từng ngày); **cường độ vận động** 7 ngày (phút nhẹ / vừa / mạnh); **PAI** 7 ngày so với mốc 100 |
-| **Tim mạch** | Nhịp tim cả ngày (vùng tô là lúc ngủ), thấp nhất, trung bình, cao nhất và nhịp tim nghỉ (khi ngủ) so với mức nền; **căng thẳng** tự đo (đường) và đo tay (chấm); **SpO2** các lần đo; cách vòng tay đang đo tự động |
+| **Tim mạch** | Nhịp tim cả ngày (vùng tô là lúc ngủ), thấp nhất, trung bình, cao nhất và nhịp tim nghỉ (khi ngủ) so với mức nền; **căng thẳng** tự đo (đường) và đo tay (chấm); **SpO2** các lần đo; cách vòng tay đang đo tự động (nút (i) của thẻ Nhịp tim) |
 | **Cơ thể** | Cân nặng, chiều cao, BMI mới nhất; thay đổi 30 / 90 ngày, xu hướng kg/tuần, biểu đồ cân nặng; ghi cân nặng và danh sách các lần ghi (xem [Hồ sơ](#hồ-sơ-tuổi-giới-tính-chiều-cao-cân-nặng)) |
 | **Tập luyện** | Các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness); bản đồ lộ trình |
 | **Chu kỳ** (hồ sơ nữ) | Nhật ký kỳ kinh và dự đoán, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |

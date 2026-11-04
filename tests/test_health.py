@@ -921,7 +921,7 @@ async def test_health_insights_and_settings(client):
 
 
 async def test_workout_without_route_has_no_map_button(client):
-    """Tệp lộ trình tải về trống (đi bộ không bật GPS điện thoại…): bảng hiện "Không có GPS" thay cho nút Bản đồ."""
+    """Tệp lộ trình tải về trống (đi bộ không bật GPS điện thoại…): buổi đó không còn nút Bản đồ."""
     await connected(client)
     await wait_sync(client.service)
     await post(client, "/api/cloud/sync", {"job": "workouts"})

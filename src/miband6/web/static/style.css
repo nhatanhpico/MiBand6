@@ -709,7 +709,6 @@ select:invalid, select.unknown { color: var(--muted); }
   .date-btn { min-width: 0; flex: 1; }
   .cal-pop { right: auto; left: 0; }
 }
-.hnote { color: var(--faint); font-size: 12.5px; line-height: 1.5; margin: 18px auto 0; text-align: center; }
 .hgrid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
 }
@@ -769,9 +768,7 @@ select:invalid, select.unknown { color: var(--muted); }
 .wo-table td { height: 52px; vertical-align: middle; }
 .wo-table td:nth-child(n+3) { white-space: nowrap; }   /* tên và giờ bắt đầu được xuống dòng khi cửa sổ hẹp */
 .wo-table th.wo-map-col, .wo-table td:last-child { width: 1%; text-align: right; }
-.no-gps { display: inline-flex; align-items: center; justify-content: center; min-width: 92px; height: 30px; padding: 0 10px;
-  border-radius: 8px; border: 1px dashed var(--line-strong); color: var(--muted); font-size: 11.5px; font-weight: 600;
-  letter-spacing: .06em; text-transform: uppercase; }
+.wo-table.no-map th.wo-map-col, .wo-table.no-map td:last-child:not(.none) { display: none; }   /* không buổi nào có lộ trình */
 .chart-tip {
   position: fixed; z-index: 50; pointer-events: none; min-width: 120px; padding: 8px 10px; border-radius: 10px;
   background: #0c1110; border: 1px solid var(--line-strong); box-shadow: 0 8px 24px rgba(0, 0, 0, .45); font-size: 12.5px;
@@ -837,7 +834,9 @@ select:invalid, select.unknown { color: var(--muted); }
 .insights { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
 .insight { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 15px; display: flex; flex-direction: column; gap: 4px; }
 .insight h3 { font-size: 13.5px; font-weight: 600; color: var(--muted); margin-top: 6px; }
-.ins-value { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ins-value { font-size: 26px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.insight[data-status="watch"] .ins-value { color: var(--amber); }
+.insight[data-status="alert"] .ins-value { color: var(--danger); }
 .ins-detail { color: var(--muted); font-size: 13px; line-height: 1.45; }
 .ins-status { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--surface-3); }
 .ins-status b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 999px; font-size: 11px; color: var(--bg); background: var(--muted); }
@@ -856,7 +855,12 @@ select:invalid, select.unknown { color: var(--muted); }
 .tr-counts b { color: var(--text); font-variant-numeric: tabular-nums; }
 .tr-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 14px; }
 .tr-list:empty { display: none; }
-.tr-item .tr-text { color: var(--text); font-size: 14.5px; font-weight: 600; line-height: 1.4; margin-top: 4px; }
+.tr-item .tr-text { color: var(--muted); font-size: 13px; line-height: 1.45; margin-top: 2px; }
+.tr-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 2px 0 0; font-size: 26px; font-weight: 700;
+  letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.tr-delta { font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+.insight[data-status="good"] .tr-delta { color: var(--mint); }
+.insight[data-status="watch"] .tr-delta { color: var(--amber); }
 .tr-item .chart { margin-top: 10px; }
 .tr-foot { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .tr-empty { grid-column: 1 / -1; color: var(--muted); font-size: 13.5px; }
@@ -988,6 +992,7 @@ select:invalid, select.unknown { color: var(--muted); }
 .rk-item .rk-compare { color: var(--text); }
 .rk-item ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
 .rk-item .rk-metric { font-size: 12.5px; }
+.rk-list > .md-text { grid-column: 1 / -1; }
 .rk-model { margin-top: 12px; }
 .ci-chart .bar-work { fill: var(--c-deep); } .ci-chart .bar-free { fill: var(--c-steps); }
 .ci-chart .mid { fill: var(--text); stroke: var(--surface); stroke-width: 2; }
@@ -1100,9 +1105,25 @@ a.metric:hover .mini-ring::after { background: #1b2523; }
 .split-head > div { min-width: 0; }
 .metric-badge { display: inline-flex; padding: 4px 9px; border-radius: 6px; background: var(--surface-2); color: var(--status-neutral); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
 .metric-badge.quality-attention { color: var(--status-attention); background: #372f23; }
-.footnote { margin: 4px auto 0; color: var(--faint); font-size: 12.5px; line-height: 1.5; text-align: center; }
-.footnote:empty { display: none; }
-.estimate-note { margin-top: 14px; }
+
+/* Đang tải ngày vừa chọn: thẻ của ngày cũ mờ đi */
+#page-health .hpanel { transition: opacity .15s; }
+#page-health.is-loading .hpanel { opacity: .4; pointer-events: none; }
+
+/* Giải thích phụ: ẩn tới khi bấm (i) ở tiêu đề thẻ, để số liệu và trạng thái nổi bật */
+.card:not(.show-hints) .hint { display: none !important; }
+[data-hints] .card-head h2 { display: inline; }
+.card-head .est-chip { margin-left: 8px; vertical-align: 2px; }
+.hint-btn { display: inline-grid; place-items: center; width: 19px; height: 19px; margin-left: 8px; padding: 0; vertical-align: 1px;
+  border-radius: 50%; border: 1px solid var(--line-strong); background: transparent; color: var(--muted);
+  font: italic 700 11.5px/1 Georgia, "Times New Roman", serif; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.hint-btn:hover, .hint-btn[aria-expanded="true"] { color: var(--text); border-color: var(--muted); background: var(--surface-3); }
+.hint-btn[hidden] { display: none; }
+.show-hints .hint { animation: hint-in .18s var(--ease, ease); }
+@keyframes hint-in { from { opacity: 0; } to { opacity: 1; } }
+.an-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.an-counts:empty { display: none; }
+.bs-model { margin-top: 14px; }
 .readiness .rd-parts { border-top: 0; padding-top: 0; }
 .metric-details { margin-top: 15px; }
 .metric-details > summary { cursor: pointer; font-size: 13px; color: var(--muted); min-height: 36px; padding-block: 8px; }

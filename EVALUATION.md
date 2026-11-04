@@ -64,8 +64,8 @@ The codebase enforces a unidirectional dependency hierarchy:
 
 ### 2.2. Empirical Verification Results
 * **Internationalization Consistency (`tests/i18n_strings.py`):**
-  - HTML strings: 379 (0 missing)
-  - JS strings: 451 (0 missing)
+  - HTML strings: 376 (0 missing)
+  - JS strings: 454 (0 missing)
   - Python strings: 407 (0 missing)
   - Options/Labels: 53 (0 missing)
   - Swift macOS wrapper: 50 (0 missing)
@@ -249,7 +249,7 @@ graph TD
 ```mermaid
 timeline
     title Recommended Implementation Milestones
-    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model : Disease Risk ML : Live HR on Health page : Year-long personal training
+    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model : Disease Risk ML : Live HR on Health page : Year-long personal training : Glanceable Health page
     Phase 1 : Protocol Expansion : Remote Camera Shutter Event Listener : Nocturnal SpO2 Auto-Measurement Config : World Clock & Event Reminder UI
     Phase 2 : Advanced Telemetry : Mood / Illness Journal to check the body-signal thresholds : PDF Health Export for Clinical Review : Full Validation Against PSG Reference
 ```
@@ -260,6 +260,7 @@ timeline
 3. **Daytime Naps Accounting:** finished naps count in the sleep balance and the 7-day sleep debt.
 4. **Mental state, body signals, personal model, resting-HR episodes, sleep plan:** see sections 3.1 and 5.5–5.7.
 5. **Disease-risk models, live heart rate, long-history learning:** see sections 3.1 (items 9–11), 5.8 and 5.9.
+6. **Glanceable Health page:** every card leads with its numbers and a colored status; explanations sit behind an (i) button and open by themselves for items worth watching or needing attention, which are listed first. Charts no longer change the viewed date (only the date button and ‹ › do), and the new date shows at once while its data loads.
 
 ### 6.2. Next: Protocol Extensions
 1. **Remote Camera Shutter Binding:**
