@@ -1092,6 +1092,12 @@ a.metric:hover .mini-ring::after { background: #1b2523; }
 .legend i.k-logged { background: rgba(255, 107, 122, .6); }
 .legend i.k-pred { background: transparent; outline: 1.5px dashed rgba(255, 143, 171, .8); outline-offset: -1px; }
 .legend i.k-fertile { background: rgba(108, 198, 255, .4); }
+.body-form { margin: 12px 0 2px; }
+.body-form input[type="date"] { width: 170px; }
+.body-table td:last-child { width: 1%; text-align: right; }
+.journal-effect.warn { background: rgba(255, 181, 71, .09); color: #ffd79a; }
+.journal-effect.warn.lv-alert { background: rgba(255, 123, 123, .1); color: #ffbcbc; }
+#bdChart { margin-top: 14px; }
 .compare { margin-top: 8px; }
 .compare .data-table td:first-child { color: var(--muted); }
 .compare .data-table td:not(:first-child), .compare .data-table th:not(:first-child) { text-align: right; }

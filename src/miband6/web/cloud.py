@@ -117,7 +117,7 @@ class CloudSync:
             values = profile_for_band(raw)
             if not values:
                 raise LoginError(tr('Tài khoản Mi Fitness chưa có thông tin hồ sơ.'))
-            message = await self.service.apply_cloud_profile(values, write)
+            message = await self.service.apply_cloud_profile(values, write, interactive=interactive)
             self._set(state="done", profile=values, message=message)
         except asyncio.CancelledError:
             pass

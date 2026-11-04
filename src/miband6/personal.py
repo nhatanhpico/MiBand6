@@ -19,12 +19,22 @@ Xuất tinh
   của chính bạn, không phải nhân quả. Điểm sẵn sàng không đổi theo nhật ký này: chưa có bằng chứng hoạt động tình dục
   đêm trước làm giảm thể lực hôm sau (tổng quan Zavorsky 2019); nhiều người tự thấy dễ ngủ hơn sau cực khoái
   (Lastella 2019, tự báo cáo).
+
+Chiều cao, cân nặng theo thời gian
+- Thay đổi 30 / 90 ngày (so với lần ghi gần nhất trước mốc đó), tốc độ kg/tuần (hồi quy tuyến tính các lần ghi trong
+  90 ngày, cần cách nhau từ 14 ngày) và thay đổi trong 6 tháng (so với lần ghi cũ nhất trong 183 ngày, cách từ 28 ngày).
+- Nên chú ý khi thay đổi từ 5% trong khoảng 6 tháng (mốc sụt cân không chủ ý đáng kể, cũng dùng cho tăng cân), khi
+  giảm nhanh hơn 1 kg/tuần (khuyến nghị giảm cân an toàn 0,5–1 kg/tuần), hoặc tăng từ 0,5 kg/tuần; đang thiếu cân mà
+  vẫn giảm thì Cần lưu ý.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import statistics
+
+from . import health as H
+from .i18n import get_lang, tr
 
 PERIOD_GAP = 2            # ngày không ghi tối đa giữa hai ngày có kinh của cùng một kỳ
 CYCLE_MIN, CYCLE_MAX = 18, 50
@@ -221,4 +231,74 @@ def ejaculation_stats(events: dict[str, int], nights: list[dict], today: dt.date
         "count_7": count(7), "count_30": count(30), "per_week": round(count(28) / 4, 1),
         "sleep": {"after": _sleep_group(after), "other": _sleep_group(other)} if enough else None,
         "nights_after": len(after), "need": MIN_COMPARE_NIGHTS,
+    }
+
+
+# ---------------------------------------------------------------- chiều cao, cân nặng theo thời gian
+
+WEIGHT_CHANGE_PCT = 5.0   # % trong khoảng 6 tháng
+WEIGHT_FAST_LOSS = -1.0   # kg/tuần
+WEIGHT_FAST_GAIN = 0.5    # kg/tuần
+
+
+def _human(d: dt.date) -> str:
+    return d.strftime("%b %-d, %Y") if get_lang() == "en" else f"{d.day}/{d.month}/{d.year}"
+
+
+def _change(last: tuple, ref: tuple) -> dict:
+    return {"since": _iso(ref[0]), "kg": round(last[1] - ref[1], 1), "pct": round((last[1] - ref[1]) * 100 / ref[1], 1)}
+
+
+def body_trend(entries: list[dict], today: dt.date) -> dict | None:
+    """Cân nặng, chiều cao, BMI mới nhất và xu hướng cân nặng từ các lần ghi (HealthDB.body_history), tới ngày `today`."""
+    pts = sorted((_d(e["date"]), float(e["weight"]), e.get("height")) for e in entries
+                 if e.get("weight") and _d(e["date"]) <= today)
+    if not pts:
+        return None
+    last = pts[-1]
+    heights = [h for _d0, _w, h in pts if h]
+    height = heights[-1] if heights else None
+    bmi = H.body_mass_index(height, last[1])
+
+    def change(days: int) -> dict | None:
+        ref = [p for p in pts if p[0] <= today - dt.timedelta(days=days)]
+        return _change(last, ref[-1]) if ref else None
+
+    recent = [p for p in pts if (today - p[0]).days <= 90]
+    rate = None
+    if len(recent) >= 2 and (recent[-1][0] - recent[0][0]).days >= 14:
+        xs = [(p[0] - recent[0][0]).days / 7 for p in recent]
+        ys = [p[1] for p in recent]
+        mx, my = statistics.mean(xs), statistics.mean(ys)
+        rate = round(sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs), 2)
+    half = [p for p in pts if (today - p[0]).days <= 183]
+    six = _change(last, half[0]) if half and (last[0] - half[0][0]).days >= 28 else None
+
+    status, notes = "good", []
+    if six and six["pct"] <= -WEIGHT_CHANGE_PCT:
+        status = "watch"
+        notes.append(tr('Giảm {p}% cân nặng từ {since}: nếu không cố ý giảm cân, nên hỏi ý kiến bác sĩ.',
+                        p=f"{-six['pct']:.0f}", since=_human(half[0][0])))
+    elif six and six["pct"] >= WEIGHT_CHANGE_PCT:
+        status = "watch"
+        notes.append(tr('Tăng {p}% cân nặng từ {since}.', p=f"{six['pct']:.0f}", since=_human(half[0][0])))
+    if rate is not None and rate <= WEIGHT_FAST_LOSS:
+        status = "watch"
+        notes.append(tr('Đang giảm khoảng {r} kg mỗi tuần, nhanh hơn mức an toàn 0,5–1 kg/tuần.', r=f"{-rate:.1f}"))
+    elif rate is not None and rate >= WEIGHT_FAST_GAIN:
+        status = "watch"
+        notes.append(tr('Đang tăng khoảng {r} kg mỗi tuần.', r=f"{rate:.1f}"))
+    if bmi is not None and bmi < 18.5 and rate is not None and rate < -0.1:
+        status = "alert"
+        notes.append(tr('Đang thiếu cân mà cân nặng vẫn giảm.'))
+    if not notes and rate is not None:
+        notes.append(tr('Cân nặng ổn định.') if abs(rate) < 0.2 else
+                     tr('Thay đổi khoảng {r} kg mỗi tuần, trong mức an toàn.', r=f"{rate:+.1f}"))
+    if len(heights) >= 2 and heights[-1] - heights[0] >= 1:
+        notes.append(tr('Chiều cao tăng {d} cm từ lần ghi đầu.', d=f"{heights[-1] - heights[0]:.0f}"))
+    bmi_status, bmi_label = H.bmi_class(bmi) if bmi is not None else (None, None)
+    return {
+        "date": _iso(last[0]), "weight": last[1], "height": height, "bmi": bmi, "bmi_status": bmi_status,
+        "bmi_label": bmi_label, "change_30": change(30), "change_90": change(90), "change_6m": six, "rate": rate,
+        "status": status, "notes": notes, "entries": len(pts),
     }

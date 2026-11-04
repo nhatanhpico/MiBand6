@@ -878,7 +878,67 @@ class BandService:
         sex = PS.sex_of(self.profile)
         kind = {PS.SEX_FEMALE: "period", PS.SEX_MALE: "ejaculation"}.get(sex)
         summary["journal"] = {"kind": kind, "days": db.journal(kind)} if kind else None
+        summary["body"] = self._body(db, dt.date.today().isoformat())   # xu hướng tới hôm nay, như phân tích sức khỏe
         return summary
+
+    def _record_body(self, height, weight, source: str, date: str | None = None) -> None:
+        """Ghi chiều cao, cân nặng vào lịch sử (HealthDB.body) cho phân tích xu hướng cân nặng."""
+        db = self.health_db()
+        try:
+            weight = float(weight)
+        except (TypeError, ValueError):
+            return
+        if db is not None and 20 <= weight <= 300:
+            db.add_body(date or dt.date.today().isoformat(), float(height) if height else None, weight, source)
+            self.push({"type": "health_data"})
+
+    def _body(self, db: HealthDB, date: str) -> dict:
+        """Lịch sử chiều cao, cân nặng và xu hướng tới ngày `date`. Lần đầu: lấy số trong hồ sơ làm điểm đầu tiên."""
+        entries = db.body_history()
+        if not entries and self.profile.get("weight"):
+            at = self.profile.get("cloud_at")
+            day = dt.date.fromtimestamp(at).isoformat() if at else dt.date.today().isoformat()
+            db.add_body(day, self.profile.get("height"), float(self.profile["weight"]), "profile")
+            entries = db.body_history()
+        return {"entries": entries, "trend": PS.body_trend(entries, dt.date.fromisoformat(date))}
+
+    async def log_body(self, date: str, weight, height=None, delete: bool = False) -> None:
+        """Ghi (hoặc xóa) cân nặng, chiều cao của một ngày. Lần ghi mới nhất cũng thành hồ sơ: ghi vào vòng tay ngay nếu
+        đang kết nối (vòng tay dùng để tính quãng đường, năng lượng), không thì ở lần kết nối sau."""
+        db = self.health_db()
+        if db is None:
+            raise ApiError(tr('Kết nối vòng tay một lần trước để ứng dụng biết lưu dữ liệu sức khỏe ở đâu.'), 409)
+        try:
+            day = dt.date.fromisoformat(date)
+        except ValueError as e:
+            raise ApiError(tr('Ngày không hợp lệ.')) from e
+        if day > dt.date.today():
+            raise ApiError(tr('Ngày không hợp lệ.'))
+        if delete:
+            db.delete_body(day.isoformat())
+        else:
+            try:
+                weight = float(weight)
+                height = None if height in (None, "") else float(height)
+            except (TypeError, ValueError) as e:
+                raise ApiError(tr('Hồ sơ có giá trị ngoài khoảng cho phép.')) from e
+            if not 20 <= weight <= 250 or (height is not None and not 100 <= height <= 230):
+                raise ApiError(tr('Hồ sơ có giá trị ngoài khoảng cho phép.'))
+            db.add_body(day.isoformat(), height, round(weight, 1), "app")
+        latest = (db.body_history() or [None])[-1]
+        if latest and (latest["weight"] != self.profile.get("weight") or latest["height"] != self.profile.get("height")):
+            if latest["height"]:
+                self.profile["height"] = int(round(latest["height"]))
+            self.profile["weight"] = latest["weight"]
+            self.profile["pending_sync"] = True
+            self.store.save()
+            if self.connected:
+                try:
+                    await self._write_profile()
+                except Exception as e:  # noqa: BLE001 - lần kết nối sau ghi lại (pending_sync)
+                    self.log(tr('Lỗi khi ghi hồ sơ: {e}', e=e))
+        self.push({"type": "health_data"})
+        self.push_state()
 
     def set_journal(self, kind: str, date: str, value: int) -> None:
         """Ghi một ngày vào nhật ký riêng (chỉ loại hợp với giới tính trong hồ sơ). Chỉ lưu trên máy này."""
@@ -1076,11 +1136,24 @@ class BandService:
         pr.pop("pending_sync", None)
         self.store.save()
 
-    async def apply_cloud_profile(self, values: dict, write: bool = True) -> str:
-        """Lưu hồ sơ lấy từ Mi Fitness; ghi vào vòng tay ngay nếu đang kết nối, nếu không thì khi kết nối."""
+    async def apply_cloud_profile(self, values: dict, write: bool = True, interactive: bool = True) -> str:
+        """Lưu hồ sơ lấy từ Mi Fitness; ghi vào vòng tay ngay nếu đang kết nối, nếu không thì khi kết nối.
+
+        Chiều cao, cân nặng: lượt chạy ngầm (12 giờ một lần) chỉ nhận khi giá trị trong Mi Fitness đã đổi so với lần
+        trước, để số bạn vừa ghi trong ứng dụng không bị số cũ của Mi Fitness đè lên; bấm Đồng bộ thì luôn nhận."""
         if "alias" not in values and str(self.profile.get("alias") or "").isdigit():
             self.profile.pop("alias")   # bản trước đã chép nhầm mã tài khoản Xiaomi làm tên
+        values = dict(values)
+        cloud = {k: values[k] for k in ("height", "weight") if k in values}
+        seen = self.profile.get("cloud_body") or {}
+        if not interactive:
+            for k in [k for k in cloud if seen.get(k) == cloud[k]]:
+                values.pop(k)
+        if cloud:
+            self.profile["cloud_body"] = cloud
         self.profile.update(values)
+        if "height" in values or "weight" in values:
+            self._record_body(self.profile.get("height"), self.profile.get("weight"), "mifitness")
         self.profile["pending_sync"] = True
         self.profile["cloud_at"] = int(time.time())
         self.store.save()
@@ -1138,6 +1211,7 @@ class BandService:
             await band.set_user_info(alias, birth, gender, height, weight)
             pr.update(alias=alias, birth=birth.isoformat(), gender=gender, height=height, weight=weight)
             pr.pop("pending_sync", None)
+            self._record_body(height, weight, "app")
             msg = tr('Đã lưu hồ sơ vào vòng tay.')
         elif section == "goal":
             goal, notify = int(b["goal"]), bool(b.get("notify"))
@@ -1426,6 +1500,11 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     async def health_sync(_):
         return ok(status=S.start_health_sync())
 
+    async def body_post(req):
+        b = await body(req)
+        await S.log_body(str(b.get("date") or ""), b.get("weight"), b.get("height"), bool(b.get("delete")))
+        return ok(state=S.state())
+
     async def journal_post(req):
         b = await body(req)
         S.set_journal(str(b.get("kind") or ""), str(b.get("date") or ""), b.get("value", 1))
@@ -1623,6 +1702,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/log/clear", log_clear)
     r.add_get("/api/health", health_get)
     r.add_post("/api/journal", journal_post)
+    r.add_post("/api/body", body_post)
     r.add_post("/api/health/sync", health_sync)
     r.add_get("/api/workouts/{start}/track", track_get)
     r.add_get("/api/tracks", tracks_get)

@@ -669,6 +669,15 @@ def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | N
         add("bmi", status, tr('Chỉ số BMI'), f"{group_dec(bmi)} · {label}",
             tr('Cân nặng / chiều cao² theo hồ sơ. Ngưỡng cho người châu Á (WHO 2004): 18,5–22,9 là bình thường, từ 23 là thừa cân, từ 25 là béo phì. BMI không phân biệt cơ và mỡ.'))
 
+    trend = (body or {}).get("trend")
+    if trend and (trend["change_30"] or trend["change_90"] or trend["rate"] is not None):
+        ch = trend["change_30"] or trend["change_90"]
+        value = f"{group_dec(trend['weight'])} kg"
+        if ch:
+            value += f" ({'+' if ch['kg'] > 0 else '−' if ch['kg'] < 0 else '±'}{group_dec(abs(ch['kg']))})"
+        first = [tr('Thay đổi so với {n} ngày trước, theo các lần ghi cân nặng.', n=30 if trend["change_30"] else 90)] if ch else []
+        add("weight", trend["status"], tr('Cân nặng'), value, " ".join(first + trend["notes"]))
+
     if last_data and now - last_data > 2 * 86400:
         add("fresh", WATCH, tr('Dữ liệu'), tr('cũ'), tr('Dữ liệu mới nhất đã hơn 2 ngày; kết nối và đồng bộ để phân tích chính xác.'))
 

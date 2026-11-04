@@ -204,9 +204,9 @@ const quiet = (p) => p.catch(() => {});
 const PAGES = ["overview", "health", "settings", "alarms", "tools", "device", "app"];   // settings: vòng tay; app: ứng dụng
 const SUBS = ["profile", "display", "face", "apps", "health"];
 // Thẻ của trang Sức khỏe; cycle chỉ cho hồ sơ nữ, intimacy chỉ cho hồ sơ nam. Địa chỉ cũ (#health/steps…) vẫn mở đúng thẻ.
-const HTABS = ["sleep", "activity", "heart", "workouts", "cycle", "intimacy", "insights"];
+const HTABS = ["sleep", "activity", "heart", "body", "workouts", "cycle", "intimacy", "insights"];
 const HTAB_ALIAS = { readiness: "insights", analysis: "insights", mind: "insights", hr: "heart", stress: "heart", spo2: "heart",
-  measure: "heart", steps: "activity", pai: "activity", intensity: "activity", circadian: "sleep" };
+  measure: "heart", steps: "activity", pai: "activity", intensity: "activity", circadian: "sleep", weight: "body", bmi: "body" };
 /** Giới tính trong hồ sơ (Cài đặt vòng tay → Hồ sơ): 0 nam, 1 nữ; "Khác" / chưa chọn: null. */
 const profileSex = () => ({ 0: "male", 1: "female" })[Number(STATE.profile?.gender ?? -1)] ?? null;
 const tabAllowed = (tab) => HTABS.includes(tab) && (tab !== "cycle" || profileSex() === "female")
@@ -2679,7 +2679,7 @@ function showHealthTab() {
     b.setAttribute("aria-selected", String(b.dataset.htab === healthTab));
   });
   $$("#page-health .hpanel").forEach((el) => (el.hidden = el.id !== `htab-${healthTab}`));
-  $("#hDayNav").hidden = healthTab === "workouts";
+  $("#hDayNav").hidden = healthTab === "workouts" || healthTab === "body";   // hai thẻ này không theo ngày đang xem
 }
 
 function renderHealth() {
@@ -2687,7 +2687,7 @@ function renderHealth() {
   renderDateNav();
   showHealthTab();
   $("#hEmpty").hidden = !!H?.has_data;
-  const draw = { sleep: renderSleepTab, activity: renderActivityTab, heart: renderHeartTab, workouts: renderWorkoutsTab,
+  const draw = { sleep: renderSleepTab, activity: renderActivityTab, heart: renderHeartTab, body: renderBodyTab, workouts: renderWorkoutsTab,
     cycle: renderCycleTab, intimacy: renderIntimacyTab, insights: renderInsightsTab }[healthTab];
   draw?.(H);
 }
@@ -2836,6 +2836,82 @@ function renderHeartTab(H) {
   ];
   $("#measureFacts").textContent = `${t("Đo tự động")} · ${facts.join(" · ")}. ${t("Mi Band 6 chỉ đo SpO2 khi bạn mở mục SpO2 trên vòng tay và bấm đo; kết quả hiện ở đây sau lần đồng bộ kế tiếp. Đổi chu kỳ đo ở Cài đặt vòng tay → Sức khỏe.")}`;
 }
+
+/* ---------------- cơ thể: cân nặng, chiều cao theo thời gian (personal.body_trend) */
+
+const BODY_SOURCE = { app: () => t("Ứng dụng"), mifitness: () => "Mi Fitness", profile: () => t("Hồ sơ") };
+let bodyFormFor = null;   // lần ghi đã điền sẵn vào ô nhập: không điền lại khi số liệu không đổi
+const kgText = (v) => `${fmtDec(v, 1)} kg`;
+const signedKg = (v) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${fmtDec(Math.abs(v), 1)} kg`;
+
+function renderBodyTab(H) {
+  const body = H?.body || { entries: [], trend: null };
+  const tr_ = body.trend;
+  $("#bdWeight").textContent = tr_ ? kgText(tr_.weight) : "—";
+  $("#bdSub").textContent = tr_
+    ? [t("Lần ghi gần nhất: {when}", { when: longDate(tr_.date) }), tr_.height ? t("chiều cao {n} cm", { n: fmtInt(tr_.height) }) : ""].filter(Boolean).join(" · ")
+    : t("Chưa có lần ghi nào. Ghi cân nặng để theo dõi xu hướng.");
+  const pill = $("#bdBmi");
+  pill.hidden = !tr_?.bmi;
+  if (tr_?.bmi) {
+    pill.className = `score-pill lv-${tr_.bmi_status}`;
+    pill.textContent = "BMI ";
+    mkEl("b", {}, pill).textContent = fmtDec(tr_.bmi, 1);
+    pill.append(` · ${tr_.bmi_label}`);
+  }
+  const stats = [];
+  if (tr_?.change_30) stats.push([t("So với 30 ngày trước"), signedKg(tr_.change_30.kg), ""]);
+  if (tr_?.change_90) stats.push([t("So với 90 ngày trước"), signedKg(tr_.change_90.kg), ""]);
+  if (tr_?.rate != null) stats.push([t("Xu hướng"), `${tr_.rate > 0 ? "+" : tr_.rate < 0 ? "−" : ""}${fmtDec(Math.abs(tr_.rate), 2)}`, t("kg/tuần")]);
+  statsList($("#bdStats"), stats);
+  $("#bdNotes").textContent = tr_?.notes?.length ? tr_.notes.join(" ")
+    : body.entries.length ? t("Ghi cân nặng thêm vài lần, cách nhau ít nhất 2 tuần, để xem xu hướng.") : "";
+  $("#bdNotes").className = `journal-effect${tr_ && tr_.status !== "good" ? ` warn lv-${tr_.status}` : ""}`;
+  const pts = body.entries.filter((e) => e.weight).map((e) => [new Date(`${e.date}T12:00:00`).getTime() / 1000, e.weight]);
+  const now = Date.now() / 1000;
+  const t0 = Math.min(pts[0]?.[0] ?? now, now - 30 * 86400);
+  lineChart($("#bdChart"), pts, {
+    t0, t1: now + 86400, color: "var(--sky)", unit: "kg", dots: pts, gap: 1e12, height: 200, label: t("Cân nặng theo thời gian"),
+    timeFmt: (ts) => longDate(isoOf(new Date(ts * 1000))), xTicks: [[t0, shortDate(isoOf(new Date(t0 * 1000)))], [now, t("Hôm nay")]],
+    yMin: pts.length ? Math.floor(Math.min(...pts.map((p) => p[1])) - 3) : undefined,
+    empty: t("Chưa có lần ghi nào. Ghi cân nặng để theo dõi xu hướng."),
+  });
+  const key = `${tr_?.date}|${tr_?.weight}|${tr_?.height}`;
+  if (bodyFormFor !== key) {   // điền sẵn hôm nay và số mới nhất
+    bodyFormFor = key;
+    $("#bdDate").value = todayISO();
+    $("#bdDate").max = todayISO();
+    $("#bdKg").value = tr_?.weight ?? STATE.profile?.weight ?? "";
+    $("#bdCm").value = tr_?.height ?? STATE.profile?.height ?? "";
+  }
+  const rows = body.entries.slice().reverse();
+  tableRows($("#bdTable"), rows.map((e) => [longDate(e.date), e.weight ? kgText(e.weight) : "—",
+    e.height ? `${fmtInt(e.height)} cm` : "—", (BODY_SOURCE[e.source] || (() => e.source || "—"))(), ""]),
+  t("Chưa có lần ghi nào. Ghi cân nặng để theo dõi xu hướng."), 5);
+  $$("#bdTable tr").forEach((row, i) => {
+    const e = rows[i];
+    if (!e) return;
+    const b = mkEl("button", { type: "button", class: "icon-btn", "aria-label": t("Xóa lần ghi ngày {day}", { day: longDate(e.date) }) }, row.lastElementChild);
+    b.innerHTML = '<svg class="ic"><use href="#i-trash"/></svg>';
+    b.onclick = () => quiet(saveBody({ date: e.date, delete: true }));
+  });
+}
+
+async function saveBody(data) {
+  const r = await run($("#bdSaveBtn"), () => api("/api/body", data), data.delete ? t("Đã xóa lần ghi.") : t("Đã lưu cân nặng."));
+  STATE.profile = r.state.profile;
+  bodyFormFor = null;
+  await loadHealth();
+}
+$("#bdSaveBtn").onclick = () => {
+  const kg = Number($("#bdKg").value);
+  if (!$("#bdDate").value || !(kg >= 20 && kg <= 250)) {
+    toast(t("Nhập cân nặng từ 20 đến 250 kg."), true);
+    $("#bdKg").focus();
+    return;
+  }
+  quiet(saveBody({ date: $("#bdDate").value, weight: kg, height: $("#bdCm").value ? Number($("#bdCm").value) : null }));
+};
 
 function renderWorkoutsTab(H) {
   const workouts = H?.workouts || [];

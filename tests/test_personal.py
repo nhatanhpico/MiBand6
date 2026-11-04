@@ -97,3 +97,33 @@ def test_profile_shapes_hr_max_sleep_need_and_bmi():
     assert H.body_mass_index(None, 65) is None and H.body_mass_index(170, "x") is None
     assert PS.sex_of({"gender": 1}) == "female" and PS.sex_of({"gender": "0"}) == "male"
     assert PS.sex_of({"gender": 2}) is None and PS.sex_of({}) is None
+
+
+def _weights(start: str, values: list[float], step: int = 7, height: float = 176) -> list[dict]:
+    return [{"date": (D(start) + dt.timedelta(days=i * step)).isoformat(), "weight": w, "height": height}
+            for i, w in enumerate(values)]
+
+
+def test_body_trend_change_rate_and_bmi():
+    entries = _weights("2026-08-01", [60, 60.2, 60.1, 60.3, 60.2, 60.4, 60.3, 60.5, 60.4, 60.6, 60.5, 60.7, 60.6, 60.8])
+    t = PS.body_trend(entries, D("2026-11-01"))
+    assert t["weight"] == 60.8 and t["height"] == 176 and t["bmi"] == 19.6 and t["bmi_status"] == "good"
+    assert t["change_30"]["kg"] == 0.4 and t["change_90"]["kg"] == 0.8   # so với 26/9 (60,4) và 1/8 (60)
+    assert 0 < t["rate"] < 0.2 and t["status"] == "good"
+    assert PS.body_trend([], D("2026-11-01")) is None
+
+
+def test_body_trend_flags_fast_and_large_changes():
+    fast = PS.body_trend(_weights("2026-09-01", [70, 68.5, 67, 65.5, 64]), D("2026-09-29"))
+    assert fast["rate"] <= -1 and fast["status"] == "watch" and any("0,5–1" in n or "0.5–1" in n for n in fast["notes"])
+    lost = PS.body_trend(_weights("2026-05-01", [70, 69, 68, 67, 66], step=30), D("2026-09-01"))
+    assert lost["change_6m"]["pct"] <= -5 and lost["status"] == "watch"
+    thin = PS.body_trend(_weights("2026-09-01", [52, 51.5, 51, 50.5], height=170), D("2026-09-22"))
+    assert thin["bmi"] < 18.5 and thin["status"] == "alert"
+
+
+def test_weight_trend_appears_in_analysis():
+    trend = PS.body_trend(_weights("2026-09-01", [60, 60.5, 61, 61.5, 62]), D("2026-10-01"))
+    a = H.analyze([], [], 8000, None, [], [], 0, 0, None, body={"age": 25, "height": 176, "weight": 62, "trend": trend})
+    item = next(i for i in a["items"] if i["key"] == "weight")
+    assert item["value"].startswith("62") and "+" in item["value"]

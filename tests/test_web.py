@@ -379,3 +379,37 @@ async def test_journal_follows_profile_gender(client):
     r = await post(client, "/api/journal", {"kind": "ejaculation", "date": today, "value": 0})
     h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
     assert h["journal"]["days"] == {}
+
+
+async def test_body_history_logs_weight_and_updates_profile(client):
+    s = client.service
+    await connect(client)
+    today = dt.date.today()
+    old = (today - dt.timedelta(days=40)).isoformat()
+    r = await post(client, "/api/body", {"date": old, "weight": 62.0, "height": 176})
+    assert r.status == 200
+    r = await post(client, "/api/body", {"date": today.isoformat(), "weight": 60.5})   # chiều cao lấy lần trước
+    assert r.status == 200 and s.profile["weight"] == 60.5 and s.profile["height"] == 176
+    assert s.band._client.authenticated and not s.profile.get("pending_sync")   # đã ghi vào vòng tay
+    h = (await (await client.get(f"/api/health?date={today.isoformat()}")).json())["health"]
+    assert [e["weight"] for e in h["body"]["entries"]] == [62.0, 60.5]
+    assert h["body"]["trend"]["change_30"]["kg"] == -1.5
+    assert any(i["key"] == "weight" for i in h["analysis"]["items"])
+    r = await post(client, "/api/body", {"date": today.isoformat(), "weight": 400})
+    assert r.status == 400
+    r = await post(client, "/api/body", {"date": today.isoformat(), "delete": True})
+    assert s.profile["weight"] == 62.0                         # lần ghi mới nhất còn lại thành hồ sơ
+
+
+async def test_background_mifitness_sync_keeps_weight_logged_in_app(client):
+    s = client.service
+    await connect(client)
+    await s.apply_cloud_profile({"height": 176, "weight": 60.0}, interactive=False)
+    await post(client, "/api/body", {"date": dt.date.today().isoformat(), "weight": 61.5})
+    # Mi Fitness vẫn là số cũ: lượt chạy ngầm không đè số vừa ghi trong ứng dụng
+    await s.apply_cloud_profile({"height": 176, "weight": 60.0, "goal": 9000}, interactive=False)
+    assert s.profile["weight"] == 61.5 and s.profile["goal"] == 9000
+    # cân nặng trong Mi Fitness đổi thật: nhận và ghi vào lịch sử
+    await s.apply_cloud_profile({"height": 176, "weight": 59.0}, interactive=False)
+    assert s.profile["weight"] == 59.0
+    assert s.health_db().body_history()[-1]["source"] == "mifitness"

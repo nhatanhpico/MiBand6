@@ -228,6 +228,7 @@
         <button role="tab" data-htab="sleep">Giấc ngủ</button>
         <button role="tab" data-htab="activity">Vận động</button>
         <button role="tab" data-htab="heart">Tim mạch</button>
+        <button role="tab" data-htab="body">Cơ thể</button>
         <button role="tab" data-htab="workouts">Tập luyện</button>
         <button role="tab" data-htab="cycle" hidden>Chu kỳ</button>
         <button role="tab" data-htab="intimacy" hidden>Sinh lý</button>
@@ -317,6 +318,36 @@
           </article>
         </div>
         <p class="footnote" id="measureFacts"></p>
+      </div>
+
+      <!-- Cơ thể: cân nặng, chiều cao theo thời gian -->
+      <div class="hpanel" id="htab-body" role="tabpanel" hidden>
+        <div class="journal-layout">
+          <article class="card" id="health-body">
+            <header class="card-head split-head">
+              <div><h2>Cân nặng</h2><p class="card-sub" id="bdSub"></p></div>
+              <span class="score-pill" id="bdBmi" hidden></span>
+            </header>
+            <p class="hero-big" id="bdWeight">—</p>
+            <dl class="stats" id="bdStats"></dl>
+            <p class="journal-effect" id="bdNotes"></p>
+            <div class="chart" id="bdChart"></div>
+          </article>
+          <article class="card">
+            <header class="card-head"><h2>Ghi cân nặng</h2><p class="card-sub">Lần ghi mới nhất cũng thành hồ sơ và được ghi vào vòng tay, vì vòng tay dùng chiều cao, cân nặng để tính quãng đường và năng lượng.</p></header>
+            <div class="rows compact body-form">
+              <label class="row"><span class="row-label">Ngày</span><input id="bdDate" type="date"></label>
+              <label class="row"><span class="row-label">Cân nặng</span><span class="with-unit"><input id="bdKg" type="number" min="20" max="250" step="0.1" inputmode="decimal"><span>kg</span></span></label>
+              <label class="row"><span class="row-label">Chiều cao</span><span class="with-unit"><input id="bdCm" type="number" min="100" max="230" step="1" inputmode="numeric"><span>cm</span></span></label>
+            </div>
+            <div class="tile-actions"><button id="bdSaveBtn" class="btn primary" type="button">Lưu</button></div>
+          </article>
+        </div>
+        <article class="card">
+          <header class="card-head"><h2>Các lần ghi</h2></header>
+          <div class="table-scroll"><table class="data-table body-table"><thead><tr><th>Ngày</th><th>Cân nặng</th><th>Chiều cao</th><th>Nguồn</th><th><span class="sr-only">Xóa</span></th></tr></thead><tbody id="bdTable"></tbody></table></div>
+        </article>
+        <p class="footnote">Lưu hồ sơ ở Cài đặt vòng tay hay đồng bộ từ Mi Fitness cũng thêm một lần ghi. Đồng bộ ngầm với Mi Fitness chỉ nhận cân nặng khi số trong Mi Fitness đã đổi, nên số bạn ghi ở đây không bị đè. Dữ liệu chỉ lưu trên máy tính này.</p>
       </div>
 
       <!-- Tập luyện -->

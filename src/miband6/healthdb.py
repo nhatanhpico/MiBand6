@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tracks (start INTEGER PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS places (key TEXT PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS journal (date TEXT NOT NULL, kind TEXT NOT NULL, value INTEGER NOT NULL DEFAULT 1,
                                     PRIMARY KEY (date, kind));
+CREATE TABLE IF NOT EXISTS body (date TEXT PRIMARY KEY, height REAL, weight REAL, source TEXT);
 """
 
 JOURNAL_KINDS = ("period", "ejaculation")   # nhật ký người dùng tự ghi (personal.py); chỉ lưu trên máy
@@ -157,6 +158,32 @@ class HealthDB:
                 self.db.execute("DELETE FROM journal WHERE date = ? AND kind = ?", (date, kind))
             self.db.execute("INSERT OR REPLACE INTO sync VALUES ('journal', ?)", (time.time_ns() // 1000,))
 
+    # ------------------------------------------------------------ chiều cao, cân nặng theo thời gian
+    def body_history(self) -> list[dict]:
+        """Các lần ghi chiều cao (cm), cân nặng (kg), cũ tới mới; source: app (Hồ sơ / ghi tay), mifitness, profile."""
+        return [{"date": d, "height": h, "weight": w, "source": src}
+                for d, h, w, src in self.db.execute("SELECT date, height, weight, source FROM body ORDER BY date")]
+
+    def add_body(self, date: str, height: float | None, weight: float, source: str) -> bool:
+        """Ghi số đo của một ngày (ghi đè ngày đó; thiếu chiều cao thì lấy lần ghi trước). Bỏ qua nếu giống hệt lần ghi
+        gần nhất trước ngày đó (đồng bộ Mi Fitness lặp lại không tạo thêm điểm). Trả True nếu có ghi."""
+        dt.date.fromisoformat(date)
+        prev = self.db.execute("SELECT date, height, weight FROM body WHERE date <= ? ORDER BY date DESC LIMIT 1",
+                               (date,)).fetchone()
+        if height is None:
+            height = prev[1] if prev else None
+        if prev and prev[0] != date and prev[1] == height and prev[2] == weight:
+            return False
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO body VALUES (?, ?, ?, ?)", (date, height, weight, source))
+            self.db.execute("INSERT OR REPLACE INTO sync VALUES ('body', ?)", (time.time_ns() // 1000,))
+        return True
+
+    def delete_body(self, date: str) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM body WHERE date = ?", (date,))
+            self.db.execute("INSERT OR REPLACE INTO sync VALUES ('body', ?)", (time.time_ns() // 1000,))
+
     def track(self, start: int) -> list | None:
         row = self.db.execute("SELECT data FROM tracks WHERE start = ?", (start,)).fetchone()
         return json.loads(row[0]) if row else None
@@ -246,7 +273,8 @@ class HealthDB:
         spo2 = [r for r in spo2 if T.assess("spo2", r[1])["usable"]]
         stress = [v for v in stress if T.assess("stress", v)["usable"]]
         last = self.db.execute("SELECT MAX(ts) FROM activity").fetchone()[0]
-        body = {"age": age, "height": (profile or {}).get("height"), "weight": (profile or {}).get("weight")}
+        body = {"age": age, "height": (profile or {}).get("height"), "weight": (profile or {}).get("weight"),
+                "trend": PS.body_trend(self.body_history(), d0)}
         return H.analyze(sorted(nights.values(), key=lambda n: n["date"]), steps, goal,
                          {"total": pai[0]} if pai else None, spo2, stress, len(active), len(workouts), last,
                          sleep_need=I.sleep_need(age), body=body)
