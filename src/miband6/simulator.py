@@ -371,8 +371,22 @@ class DemoHealth:
                                                                 (4, 50, 15800, 420, 0)]):
             st = (now - dt.timedelta(days=2 * i + 1)).replace(hour=18, minute=5)
             self.workouts.append((st, self._summary(kind, st, minutes, dist, cal, steps, 132 + i * 5, 164)))
+            self._during_workout(st, minutes, 132 + i * 5, steps)
         old = (now - dt.timedelta(days=45)).replace(hour=7, minute=30)   # cũ hơn lần đồng bộ đầu (30 ngày)
         self.workouts.append((old, self._summary(5, old, 60, 0, 380, 300, 118, 150)))
+
+    def _during_workout(self, start: dt.datetime, minutes: int, avg_hr: int, steps: int) -> None:
+        """Phút vòng tay ghi trong giờ tập: nhịp tim, bước chân của buổi tập (khởi động rồi đều nhịp)."""
+        first = int((start - self.start).total_seconds() // 60)
+        for k in range(minutes):
+            m = first + k
+            if not 0 <= m < len(self.activity) // 8:
+                continue
+            hr = int(avg_hr - 18 + min(18, 3 * k) + 4 * ((k * 7) % 3 - 1))
+            per_min = min(255, steps // minutes) if steps else 0
+            self.activity[m * 8 + 1] = min(255, 2 * per_min) if per_min else 60
+            self.activity[m * 8 + 2] = per_min
+            self.activity[m * 8 + 3] = max(30, min(220, hr))
 
     @staticmethod
     def _summary(kind, start, minutes, distance, calories, steps, avg_hr, max_hr) -> bytes:

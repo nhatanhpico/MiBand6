@@ -43,7 +43,8 @@ from ..device import (PROTOCOL_2021, PROTOCOL_AUTO, PROTOCOL_CLASSIC, AuthError,
 from ..healthdb import HealthDB, db_path
 from .. import xiaomi_cloud as XC
 from .. import personal as PS
-from ..xiaomi_cloud import LoginError, SessionExpired, fetch_gps_file
+from .. import workouts as WK
+from ..xiaomi_cloud import GPS_FILE, RECORD_FILE, LoginError, SessionExpired, fetch_workout_files
 from .cloud import CloudSync
 
 STATIC = Path(__file__).parent / "static"
@@ -66,6 +67,7 @@ CLOUD_PROFILE_EVERY = 12 * 3600        # tự lấy lại hồ sơ Mi Fitness (n
 WEATHER_EVERY = 3600                   # giây giữa hai lần gửi thời tiết khi đang kết nối
 IP_PLACE_TTL = 6 * 3600                # dùng lại vị trí theo IP trong chừng này giây
 CLOUD_WORKOUTS_OVERLAP = 2 * 86400     # lấy lùi lại chừng này giây so với lần trước (buổi tập đồng bộ lên trễ)
+CLOUD_AFTER_SYNC_GAP = 120             # bấm Đồng bộ liên tục: không hỏi lại Mi Fitness nếu vừa hỏi trong chừng này giây
 MAX_UPLOAD = 12 * 1024 * 1024          # cỡ tối đa của yêu cầu (tệp mặt đồng hồ + ảnh, dạng base64)
 IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif"}
 
@@ -156,8 +158,11 @@ class BandService:
         # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
         self.auto_health = True
         self.auto_cloud = not demo   # tự đồng bộ Mi Fitness sau khi kết nối (tắt ở chế độ xem thử)
-        self._track_jobs: dict[int, asyncio.Future] = {}   # lộ trình đang tải, theo giờ bắt đầu buổi tập
         self._track_failed: set[int] = set()               # tải hỏng trong lần chạy này: không tự thử lại
+        self._cloud_after_sync = False   # người dùng bấm Đồng bộ: xong phần vòng tay thì lấy tiếp lịch sử Mi Fitness
+        self._file_jobs: dict[int, asyncio.Future] = {}    # tệp chi tiết đang tải (dữ liệu từng giây + GPS), theo buổi tập
+        self._files_failed: set[int] = set()               # tải hỏng trong lần chạy này: không tự thử lại ở nền
+        self._detail_task: asyncio.Task | None = None
         self._prefetch_task: asyncio.Task | None = None
         self._insight_cache: dict = {}
         self._geo_task: asyncio.Task | None = None
@@ -617,8 +622,12 @@ class BandService:
         self.health_status = {**status, "last_sync": db.last("last_sync") if db else None}
         self.push({"type": "health", "status": self.health_status})
 
-    def start_health_sync(self) -> dict:
+    def start_health_sync(self, cloud: bool = False) -> dict:
+        """Lấy dữ liệu mới từ vòng tay. cloud=True (người dùng bấm Đồng bộ): xong phần vòng tay thì lấy tiếp lịch sử Mi
+        Fitness (buổi tập, báo cáo giấc ngủ, rồi lộ trình GPS và dữ liệu từng giây), nếu đã đăng nhập."""
         self.require()
+        if cloud:
+            self._cloud_after_sync = True
         running = self._health_task is not None and not self._health_task.done()
         if running and self._health_band is not self.band:   # lượt của kết nối đã rớt chưa kịp dừng: bỏ, chạy lượt mới
             self._health_task.cancel()
@@ -683,10 +692,31 @@ class BandService:
                     break
         if self.connected and not errors:
             db.set_last("last_sync", int(time.time()))
+        if self._cloud_after_sync:
+            self._cloud_after_sync = False
+            await self._cloud_after_band()
         self._set_health(state="error" if errors else "done",
                          errors=sorted(set(errors)))
         self._insight_cache.clear()  # partial syncs may still have committed useful new samples
         self.push({"type": "health_data"})
+
+    async def _cloud_after_band(self) -> None:
+        """Sau lượt đồng bộ do người dùng bấm: lấy các buổi tập mới từ Mi Fitness (chỉ dùng phiên đăng nhập đã lưu, không
+        hiện mã QR; chưa đăng nhập thì bỏ qua), rồi tải sẵn lộ trình GPS và dữ liệu từng giây của các buổi tập."""
+        db = self.health_db()
+        if db is None or self.cloud.running:
+            return
+        has_session = getattr(self.cloud.factory, "session_info", None)
+        if not self.cloud.demo and not (has_session and has_session()):
+            return
+        last = db.last("cloud_workouts")
+        if not last or time.time() - last >= CLOUD_AFTER_SYNC_GAP:
+            self._set_health(state="running", step=tr('lịch sử Mi Fitness'), source="mifitness")
+            self.cloud.start(write=True, interactive=False, job="workouts",
+                             since=last - CLOUD_WORKOUTS_OVERLAP if last else None)
+            await self.cloud.wait()
+        self.prefetch_tracks()
+        self.prefetch_details()
 
     async def _backfill_one(self, band: MiBand6, db: HealthDB, name: str, kind: int) -> None:
         """Một lần duy nhất: lấy phần vòng tay còn giữ nhưng cũ hơn dữ liệu đã có (lần đầu chỉ lấy 30 ngày)."""
@@ -777,58 +807,153 @@ class BandService:
                                 n=len(sleep), new=new_nights)
         self.push({"type": "health_data"})
         self.prefetch_tracks()
+        self.prefetch_details()
         return message
 
     async def workout_track(self, start: int) -> list:
-        """Lộ trình GPS của một buổi tập (tải từ Mi Fitness lần đầu, sau đó dùng bản đã lưu trên máy).
-        Nhiều yêu cầu cùng một buổi tập (người dùng bấm, tải sẵn chạy nền) dùng chung một lần tải."""
+        """Lộ trình GPS của một buổi tập (tải từ Mi Fitness lần đầu, sau đó dùng bản đã lưu trên máy)."""
         db = self.health_db()
         cached = db.track(start) if db else None
         if cached is not None:
             return cached
-        job = self._track_jobs.get(start)
+        got = await self._files(start)
+        if got["track"] is None:
+            raise ApiError(tr('Không lấy được lộ trình: {e}', e=got.get("gps_error") or "?"), 502)
+        return got["track"]
+
+    async def _files(self, start: int) -> dict:
+        """Tệp chi tiết của một buổi tập trong Mi Fitness (lộ trình GPS và dữ liệu từng giây, cùng một lần hỏi máy chủ):
+        tải lần đầu rồi lưu trên máy. Nhiều yêu cầu cùng buổi (bản đồ, trang chi tiết, tải sẵn ở nền) dùng chung một lần
+        tải."""
+        job = self._file_jobs.get(start)
         if job is None:
-            job = self._track_jobs[start] = asyncio.ensure_future(self._download_track(start))
-            job.add_done_callback(lambda _f: self._track_jobs.pop(start, None))
+            job = self._file_jobs[start] = asyncio.ensure_future(self._download_files(start))
+            job.add_done_callback(lambda _f: self._file_jobs.pop(start, None))
         return await asyncio.shield(job)
 
-    async def _download_track(self, start: int) -> list:
+    def _keep_unread(self, folder: str, start: int, plain: bytes) -> None:
+        """Giữ tệp chưa đọc được (đã giải mã, chỉ trên máy này) để sửa bộ đọc cho phiên bản tệp mới."""
+        keep = self.store.path.parent / "health" / folder / f"{start}.bin"
+        keep.parent.mkdir(parents=True, exist_ok=True)
+        keep.write_bytes(plain)
+        keep.chmod(0o600)
+        self.log(tr('Tệp lộ trình chưa đọc được đã lưu tại {path}.', path=keep))
+
+    async def _download_files(self, start: int) -> dict:
         db = self.health_db()
         w = db.workout(start) if db else None
         if w is None:
             raise ApiError(tr('Không tìm thấy buổi tập này.'), 404)
-        cached = db.track(start)
-        if cached is not None:
-            return cached
         if not H.has_gps(w):
             raise ApiError(tr('Buổi tập này không có lộ trình GPS.'), 404)
+        want_record = w.get("mf_proto") in WK.RECORD_PROTOS
+        out: dict = {"track": db.track(start), "samples": None, "alt": None}
+        status: dict = {}
         if self.demo:
-            points = demo_track(w)
+            track = out["track"] if out["track"] is not None else demo_track(w)
+            out.update(track=track, samples=WK.demo_record(w) if want_record else None, alt=WK.demo_altitude(track))
         else:
             login = self.cloud.factory()
             if not await asyncio.to_thread(login.load):
                 raise ApiError(tr('Đăng nhập Mi Fitness trước: bấm Lấy lịch sử từ Mi Fitness ở thẻ Tập luyện.'), 409)
+            types = (RECORD_FILE, GPS_FILE) if want_record else (GPS_FILE,)
             try:
-                plain = await asyncio.to_thread(fetch_gps_file, login, w["mf_sid"], w["mf_time"], w.get("mf_tz") or 0,
-                                                w["mf_proto"], w.get("mf_region") or "sg")
-                try:
-                    points = H.decode_gps_file(plain) if plain else []
-                except ValueError:
-                    # giữ tệp (đã giải mã, chỉ trên máy này) để sửa bộ đọc cho phiên bản tệp mới
-                    keep = self.store.path.parent / "health" / "gps-unread" / f"{start}.bin"
-                    keep.parent.mkdir(parents=True, exist_ok=True)
-                    keep.write_bytes(plain)
-                    keep.chmod(0o600)
-                    self.log(tr('Tệp lộ trình chưa đọc được đã lưu tại {path}.', path=keep))
-                    raise
+                files = await asyncio.to_thread(fetch_workout_files, login, w["mf_sid"], w["mf_time"],
+                                                w.get("mf_tz") or 0, w["mf_proto"], w.get("mf_region") or "sg", types)
             except SessionExpired as e:
                 raise ApiError(tr('Phiên đăng nhập Mi Fitness đã hết hạn: bấm Lấy lịch sử từ Mi Fitness để đăng nhập lại.'), 409) from e
-            except Exception as e:  # noqa: BLE001 - lỗi mạng, tệp lạ…
+            except Exception as e:  # noqa: BLE001 - lỗi mạng…
                 self.log(tr('Không lấy được lộ trình: {e}', e=e or type(e).__name__))
                 raise ApiError(tr('Không lấy được lộ trình: {e}', e=e or type(e).__name__), 502) from e
-        db.set_track(start, points)
-        self.push({"type": "tracks"})
-        return points
+            gps = files.get(GPS_FILE)
+            if out["track"] is None:
+                try:
+                    out["track"] = H.decode_gps_file(gps) if gps else []
+                except ValueError as e:
+                    self._keep_unread("gps-unread", start, gps)
+                    out["gps_error"] = str(e)
+            out["alt"] = WK.gps_altitudes(gps) if gps else None
+            record = files.get(RECORD_FILE)
+            status["record"] = "none" if not record else "ok"
+            if record:
+                try:
+                    out["samples"] = WK.decode_record_file(record, w)
+                except ValueError as e:
+                    status["record"] = "unread"
+                    self._keep_unread("detail-unread", start, record)
+                    self.log(tr('Chưa đọc được dữ liệu từng giây của buổi tập: {e}', e=e))
+        if out["track"] is not None:
+            db.set_track(start, out["track"])
+            self.push({"type": "tracks"})
+        db.set_workout_files(start, {"samples": out["samples"], "alt": out["alt"], "status": status,
+                                     "at": int(time.time())})
+        self.push({"type": "workout", "start": start})
+        return out
+
+    def prefetch_details(self) -> None:
+        """Tải sẵn ở nền tệp chi tiết (dữ liệu từng giây, độ cao) của các buổi tập có GPS chưa có trên máy."""
+        if self._detail_task and not self._detail_task.done():
+            return
+        self._detail_task = asyncio.ensure_future(self._prefetch_details())
+
+    async def _prefetch_details(self) -> None:
+        db = self.health_db()
+        if db is None:
+            return
+        have = db.has_workout_files()
+        todo = [w["start"] for w in db.gps_workouts() if w["start"] not in have and w["start"] not in self._files_failed]
+        limit = asyncio.Semaphore(3)
+        stop = asyncio.Event()
+
+        async def one(start: int) -> None:
+            async with limit:
+                if stop.is_set():
+                    return
+                try:
+                    await self._files(start)
+                except ApiError as e:
+                    if e.status == 409:   # chưa đăng nhập / phiên hết hạn: dừng, không hỏi QR khi chạy nền
+                        stop.set()
+                    else:
+                        self._files_failed.add(start)
+
+        await asyncio.gather(*(one(s) for s in todo))
+        if todo:
+            self._insight_cache.clear()   # mô hình thể lực, gợi ý buổi tập dùng dữ liệu từng giây mới
+            self.push({"type": "health_data"})
+
+    def _hrmax(self) -> float:
+        from .. import insights as I
+
+        age, sex = PS.age_of(self.profile, dt.date.today()), PS.sex_of(self.profile)
+        return PS.max_hr_override(self.profile.get("max_hr_override")) or I.hr_max(age, sex)
+
+    async def workout_detail(self, start: int) -> dict:
+        """Trang chi tiết một buổi tập. Lần đầu mở buổi có GPS: tải tệp chi tiết từ Mi Fitness (nếu đã đăng nhập)."""
+        db = self.health_db()
+        w = db.workout(start) if db else None
+        if w is None:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404)
+        note = None
+        if H.has_gps(w) and db.workout_files(start) is None:
+            try:
+                await self._files(start)
+            except ApiError as e:
+                note = str(e)
+        out = db.workout_detail(start, self._hrmax())
+        out["note"] = note
+        out["title_type"], out["mf_type"] = w.get("type"), w.get("mf_type")
+        out["source"] = w.get("source")
+        return out
+
+    def set_rpe(self, start: int, value) -> None:
+        db = self.health_db()
+        if db is None or db.workout(start) is None:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 5):
+            raise ApiError(tr('Lựa chọn không hợp lệ.'))
+        db.set_rpe(start, value)
+        self.push({"type": "health_data"})
 
     def prefetch_tracks(self) -> None:
         """Tải sẵn ở chế độ nền lộ trình của mọi buổi tập có GPS chưa có trên máy, để mở bản đồ tức thì
@@ -925,7 +1050,7 @@ class BandService:
         # trọng số các số đo căng thẳng và kế hoạch ngủ tối nay đổi theo giờ
         hour = int(time.time() // 3600) if date == dt.date.today().isoformat() else None
         key = (date, db.last("last_sync"), db.last("cloud_workouts"), db.last("mf_sleep"), db.last("journal"), rem,
-               get_lang(), body, hour)
+               get_lang(), body, hour, db.last("workout_files"), db.last("rpe"))
         if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, ngôn ngữ, hồ sơ, nhật ký…
             insights = db.insights(date, self.profile, rem=rem)
             self._insight_cache = {"key": key, "value": insights,
@@ -964,9 +1089,9 @@ class BandService:
             entries = db.body_history()
         return {"entries": entries, "trend": PS.body_trend(entries, dt.date.fromisoformat(date))}
 
-    async def log_body(self, date: str, weight, height=None, delete: bool = False) -> None:
+    async def log_body(self, date: str, weight, height=None, delete: bool = False) -> str:
         """Ghi (hoặc xóa) cân nặng, chiều cao của một ngày. Lần ghi mới nhất cũng thành hồ sơ: ghi vào vòng tay ngay nếu
-        đang kết nối (vòng tay dùng để tính quãng đường, năng lượng), không thì ở lần kết nối sau."""
+        đang kết nối (vòng tay dùng để tính quãng đường, năng lượng), không thì ở lần kết nối sau. Trả về thông báo."""
         db = self.health_db()
         if db is None:
             raise ApiError(tr('Kết nối vòng tay một lần trước để ứng dụng biết lưu dữ liệu sức khỏe ở đâu.'), 409)
@@ -987,6 +1112,7 @@ class BandService:
             if not 20 <= weight <= 250 or (height is not None and not 100 <= height <= 230):
                 raise ApiError(tr('Hồ sơ có giá trị ngoài khoảng cho phép.'))
             db.add_body(day.isoformat(), height, round(weight, 1), "app")
+        message = tr('Đã xóa lần ghi.') if delete else tr('Đã lưu cân nặng.')
         latest = (db.body_history() or [None])[-1]
         if latest and (latest["weight"] != self.profile.get("weight") or latest["height"] != self.profile.get("height")):
             if latest["height"]:
@@ -994,13 +1120,18 @@ class BandService:
             self.profile["weight"] = latest["weight"]
             self.profile["pending_sync"] = True
             self.store.save()
+            written = False
             if self.connected:
                 try:
                     await self._write_profile()
+                    written = True
                 except Exception as e:  # noqa: BLE001 - lần kết nối sau ghi lại (pending_sync)
                     self.log(tr('Lỗi khi ghi hồ sơ: {e}', e=e))
+            message += " " + (tr('Hồ sơ trên vòng tay đã được cập nhật.') if written
+                              else tr('Hồ sơ trên vòng tay sẽ được cập nhật ở lần kết nối sau.'))
         self.push({"type": "health_data"})
         self.push_state()
+        return message
 
     def set_journal(self, kind: str, date: str, value: int) -> None:
         """Ghi một ngày vào nhật ký riêng (chỉ loại hợp với giới tính trong hồ sơ). Chỉ lưu trên máy này."""
@@ -1597,16 +1728,32 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
         return ok(health=S.health_summary(date), status=S.health_status)
 
     async def health_sync(_):
-        return ok(status=S.start_health_sync())
+        return ok(status=S.start_health_sync(cloud=True))
 
     async def body_post(req):
         b = await body(req)
-        await S.log_body(str(b.get("date") or ""), b.get("weight"), b.get("height"), bool(b.get("delete")))
-        return ok(state=S.state())
+        message = await S.log_body(str(b.get("date") or ""), b.get("weight"), b.get("height"), bool(b.get("delete")))
+        return ok(state=S.state(), message=message)
 
     async def journal_post(req):
         b = await body(req)
         S.set_journal(str(b.get("kind") or ""), str(b.get("date") or ""), b.get("value", 1))
+        return ok()
+
+    async def workout_get(req):
+        try:
+            start = int(req.match_info["start"])
+        except ValueError as e:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404) from e
+        return ok(workout=await S.workout_detail(start))
+
+    async def rpe_post(req):
+        try:
+            start = int(req.match_info["start"])
+        except ValueError as e:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404) from e
+        b = await body(req)
+        S.set_rpe(start, b.get("value"))
         return ok()
 
     async def track_get(req):
@@ -1821,6 +1968,8 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/journal", journal_post)
     r.add_post("/api/body", body_post)
     r.add_post("/api/health/sync", health_sync)
+    r.add_get("/api/workouts/{start}", workout_get)
+    r.add_post("/api/workouts/{start}/rpe", rpe_post)
     r.add_get("/api/workouts/{start}/track", track_get)
     r.add_get("/api/tracks", tracks_get)
     r.add_post("/api/weather", weather_post)

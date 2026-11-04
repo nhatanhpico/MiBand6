@@ -5,6 +5,7 @@ Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bư�
 ## Đồng bộ
 
 - Ứng dụng tự lấy dữ liệu mỗi lần kết nối vòng tay và theo lịch ở **Cài đặt ứng dụng → Tự đồng bộ** (mặc định mỗi 30 phút khi đang kết nối; có thể chọn 15 phút tới 2 giờ, hoặc chỉ khi bấm). Bấm **Đồng bộ** ở đầu trang để lấy ngay; dòng dưới tiêu đề cho biết đang lấy gì và lần đồng bộ gần nhất.
+- Bấm **Đồng bộ** còn lấy tiếp **lịch sử Mi Fitness** sau phần vòng tay (nếu đã đăng nhập Xiaomi; không bao giờ hiện mã QR ở bước này): các buổi tập mới, báo cáo giấc ngủ, rồi tải ở nền lộ trình GPS và dữ liệu từng giây của các buổi tập. Bấm liên tục trong 2 phút thì không hỏi lại Mi Fitness.
 - Lần đầu ứng dụng lấy 30 ngày gần nhất, rồi một lần duy nhất hỏi vòng tay mọi dữ liệu cũ hơn mà nó còn giữ (dòng trạng thái ghi "dữ liệu cũ"), nên có thể mất vài phút. Các lần sau chỉ lấy phần mới.
 - **Mi Fitness vẫn đồng bộ bình thường.** Ứng dụng chỉ sao chép: nó không gửi lệnh xác nhận "đã lấy xong", nên vòng tay vẫn giữ nguyên dữ liệu cho Mi Fitness.
 - Dữ liệu được lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/` (mỗi vòng tay một tệp SQLite, chỉ tài khoản của bạn đọc được) và không gửi đi đâu.
@@ -23,7 +24,7 @@ Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng d�
 | **Vận động** | Bước theo giờ trong ngày; mọi ngày vòng tay đã ghi so với mục tiêu (**Xem dạng bảng** để xem số liệu từng ngày); **cường độ vận động** 7 ngày (phút nhẹ / vừa / mạnh); **PAI** 7 ngày so với mốc 100 |
 | **Tim mạch** | Nhịp tim cả ngày (vùng tô là lúc ngủ), thấp nhất, trung bình, cao nhất và nhịp tim nghỉ (khi ngủ) so với mức nền; **căng thẳng** tự đo (đường) và đo tay (chấm); **SpO2** các lần đo; cách vòng tay đang đo tự động (nút (i) của thẻ Nhịp tim) |
 | **Cơ thể** | Cân nặng, chiều cao, BMI mới nhất; thay đổi 30 / 90 ngày, xu hướng kg/tuần, biểu đồ cân nặng; ghi cân nặng và danh sách các lần ghi (xem [Hồ sơ](#hồ-sơ-tuổi-giới-tính-chiều-cao-cân-nặng)) |
-| **Tập luyện** | Các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness); bản đồ lộ trình |
+| **Tập luyện** | **Buổi tập tiếp theo** (loại buổi, thời lượng, vùng nhịp tim, pace) và **kế hoạch 7 ngày** (ngày nào tập nặng, vừa, nhẹ, ngày nào nghỉ); các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness); bấm một buổi để xem **chi tiết**; bản đồ lộ trình |
 | **Chu kỳ** (hồ sơ nữ) | Nhật ký kỳ kinh và dự đoán, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Sinh lý** (hồ sơ nam) | Nhật ký xuất tinh và so sánh giấc ngủ, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Xu hướng** | Như **Tóm tắt sức khỏe** của Mi Fitness: các chỉ số vừa **thay đổi rõ** (30 ngày / 26 tuần), **7 ngày qua** so với tuần trước, **hôm nay so với thường lệ** (xem [Xu hướng](#xu-hướng)) |
@@ -41,7 +42,50 @@ Sau lần đầu, việc này **tự chạy ngầm** theo lịch ở **Cài đ�
 - Mi Fitness dùng mã loại bài tập khác vòng tay. Ứng dụng học cách đổi mã từ các buổi có cả hai nguồn; mã chưa biết hiện là "Bài tập (mã Mi Fitness …)".
 - Ứng dụng chỉ đọc, không thay đổi gì trong tài khoản. Cách gọi API theo mô tả của dự án cộng đồng [mifit](https://github.com/Jenwein/mifit); Xiaomi không công bố API này nên có thể đổi bất cứ lúc nào.
 
-### Bản đồ lộ trình
+### Chi tiết một buổi tập
+
+Bấm một dòng trong bảng buổi tập (hoặc chọn rồi Enter) để mở trang chi tiết, giống trang buổi tập của Mi Fitness:
+
+- **Số chính**: quãng đường (hoặc thời gian với bài tập không có quãng đường), thời gian tập, năng lượng, pace (giây mỗi km; đạp xe là tốc độ km/h), nhịp tim trung bình, bước chân, nhịp bước, sải chân, lên dốc / xuống dốc; nhãn cho biết nguồn: **Vòng tay**, **Mi Fitness**, **Từng giây** (tệp dữ liệu từng giây của Mi Fitness), **GPS**.
+- **Nhịp tim**: biểu đồ cả buổi và thời gian ở 5 vùng (theo % nhịp tim tối đa như Mi Fitness: khởi động 50-60%, đốt mỡ 60-70%, hiếu khí 70-80%, kỵ khí 80-90%, tối đa từ 90%).
+- **Pace / tốc độ**: biểu đồ (pace nhanh ở trên), pace nhanh nhất (cửa sổ 30 giây), **từng km** (km cuối chưa trọn ghi "<n"), nhịp tim trung bình của mỗi km.
+- **Nhịp bước**, **sải chân**, **độ cao** (thấp nhất, cao nhất, tổng lên / xuống bỏ dao động dưới 1 m; thời gian lên dốc / bằng / xuống dốc theo độ dốc ±2% mỗi 10 giây).
+- **Tải tập luyện**: TRIMP kiểu Edwards (phút ở mỗi vùng x hệ số 1-5): dưới 40 thấp, 40-90 vừa, 90-180 cao, từ 180 rất cao.
+- **Trải nghiệm tập luyện**: chọn buổi tập với bạn thế nào (rất nhẹ nhàng … rất nặng; bấm lại để bỏ chọn). Ứng dụng dùng cảm nhận này để gợi ý buổi tiếp theo.
+
+Nguồn số liệu, theo thứ tự ưu tiên:
+
+1. **Tệp dữ liệu từng giây của Mi Fitness** (buổi chạy, đi bộ, đạp xe ngoài trời có GPS, cả buổi bấm bắt đầu trên vòng tay lẫn trên ứng dụng Mi Fitness): nhịp tim, quãng đường, bước chân, nhịp bước, pace, sải chân mỗi giây. Ứng dụng tải nó cùng lộ trình GPS trong một lần hỏi máy chủ, lần đầu mở buổi tập hoặc ở nền sau khi lấy lịch sử, rồi lưu trên máy. Bố cục tệp theo bảng của dự án [mifit](https://github.com/Jenwein/mifit) (MIT); với phiên bản tệp mới hơn chưa có bảng chắc chắn, ứng dụng thử vài bố cục và chỉ nhận khi tổng quãng đường, bước chân, thời lượng khớp với chính buổi tập đó; không khớp thì giữ tệp trong `health/detail-unread/` (chỉ trên máy bạn) để sửa bộ đọc.
+2. **Lộ trình GPS** (pace, từng km khi không có tệp từng giây) và độ cao trong tệp lộ trình phiên bản 3.
+3. **Số liệu từng phút của vòng tay** trong giờ tập (nhịp tim, bước chân): đủ cho nhịp tim, vùng nhịp tim, tải tập luyện của mọi buổi tập kể cả trong nhà. Số từng phút lệch hơn 25 nhịp/phút so với nhịp tim trung bình của buổi tập (vòng tay không đeo, giờ lệch) thì không vẽ.
+
+### Buổi tập tiếp theo và kế hoạch 7 ngày
+
+Thẻ đầu tiên của **Tập luyện** gợi ý buổi nên tập hôm nay và kế hoạch 7 ngày. Tính lại mỗi khi có dữ liệu mới.
+
+**Loại buổi hôm nay**:
+
+| Điều kiện | Gợi ý |
+| --- | --- |
+| Điểm sẵn sàng "nên nghỉ ngơi", hoặc còn cần từ 36 giờ hồi phục | **Nghỉ** (hoặc đi bộ thật nhẹ 20-30 phút) |
+| "Nên tập nhẹ", còn cần từ 12 giờ hồi phục, tải 7 ngày gấp trên 1,5 lần mức 4 tuần (ACWR), hoặc buổi gần nhất bạn thấy "rất nặng" | **Tập nhẹ**: vùng 2, 70% thời lượng thường ngày |
+| "Sẵn sàng tập nặng", buổi nặng gần nhất cách từ 3 ngày, dưới 20% thời gian tập 7 ngày qua ở vùng 4-5, ACWR tới 1,3, không phải đi bộ | **Biến tốc**: khởi động 10 phút, 4-6 x (3 phút vùng 4 + 2 phút vùng 1), thả lỏng 5 phút |
+| Sẵn sàng tập, buổi nặng gần nhất cách từ 2 ngày, các điều kiện như trên | **Tempo**: khởi động 10 phút, 10-30 phút vùng 3, thả lỏng 5 phút |
+| Chưa có buổi dài (từ 1,25 lần thời lượng thường ngày) trong 6 ngày, ACWR dưới 1,2 | **Buổi dài**: vùng 2, 1,3 lần thời lượng thường ngày (tối đa buổi dài nhất 4 tuần qua + 10% + 5 phút) |
+| Còn lại | **Sức bền**: vùng 2, thời lượng thường ngày (trung vị 6 buổi gần nhất cùng môn) |
+
+Buổi gần nhất bạn thấy "nặng" trở lên thì không gợi ý biến tốc / tempo. ACWR dưới 0,8 (tải thấp hơn thường lệ) thì buổi sức bền / dài dài thêm 10%. Môn là môn bạn tập nhiều nhất 30 ngày qua (chưa có lịch sử thì đi bộ 40 phút). Buổi được gắn nhãn nặng nếu có từ 10 phút ở vùng 4-5 hoặc bạn chấm "nặng" trở lên.
+
+**Pace theo thể lực của bạn (học từ dữ liệu)**: từ các phút chạy / đi bộ đều nhịp của 90 ngày qua (tệp từng giây của Mi Fitness, hoặc lộ trình GPS + nhịp tim từng phút của vòng tay; bỏ 5 phút đầu, phút có tốc độ dao động quá 20% hoặc nhịp tim dao động quá 15 nhịp/phút), tốc độ được đổi ra mức tiêu thụ oxy theo phương trình ACSM (đi bộ: VO2 = 0,1 S + 1,8 S G + 3,5; chạy: VO2 = 0,2 S + 0,9 S G + 3,5; S là m/phút, G là độ dốc), rồi so với phần nhịp tim dự trữ đã dùng (%HRR, theo nhịp tim tối đa và nhịp tim khi ngủ; %HRR ≈ %VO2R, Swain và Leutholtz 1997) để suy ra **VO2max** của mỗi phút (chỉ phút có %HRR 40-95%). Trung vị có trọng số (buổi cũ 30 ngày giảm một nửa) là ước tính của bạn, so với bảng chuẩn theo tuổi, giới (Cooper Institute). Cần ít nhất 8 phút như vậy; chưa đủ thì ước tính thô VO2max ≈ 15,3 x nhịp tim tối đa / nhịp tim nghỉ (Uth và cộng sự 2004). Cùng quan hệ đó cho **pace ứng với vùng nhịp tim** của buổi gợi ý; pace chạy chậm hơn 10'/km được tính là đi bộ, và nếu cả đầu nhanh của vùng 2 cũng chỉ là tốc độ đi bộ thì buổi nhẹ / sức bền / dài được gợi ý là **đi bộ nhanh**.
+
+**Kế hoạch 7 ngày** (hôm nay và 6 ngày tới):
+
+- Hôm nay là buổi gợi ý ở trên. Các ngày sau chưa biết điểm sẵn sàng nên theo thói quen và quy tắc tải.
+- **Số buổi mỗi tuần** = số buổi trung bình mỗi tuần của 4 tuần qua (3-6; chưa có lịch sử: 3), bớt một buổi nếu ACWR trên 1,3.
+- **Ngày tập** là những thứ bạn hay tập nhất trong 8 tuần qua (chưa có lịch sử: thứ Hai, Tư, Sáu, Chủ nhật), không quá 3 ngày liền, luôn có ít nhất một ngày nghỉ.
+- **Buổi nặng** (tempo, biến tốc): tối đa 1 mỗi tuần nếu tập 3 buổi, 2 nếu tập nhiều hơn, không có khi đi bộ; cách nhau và cách buổi nặng gần nhất ít nhất 48 giờ; ưu tiên thứ bạn hay tập nhất. Ngày sau buổi nặng là buổi nhẹ.
+- **Buổi dài**: một buổi mỗi tuần, ưu tiên cuối tuần và không sát buổi nặng. Các ngày tập còn lại là sức bền (vùng 2).
+
 
 Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời với điện thoại, Mi Fitness ghi lộ trình bằng GPS của điện thoại và lưu trong tài khoản. Sau khi **Lấy lịch sử từ Mi Fitness**, các buổi có lộ trình hiện nút **Bản đồ**.
 

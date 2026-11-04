@@ -870,15 +870,31 @@ def _fds_session():
     return _FDS_SESSION
 
 
-def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, proto: int,
-                   region: str = "sg") -> bytes | None:
-    """Tệp lộ trình GPS (đã giải mã) của một buổi tập trong tài khoản Mi Fitness; None nếu buổi đó không có.
+RECORD_FILE, GPS_FILE = 0, 2   # loại tệp chi tiết buổi tập: dữ liệu từng giây, lộ trình GPS (theo mifit)
 
-    Cách gọi theo mô tả của dự án mifit: một yêu cầu ký lấy đường dẫn tải và khóa, rồi tải tệp (không kèm
-    cookie). Ném SessionExpired nếu phiên đăng nhập hết hạn."""
-    suffix = gps_file_suffix(sid, report_time, tz15, proto)
+
+def _fds_url_ok(url: str) -> bool:
+    """Chỉ tải qua HTTPS. Không giới hạn tên máy chủ: kho tệp của Xiaomi khác nhau theo vùng, và đường dẫn đến từ API
+    đã đăng nhập, có chữ ký của chính Xiaomi."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme == "https" and bool(parts.hostname)
+
+
+def fetch_workout_files(login: XiaomiLogin, sid: str, report_time: int, tz15: int, proto: int, region: str = "sg",
+                        file_types: tuple[int, ...] = (RECORD_FILE, GPS_FILE)) -> dict[int, bytes | None]:
+    """Các tệp chi tiết (đã giải mã) của một buổi tập trong tài khoản Mi Fitness: {loại tệp: nội dung, hoặc None nếu
+    máy chủ không có tệp đó}.
+
+    Cách gọi theo mô tả của dự án mifit: một yêu cầu ký lấy đường dẫn tải và khóa của mọi tệp, rồi tải từng tệp
+    (không kèm cookie). Ném SessionExpired nếu phiên đăng nhập hết hạn."""
+    suffixes = {ft: gps_file_suffix(sid, report_time, tz15, proto, ft) for ft in file_types}
     host = f"{region}.hlth.io.mi.com" if region else "hlth.io.mi.com"
-    data = {"did": sid, "items": [{"timestamp": report_time, "suffix": suffix}]}
+    data = {"did": sid, "items": [{"timestamp": report_time, "suffix": sfx} for sfx in suffixes.values()]}
     status, res = login.request(host, GPS_LINK_PATH, {"data": json.dumps(data, separators=(",", ":"))},
                                 method="GET", sign_path=GPS_LINK_SIGN, region=region)
     if status == 401:
@@ -886,13 +902,25 @@ def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, pr
     if not isinstance(res, dict) or res.get("code", 0) != 0 or not isinstance(res.get("result"), dict):
         detail = f"HTTP {status}" if res is None else f"code {res.get('code')}"
         raise LoginError(tr('Máy chủ Mi Fitness không trả đường dẫn tải lộ trình ({detail}).', detail=detail))
-    entry = res["result"].get(f"{suffix}_{report_time}")
-    if not isinstance(entry, dict) or not entry.get("obj_key") or not isinstance(entry.get("url"), str):
-        return None   # buổi tập không có tệp lộ trình
-    r = _fds_session().get(entry["url"], timeout=(20, 30), allow_redirects=False)
-    if r.status_code != 200:
-        raise LoginError(tr('Không tải được tệp lộ trình (HTTP {status}).', status=r.status_code))
-    return decrypt_fds(r.content, entry["obj_key"])
+    out: dict[int, bytes | None] = {}
+    for ft, sfx in suffixes.items():
+        entry = res["result"].get(f"{sfx}_{report_time}")
+        method = entry.get("method") if isinstance(entry, dict) else None
+        if (not isinstance(entry, dict) or not entry.get("obj_key") or not isinstance(entry.get("url"), str)
+                or not _fds_url_ok(entry["url"]) or (isinstance(method, str) and method.upper() != "GET")):
+            out[ft] = None   # buổi tập không có tệp này
+            continue
+        r = _fds_session().get(entry["url"], timeout=(20, 30), allow_redirects=False)
+        if r.status_code != 200:
+            raise LoginError(tr('Không tải được tệp lộ trình (HTTP {status}).', status=r.status_code))
+        out[ft] = decrypt_fds(r.content, entry["obj_key"])
+    return out
+
+
+def fetch_gps_file(login: XiaomiLogin, sid: str, report_time: int, tz15: int, proto: int,
+                   region: str = "sg") -> bytes | None:
+    """Tệp lộ trình GPS (đã giải mã) của một buổi tập trong tài khoản Mi Fitness; None nếu buổi đó không có."""
+    return fetch_workout_files(login, sid, report_time, tz15, proto, region, (GPS_FILE,))[GPS_FILE]
 
 
 def _date(value) -> dt.date | None:

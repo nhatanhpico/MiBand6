@@ -192,7 +192,8 @@ def workout_from_cloud(v: dict) -> dict | None:
             "mf_time": num("time"), "mf_tz": tz if isinstance(tz, int) else None, "mf_proto": num("proto_type"),
             "mf_sid": v.get("_sid"), "mf_region": v.get("_region"),
             "end": num("end_time") or start + (duration or 0), "active_seconds": duration,
-            "distance": num("distance"), "calories": num("calories"), "steps": num("steps"),
+            "distance": num("distance"), "calories": num("calories"), "total_calories": num("total_cal"),
+            "steps": num("steps"),
             "avg_hr": num("avg_hrm") if valid_hr(num("avg_hrm") or 0) else None,
             "max_hr": num("max_hrm") if valid_hr(num("max_hrm") or 0) else None}
 

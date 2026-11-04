@@ -364,6 +364,24 @@
 
       <!-- Tập luyện -->
       <div class="hpanel" id="htab-workouts" role="tabpanel" hidden>
+        <article class="card coach" id="health-coach" data-hints hidden>
+          <header class="card-head split-head">
+            <div><h2>Buổi tập tiếp theo</h2><p class="card-sub hint">Gợi ý theo điểm sẵn sàng, thời gian hồi phục, tải tập luyện và các buổi tập gần đây của bạn; pace theo thể lực ứng dụng học từ chính các buổi chạy, đi bộ của bạn.</p></div>
+            <span class="rd-level" id="cxChip"></span>
+          </header>
+          <p class="hero-title" id="cxTitle"></p>
+          <dl class="stats" id="cxStats"></dl>
+          <p class="cx-plan" id="cxPlan" hidden></p>
+          <ul class="ci-notes" id="cxReasons"></ul>
+          <h3 class="card-h3">7 ngày tới</h3>
+          <ol class="cx-week" id="cxWeekPlan"></ol>
+          <p class="card-sub hint">Ngày tập theo những thứ bạn hay tập trong 8 tuần qua; tối đa 2 buổi nặng mỗi tuần, cách nhau ít nhất 48 giờ, sau buổi nặng là buổi nhẹ, có ít nhất một ngày nghỉ. Kế hoạch được tính lại mỗi ngày theo điểm sẵn sàng.</p>
+          <div class="cx-foot">
+            <dl class="stats small" id="cxFitness"></dl>
+            <p class="card-sub" id="cxWeek"></p>
+          </div>
+          <p class="card-sub hint" id="cxFitNote"></p>
+        </article>
         <article class="card" id="health-workouts" data-hints>
           <header class="card-head split-head">
             <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
@@ -996,6 +1014,17 @@
     --method amazfit --email EMAIL --password PASSWORD --bt_keys</pre>
   <p>Các cách khác có trong <a href="https://gadgetbridge.org/basics/pairing/huami-xiaomi-server/" target="_blank" rel="noopener">hướng dẫn của Gadgetbridge</a>. Đừng hủy ghép đôi vòng tay trong app của hãng, vì làm vậy mã cũ sẽ mất hiệu lực.</p>
   <form method="dialog" class="dialog-foot"><button class="btn primary">Đóng</button></form>
+</dialog>
+
+<dialog id="woDialog" class="dialog wo-dialog" aria-labelledby="woTitle">
+  <header class="wo-head">
+    <div><h2 id="woTitle">Buổi tập</h2><p class="card-sub" id="woWhen"></p></div>
+    <div class="map-actions">
+      <button id="woMapBtn" class="btn small" type="button" hidden><svg class="ic"><use href="#i-route"/></svg><span>Bản đồ</span></button>
+      <button id="woClose" class="btn ghost small" type="button">Đóng</button>
+    </div>
+  </header>
+  <div id="woBody" class="wo-body"></div>
 </dialog>
 
 <dialog id="mapDialog" class="dialog map-dialog" aria-labelledby="mapTitle">

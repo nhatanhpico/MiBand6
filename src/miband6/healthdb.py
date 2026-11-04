@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import time
 import json
+import zlib
 import re
 import sqlite3
 from pathlib import Path
@@ -52,6 +53,8 @@ CREATE TABLE IF NOT EXISTS mf_sleep (start INTEGER PRIMARY KEY, end INTEGER, dat
                                      light INTEGER, rem INTEGER, awake INTEGER, score INTEGER);
 CREATE TABLE IF NOT EXISTS live_hr (ts INTEGER PRIMARY KEY, total INTEGER, n INTEGER, lo INTEGER, hi INTEGER);
 CREATE TABLE IF NOT EXISTS daily (date TEXT PRIMARY KEY, version INTEGER, night TEXT, day TEXT);
+CREATE TABLE IF NOT EXISTS workout_files (start INTEGER PRIMARY KEY, data BLOB);
+CREATE TABLE IF NOT EXISTS workout_rpe (start INTEGER PRIMARY KEY, rpe INTEGER, at INTEGER);
 """
 
 JOURNAL_KINDS = ("period", "ejaculation")   # nhật ký người dùng tự ghi (personal.py); chỉ lưu trên máy
@@ -282,6 +285,70 @@ class HealthDB:
     def set_track(self, start: int, points: list) -> None:
         self.db.execute("INSERT OR REPLACE INTO tracks VALUES (?, ?)", (start, json.dumps(points)))
         self.db.commit()
+
+    # ------------------------------------------------------------ chi tiết buổi tập
+
+    def workout_files(self, start: int) -> dict | None:
+        """Tệp chi tiết đã tải của một buổi tập: {"samples": dữ liệu từng giây hoặc None, "alt": độ cao hoặc None,
+        "status": {...}, "at": lúc tải}; None nếu chưa tải."""
+        row = self.db.execute("SELECT data FROM workout_files WHERE start = ?", (start,)).fetchone()
+        return json.loads(zlib.decompress(row[0])) if row else None
+
+    def set_workout_files(self, start: int, data: dict) -> None:
+        blob = zlib.compress(json.dumps(data, separators=(",", ":")).encode())
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO workout_files VALUES (?, ?)", (start, blob))
+            self.db.execute("INSERT OR REPLACE INTO sync VALUES ('workout_files', ?)", (int(time.time()),))
+
+    def has_workout_files(self) -> set[int]:
+        return {r[0] for r in self.db.execute("SELECT start FROM workout_files")}
+
+    def rpe(self, start: int) -> int | None:
+        """Cảm nhận sau buổi tập (1-5) người dùng đã chọn; buổi tập gộp lại (giờ bắt đầu lệch tới 3 phút) vẫn tìm thấy."""
+        row = self.db.execute("SELECT rpe FROM workout_rpe WHERE start BETWEEN ? AND ? ORDER BY ABS(start - ?) LIMIT 1",
+                              (start - 180, start + 180, start)).fetchone()
+        return row[0] if row else None
+
+    def set_rpe(self, start: int, value: int | None) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM workout_rpe WHERE start BETWEEN ? AND ?", (start - 180, start + 180))
+            if value:
+                self.db.execute("INSERT INTO workout_rpe VALUES (?, ?, ?)", (start, int(value), int(time.time())))
+            self.db.execute("INSERT OR REPLACE INTO sync VALUES ('rpe', ?)", (int(time.time()),))
+
+    def workout_minutes(self, w: dict) -> list[list]:
+        """Số liệu từng phút của vòng tay quanh giờ tập: [[ts, nhịp tim hoặc None, bước]]."""
+        start, end = int(w["start"]), int(w.get("end") or w["start"])
+        return [[s[0], s[4] if H.valid_hr(s[4]) else None, s[3]] for s in self.samples(start - start % 60, end + 60)]
+
+    def workout_detail(self, start: int, hrmax: float) -> dict | None:
+        """Trang chi tiết một buổi tập (workouts.detail) từ mọi nguồn đã có trên máy."""
+        from . import workouts as WK
+
+        w = self.workout(start)
+        if w is None:
+            return None
+        files = self.workout_files(start) or {}
+        return WK.detail(w, files.get("samples"), self.track(start), files.get("alt"), self.workout_minutes(w), hrmax,
+                         self.rpe(start))
+
+    def _coach_history(self, now: float, hrmax: float, days: int = 60) -> list[dict]:
+        """Số liệu các buổi tập gần đây (cũ tới mới) cho gợi ý buổi tập và mô hình thể lực."""
+        from . import coach as C
+        from . import workouts as WK
+
+        out = []
+        for (data,) in self.db.execute("SELECT data FROM workouts WHERE start >= ? AND start <= ? ORDER BY start",
+                                       (int(now - days * 86400), int(now))):
+            w = json.loads(data)
+            files = self.workout_files(w["start"]) or {}
+            samples = files.get("samples")
+            track = None if samples else self.track(w["start"])
+            stats = C.workout_stats({**w, "rpe": self.rpe(w["start"])}, samples,
+                                    WK.track_distance(track) if track and len(track) >= 2 else None, files.get("alt"),
+                                    self.workout_minutes(w), hrmax)
+            out.append(stats)
+        return out
 
     def first(self, name: str) -> int | None:
         """Thời điểm cũ nhất đã lưu của một loại dữ liệu (để lấy bù phần cũ hơn)."""
@@ -587,6 +654,7 @@ class HealthDB:
             "ejaculation": (PS.ejaculation_stats(self.journal("ejaculation"), nights, d0)
                             if sex == PS.SEX_MALE else None),
             "intensity": I.activity_intensity([d for d in day_list if d["date"] <= date]),
+            "coach": self._coach(date == today, ready, past_days + day_list, all_nights, hrmax, age, sex),
             "circadian": circ,
             "rem_estimated": any(n.get("rem_estimated") for n in nights),
             "sampling": {"load_method": "time_weighted", "hr_hold_seconds": I.HR_HOLD,
@@ -739,6 +807,19 @@ class HealthDB:
         out = TR.summary(daily, weekly, wake, curves, need)
         out["date"] = date
         return out
+
+    def _coach(self, today: bool, ready: dict | None, days: list[dict], nights: list[dict], hrmax: float,
+               age: float | None, sex: str | None) -> dict | None:
+        """Gợi ý buổi tập tiếp theo (chỉ cho hôm nay) và ước tính thể lực từ các buổi tập của bạn (coach.py)."""
+        from . import coach as C
+        from . import insights as I
+
+        if not today:
+            return None
+        now = time.time()
+        base = I.rhr_baseline(nights, adjusted=False)
+        return C.suggest(self._coach_history(now, hrmax), ready, days, hrmax, base["median"] if base else None,
+                         age, sex, now)
 
     @staticmethod
     def _last_night(nights: list[dict], chronotype: float | None, need: int) -> dict:

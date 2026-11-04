@@ -516,6 +516,8 @@ function applyState(st) {
   if (!formsFilled) {
     fillForms();
     formsFilled = true;
+  } else {
+    refreshProfileForm();
   }
   markSync();
   showHealthTab();
@@ -564,6 +566,9 @@ function connectEvents() {
         if (!$("#page-overview").hidden) quiet(loadOverview());
         break;
       case "hr_minute": liveHrToHealth(msg.data[0], msg.data[1], true); break;
+      case "workout":   // tệp chi tiết (dữ liệu từng giây, độ cao) vừa tải xong: hộp chi tiết đang mở thì vẽ lại
+        if (woOpen && woOpen.start === msg.start) quiet(loadWorkout(woOpen));
+        break;
       case "tracks":   // vừa tải xong thêm lộ trình: bản đồ tổng đang mở thì vẽ thêm; bảng buổi tập cập nhật nút Bản đồ
         if ($("#mapDialog").open && MAP.mode === "all") {
           clearTimeout(MAP.refresh);
@@ -802,8 +807,19 @@ function bindSchedule(seg) {
 
 /* Vòng tay không cho đọc lại cài đặt: giá trị chưa từng được ghi từ ứng dụng hiện là "chưa biết"
    (không chọn sẵn), thay vì một giá trị mặc định trông như thật. */
+let profileFilledFor = null;   // hồ sơ đang hiện trong các ô
+let profileEdited = false;     // người dùng đã sửa ô mà chưa lưu: không điền đè
+const profileKey = (p) => JSON.stringify(["alias", "birth", "gender", "height", "weight", "max_hr_override", "goal",
+  "goal_notify", "wear_left"].map((k) => p?.[k] ?? null));
+/** Hồ sơ vừa đổi ở nơi khác (ghi cân nặng ở Sức khỏe → Cơ thể, đồng bộ Mi Fitness): hiện ngay ở Cài đặt vòng tay. */
+function refreshProfileForm() {
+  if (formsFilled && !profileEdited && profileKey(STATE.profile) !== profileFilledFor) fillProfile();
+}
+
 function fillProfile() {
   const p = STATE.profile || {};
+  profileFilledFor = profileKey(p);
+  profileEdited = false;
   const known = !!p.birth;
   $("#pAlias").value = p.alias || "";
   $("#pBirth").value = p.birth || "";
@@ -815,6 +831,11 @@ function fillProfile() {
   setSwitch($("#pGoalNotify"), p.goal_notify ?? null);
   setRadio("wear", p.wear_left == null ? null : p.wear_left ? "left" : "right");
 }
+
+$$("#sub-profile input").forEach((el) => {
+  el.addEventListener("input", () => { profileEdited = true; });
+  el.addEventListener("change", () => { profileEdited = true; });
+});
 
 $("#maxHrForm").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -934,6 +955,7 @@ $$("[data-save]").forEach((btn) => btn.addEventListener("click", async () => {
     const r = await run(btn, () => api(`/api/settings/${key.startsWith("menu") ? "menu" : key}`, collectors[key]()));
     STATE.settings = r.state.settings;
     STATE.profile = r.state.profile;
+    if (btn.closest("#sub-profile")) { profileEdited = false; profileFilledFor = profileKey(STATE.profile); }
     markSync();
     updateGoal();
     drawBand();
@@ -1771,6 +1793,11 @@ const hhmm = (ts) => { const d = new Date(ts * 1000); return `${pad(d.getHours()
 const shortDate = (iso) => new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "numeric" }).format(new Date(`${iso}T12:00:00`));
 const longDate = (iso) => new Intl.DateTimeFormat(LOCALE, { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${iso}T12:00:00`));
 const dateTime = (ts) => new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ts * 1000));
+/** Ngày dạng số, gọn: 24/05/2006 (tiếng Việt), 05/24/2006 (tiếng Anh, theo thứ tự của phần còn lại giao diện). */
+const numDate = (iso) => new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${iso}T12:00:00`));
+const clockOf = (ts) => new Intl.DateTimeFormat(LOCALE, { hour: "2-digit", minute: "2-digit" }).format(new Date(ts * 1000));
+/** Ngày và giờ dạng số: 03/11/2026 17:24. */
+const numDateTime = (ts) => `${numDate(isoOf(new Date(ts * 1000)))} ${clockOf(ts)}`;
 function fmtMinutes(min) {
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
@@ -1806,7 +1833,8 @@ function renderHealthStatus(st) {
   if (!st) return;
   const line = $("#hSyncLine");
   if (st.state === "running") {
-    line.textContent = t("Đang lấy dữ liệu từ vòng tay: {step}…", { step: st.step || "" });
+    line.textContent = st.source === "mifitness" ? t("Đang lấy lịch sử từ Mi Fitness…")
+      : t("Đang lấy dữ liệu từ vòng tay: {step}…", { step: st.step || "" });
   } else if (st.last_sync) {
     line.textContent = t("Đồng bộ lần cuối {when}", { when: dateTime(st.last_sync) })
       + (st.errors?.length ? ` · ${t("chưa lấy được: {list}", { list: st.errors.join(", ") })}` : "");
@@ -2082,7 +2110,7 @@ function renderDateNav() {
   const d = new Date(`${healthDate}T12:00:00`);
   $("#hDateMain").textContent = healthDate === today ? t("Hôm nay") : healthDate === shiftDate(today, -1) ? t("Hôm qua")
     : new Intl.DateTimeFormat(LOCALE, { weekday: "long" }).format(d);
-  $("#hDateSub").textContent = new Intl.DateTimeFormat(LOCALE, { weekday: healthDate >= shiftDate(today, -1) ? "long" : undefined, day: "numeric", month: "long", year: "numeric" }).format(d);
+  $("#hDateSub").textContent = numDate(healthDate);
   $("#hNext").disabled = healthDate >= today;
 }
 function daysWithData() {
@@ -2160,7 +2188,7 @@ function datePicker(input, opts = {}) {
   input.classList.add("date-native");
   input.tabIndex = -1;
   const btn = mkEl("button", { type: "button", class: "date-btn", "aria-haspopup": "dialog", "aria-expanded": "false" });
-  btn.innerHTML = '<svg class="ic"><use href="#i-calendar"/></svg><span class="date-txt"><b></b><span></span></span>';
+  btn.innerHTML = '<svg class="ic"><use href="#i-calendar"/></svg><span class="date-txt"><b></b></span>';
   wrap.append(input, btn);
   const pop = mkEl("div", { class: "cal-pop date-pop", role: "dialog" }, document.body);
   pop.hidden = true;
@@ -2176,8 +2204,7 @@ function datePicker(input, opts = {}) {
   const min = () => input.min || "0000-01-01";
   function refresh() {
     const v = nativeValue.get.call(input);
-    $("b", btn).textContent = v ? new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long", year: "numeric" }).format(dateOf(v)) : t("Chọn ngày");
-    $(".date-txt span", btn).textContent = v ? new Intl.DateTimeFormat(LOCALE, { weekday: "long" }).format(dateOf(v)) : "";
+    $("b", btn).textContent = v ? numDate(v) : t("Chọn ngày");
     btn.classList.toggle("empty", !v);
   }
   // mã khác gán .value (điền hồ sơ, điền sẵn hôm nay): cập nhật chữ trên nút
@@ -2302,6 +2329,8 @@ function datePicker(input, opts = {}) {
 }
 
 const DATE_PICKERS = [datePicker($("#pBirth"), { startView: "years" }), datePicker($("#bdDate"), { today: true })];
+$("#bdDate").value = todayISO();   // ghi cân nặng được ngay, không chờ dữ liệu sức khỏe tải xong
+$("#bdDate").max = todayISO();
 
 $("#hPrev").onclick = () => { healthDate = shiftDate(healthDate, -1); quiet(loadHealth()); };
 $("#hNext").onclick = () => { if (healthDate < todayISO()) { healthDate = shiftDate(healthDate, 1); quiet(loadHealth()); } };
@@ -2485,7 +2514,7 @@ function lineChart(el, points, o) {
   const { max: span, step } = niceScale(Math.max((o.yMax ?? Math.max(...vals) + 4) - lo, 10), 4);
   const hi = o.yMax ?? lo + span;
   const X = (ts) => padL + ((ts - o.t0) / (o.t1 - o.t0)) * iw;
-  const Y = (v) => padT + ih - ((v - lo) / (hi - lo)) * ih;
+  const Y = o.invert ? (v) => padT + ((v - lo) / (hi - lo)) * ih : (v) => padT + ih - ((v - lo) / (hi - lo)) * ih;
   for (const s of o.shade || []) {
     const x0 = Math.max(padL, X(s.from)), x1 = Math.min(padL + iw, X(s.to));
     if (x1 <= x0) continue;
@@ -2493,7 +2522,8 @@ function lineChart(el, points, o) {
     svText(svg, x0 + 6, padT + 13, s.label, "band-label");
   }
   for (const z of o.zones || []) {
-    const y0 = Y(Math.min(z.to, hi)), y1 = Y(Math.max(z.from, lo));
+    if (z.from >= hi || z.to <= lo) continue;   // vùng nằm ngoài khoảng đang vẽ
+    const y0 = Math.min(Y(Math.min(z.to, hi)), Y(Math.max(z.from, lo))), y1 = Math.max(Y(Math.min(z.to, hi)), Y(Math.max(z.from, lo)));
     if (z.tint) sv("rect", { x: padL, y: y0, width: iw, height: y1 - y0, class: "zone" }, svg);
     svText(svg, padL + iw - 6, y0 + 13, z.label, "band-label", "end");
   }
@@ -2501,7 +2531,7 @@ function lineChart(el, points, o) {
   for (let v = lo; v <= hi + 1e-9; v += stepY) {
     const y = Math.round(Y(v)) + 0.5;
     sv("line", { x1: padL, x2: padL + iw, y1: y, y2: y, class: "grid" }, svg);
-    svText(svg, padL - 8, y + 4, fmtInt(v), "axis", "end");
+    svText(svg, padL - 8, y + 4, (o.yFmt || fmtInt)(v), "axis", "end");
   }
   for (const [ts, text] of o.xTicks || []) {
     const x = X(ts);
@@ -2550,7 +2580,7 @@ function lineChart(el, points, o) {
     const x = X(best[0]);
     cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
     mark.setAttribute("cx", x); mark.setAttribute("cy", Y(best[1])); mark.setAttribute("visibility", "visible");
-    showTip(e.clientX, e.clientY, [[`${best[1]}${o.unit ? ` ${o.unit}` : ""}`, fmtT(best[0]), o.color]]);
+    showTip(e.clientX, e.clientY, [[o.valueFmt ? o.valueFmt(best[1]) : `${best[1]}${o.unit ? ` ${o.unit}` : ""}`, fmtT(best[0]), o.color]]);
   });
   hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); mark.setAttribute("visibility", "hidden"); hideTip(); });
 }
@@ -3449,9 +3479,9 @@ function renderHeartTab(H) {
   const spFlagged = (spQuality?.suspect || 0) + (spQuality?.invalid || 0) > 0;
   $("#spBadge").textContent = spFlagged ? t("Cần kiểm tra tín hiệu") : sp.length ? t("Đo từng lần") : t("Chưa có dữ liệu");
   $("#spBadge").classList.toggle("quality-attention", spFlagged);
-  if (sp.length) statsList($("#spStats"), [[t("Lần đo gần nhất · {when}", { when: dateTime(sp[0][0]) }), String(sp[0][1]), "%"]]);
+  if (sp.length) statsList($("#spStats"), [[t("Lần đo gần nhất · {when}", { when: numDateTime(sp[0][0]) }), String(sp[0][1]), "%"]]);
   else statsList($("#spStats"), []);
-  tableRows($("#spTable"), sp.map(([ts, v, auto]) => [dateTime(ts), `${v}%`, auto ? t("Tự động") : t("Đo tay")]), t("Chưa có lần đo SpO2 nào. Đo trên vòng tay rồi đồng bộ lại."), 3);
+  tableRows($("#spTable"), sp.map(([ts, v, auto]) => [numDateTime(ts), `${v}%`, auto ? t("Tự động") : t("Đo tay")]), t("Chưa có lần đo SpO2 nào. Đo trên vòng tay rồi đồng bộ lại."), 3);
   // cách vòng tay đang đo (chỉ biết khi đã lưu từ ứng dụng này)
   const s = STATE.settings || {};
   const unknown = t("Chưa đồng bộ");
@@ -3476,7 +3506,7 @@ function renderBodyTab(H) {
   $("#bdWeight").textContent = tr_ ? kgText(tr_.weight) : "";
   $("#bdWeight").hidden = !tr_;
   $("#bdSub").textContent = tr_
-    ? [t("Lần ghi gần nhất: {when}", { when: longDate(tr_.date) }), tr_.height ? t("chiều cao {n} cm", { n: fmtInt(tr_.height) }) : ""].filter(Boolean).join(" · ")
+    ? [t("Lần ghi gần nhất: {when}", { when: numDate(tr_.date) }), tr_.height ? t("chiều cao {n} cm", { n: fmtInt(tr_.height) }) : ""].filter(Boolean).join(" · ")
     : "";   // biểu đồ trống đã nói chưa có lần ghi
   $("#health-body-log").hidden = !body.entries.length;
   const pill = $("#bdBmi");
@@ -3514,21 +3544,22 @@ function renderBodyTab(H) {
     $("#bdCm").value = tr_?.height ?? STATE.profile?.height ?? "";
   }
   const rows = body.entries.slice().reverse();
-  tableRows($("#bdTable"), rows.map((e) => [longDate(e.date), e.weight ? kgText(e.weight) : "—",
+  tableRows($("#bdTable"), rows.map((e) => [numDate(e.date), e.weight ? kgText(e.weight) : "—",
     e.height ? `${fmtInt(e.height)} cm` : "—", (BODY_SOURCE[e.source] || (() => e.source || "—"))(), ""]),
   t("Chưa có lần ghi nào. Ghi cân nặng để theo dõi xu hướng."), 5);
   $$("#bdTable tr").forEach((row, i) => {
     const e = rows[i];
     if (!e) return;
-    const b = mkEl("button", { type: "button", class: "icon-btn", "aria-label": t("Xóa lần ghi ngày {day}", { day: longDate(e.date) }) }, row.lastElementChild);
+    const b = mkEl("button", { type: "button", class: "icon-btn", "aria-label": t("Xóa lần ghi ngày {day}", { day: numDate(e.date) }) }, row.lastElementChild);
     b.innerHTML = '<svg class="ic"><use href="#i-trash"/></svg>';
     b.onclick = () => quiet(saveBody({ date: e.date, delete: true }));
   });
 }
 
 async function saveBody(data) {
-  const r = await run($("#bdSaveBtn"), () => api("/api/body", data), data.delete ? t("Đã xóa lần ghi.") : t("Đã lưu cân nặng."));
+  const r = await run($("#bdSaveBtn"), () => api("/api/body", data));   // thông báo của server: đã vào vòng tay chưa
   STATE.profile = r.state.profile;
+  refreshProfileForm();
   bodyFormFor = null;
   await loadHealth();
 }
@@ -3543,10 +3574,11 @@ $("#bdSaveBtn").onclick = () => {
 };
 
 function renderWorkoutsTab(H) {
+  renderCoach(H?.insights?.coach);
   const workouts = H?.workouts || [];
   $("#woSub").textContent = t("{n} buổi tập", { n: workouts.length });
   tableRows($("#woTable"), workouts.map((w) => [
-    workoutName(w), dateTime(w.start), fmtMinutes(((w.active_seconds || (w.end - w.start)) / 60)),
+    workoutName(w), numDateTime(w.start), fmtMinutes(((w.active_seconds || (w.end - w.start)) / 60)),
     w.distance ? `${fmtDec(w.distance / 1000)} km` : "—", w.calories ? `${fmtInt(w.calories)} kcal` : "—",
     w.avg_hr ? t("{n} nhịp/phút", { n: w.avg_hr }) : "—", w.steps ? fmtInt(w.steps) : "—",
     w.source === "mifitness" ? "Mi Fitness" : t("Vòng tay"), "",
@@ -3557,7 +3589,14 @@ function renderWorkoutsTab(H) {
   $(".wo-table").classList.toggle("no-map", !anyGps);   // không buổi nào có lộ trình: bỏ cột Bản đồ
   $$("#woTable tr").forEach((tr, i) => {
     const w = workouts[i];
-    if (!w?.gps) return;   // không có lộ trình GPS (bài tập trong nhà, hoặc tệp lộ trình trống): không có nút
+    if (!w) return;
+    // bấm (hoặc Enter) một dòng: trang chi tiết của buổi tập
+    tr.classList.add("clickable");
+    tr.tabIndex = 0;
+    tr.setAttribute("aria-label", t("Xem chi tiết buổi tập {name}, {when}", { name: workoutName(w), when: numDateTime(w.start) }));
+    tr.onclick = (e) => { if (!e.target.closest("button")) quiet(openWorkout(w)); };
+    tr.onkeydown = (e) => { if (e.key === "Enter" && e.target === tr) quiet(openWorkout(w)); };
+    if (!w.gps) return;   // không có lộ trình GPS (bài tập trong nhà, hoặc tệp lộ trình trống): không có nút
     const b = document.createElement("button");
     b.type = "button";
     b.className = "btn small wo-map";
@@ -3575,6 +3614,258 @@ function renderInsightsTab(H) {
   renderMind(ins?.mental, ins?.data_until);
   renderBody(ins?.body);
   renderRisk(ins?.risk);
+}
+
+/* ---------------- chi tiết buổi tập (workouts.py) và buổi tập tiếp theo (coach.py) */
+
+const fmtPace = (s) => (s ? `${Math.floor(s / 60)}'${pad(Math.round(s % 60) % 60)}"` : "—");   // 9'09"
+/** Thời lượng kiểu đồng hồ bấm giờ: 17:31 hoặc 1:05:20. */
+const fmtClock = (sec) => {
+  const total = Math.round(sec);
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+};
+const ZONE_NAME = [() => t("Khởi động"), () => t("Đốt mỡ"), () => t("Hiếu khí"), () => t("Kỵ khí"), () => t("Tối đa")];
+const ZONE_COLOR = ["var(--sky)", "var(--mint)", "var(--amber)", "#ff9a52", "var(--coral)"];
+const COACH_KIND = {
+  rest: () => t("Nghỉ ngơi"), easy: () => t("Tập nhẹ"), endurance: () => t("Sức bền"), long: () => t("Buổi dài"),
+  tempo: () => t("Tempo"), intervals: () => t("Biến tốc"),
+};
+const COACH_SPORT = { run: () => t("Chạy bộ"), walk: () => t("Đi bộ"), ride: () => t("Đạp xe"), other: () => t("Tập luyện") };
+const VO2_LEVEL = {
+  very_poor: () => t("Rất kém"), poor: () => t("Kém"), fair: () => t("Trung bình"), good: () => t("Khá"),
+  excellent: () => t("Tốt"), superior: () => t("Rất tốt"),
+};
+const RPE_NAMES = [() => t("Rất nhẹ nhàng"), () => t("Nhẹ nhàng"), () => t("Vừa sức"), () => t("Nặng"), () => t("Rất nặng")];
+const LOAD_NAME = { light: [() => t("Thấp"), "good"], moderate: [() => t("Vừa"), "ok"], hard: [() => t("Cao"), "watch"],
+  very_hard: [() => t("Rất cao"), "alert"] };
+
+function renderCoach(c) {
+  const card = $("#health-coach");
+  card.hidden = !c;
+  if (!c) return;
+  chip($("#cxChip"), c.status, COACH_KIND[c.kind](), "rd-level");
+  const title = $("#cxTitle");
+  title.className = `hero-title lv-${c.status}`;
+  title.textContent = c.kind === "rest" ? t("Nghỉ ngơi, hoặc đi bộ thật nhẹ 20–30 phút")
+    : `${COACH_KIND[c.kind]()} · ${COACH_SPORT[c.sport]()}`;
+  const stats = [];
+  if (c.minutes) stats.push([t("Thời lượng"), String(c.minutes), t("phút")]);
+  stats.push([t("Nhịp tim"), `${c.hr[0]}–${c.hr[1]}`, `${t("nhịp/phút")} · ${t("vùng {z}", { z: c.plan?.repeats ? 4 : c.zone })}`]);
+  if (c.pace) stats.push([t("Pace"), `${fmtPace(c.pace[0])}–${fmtPace(c.pace[1])}`, "/km"]);
+  if (c.distance) stats.push([t("Quãng đường"), `~${fmtDec(c.distance, 1)}`, "km"]);
+  statsList($("#cxStats"), stats);
+  const plan = $("#cxPlan");
+  plan.hidden = !c.plan;
+  if (c.plan?.repeats) {
+    const r = c.plan.repeats;
+    plan.textContent = t("Khởi động {w} phút · {n} × ({a} phút vùng 4 + {b} phút vùng 1) · thả lỏng {c} phút",
+      { w: c.plan.warmup, n: r.count, a: r.work, b: r.rest, c: c.plan.cooldown });
+  } else if (c.plan?.main) {
+    plan.textContent = t("Khởi động {w} phút · {m} phút ở vùng 3 · thả lỏng {c} phút",
+      { w: c.plan.warmup, m: c.plan.main.minutes, c: c.plan.cooldown });
+  }
+  renderWeekPlan(c.week_plan || []);
+  const reasons = $("#cxReasons");
+  reasons.textContent = "";
+  for (const r of c.reasons) mkEl("li", {}, reasons).textContent = r;
+  hintIf(reasons, !needsAttention(c.status));   // nghỉ / tập nhẹ: lý do luôn hiện
+  const f = c.fitness;
+  const fit = [];
+  if (f) {
+    fit.push([t("VO2max ước tính"), fmtDec(f.vo2max, 0), f.level ? VO2_LEVEL[f.level]() : ""]);
+    if (f.trend != null && Math.abs(f.trend) >= 1) fit.push([t("Xu hướng"), signedNum(f.trend, 0), "ml/kg/min"]);
+  }
+  statsList($("#cxFitness"), fit);
+  $("#cxWeek").textContent = t("7 ngày qua: {n} buổi · {m} phút · {v} phút ở vùng 3-5",
+    { n: c.week.workouts, m: c.week.minutes, v: c.week.moderate });
+  $("#cxFitNote").textContent = !f ? ""
+    : f.method === "workouts" ? t("VO2max học từ {n} phút chạy, đi bộ đều nhịp trong {w} buổi gần đây (90 ngày), theo tốc độ và nhịp tim của chính bạn.", { n: f.minutes, w: f.workouts })
+      : t("Ước tính thô từ nhịp tim tối đa và nhịp tim khi ngủ. Vài buổi chạy, đi bộ có GPS (lấy từ Mi Fitness) giúp ứng dụng học thể lực và pace của riêng bạn.");
+}
+
+const INTENSITY_NAME = { rest: [() => t("Nghỉ"), "rest"], light: [() => t("Nhẹ"), "good"],
+  moderate: [() => t("Vừa"), "ok"], hard: [() => t("Nặng"), "watch"] };
+
+/** Hôm nay và 6 ngày tới: ngày nào tập nặng, vừa, nhẹ, ngày nào nghỉ (coach.week_plan). */
+function renderWeekPlan(days) {
+  const list = $("#cxWeekPlan");
+  list.textContent = "";
+  for (const d of days) {
+    const [name, status] = INTENSITY_NAME[d.intensity];
+    const li = mkEl("li", { class: `cx-day lv-${status}${d.today ? " today" : ""}` }, list);
+    const date = new Date(`${d.date}T12:00:00`);
+    mkEl("span", { class: "cx-dow" }, li).textContent = d.today ? t("Hôm nay")
+      : new Intl.DateTimeFormat(LOCALE, { weekday: "short" }).format(date);
+    mkEl("span", { class: "cx-date" }, li).textContent = new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "2-digit" }).format(date);
+    mkEl("b", { class: "cx-level" }, li).textContent = name();
+    mkEl("span", { class: "cx-kind" }, li).textContent = d.kind === "rest" ? "" : `${COACH_KIND[d.kind]()} · ${d.minutes} ${t("phút")}`;
+    li.title = d.kind === "rest" ? name() : `${COACH_KIND[d.kind]()} · ${d.minutes} ${t("phút")} · ${t("vùng {z}", { z: d.kind === "intervals" ? 4 : d.zone })}`;
+  }
+}
+
+let woOpen = null;   // buổi tập đang mở trong hộp chi tiết
+let woData = null;
+
+async function openWorkout(w) {
+  woOpen = w;
+  woData = null;
+  $("#woTitle").textContent = workoutName(w);
+  $("#woWhen").textContent = numDateTime(w.start);
+  $("#woMapBtn").hidden = !w.gps;
+  $("#woMapBtn").onclick = () => quiet(openMap(w));
+  const body = $("#woBody");
+  body.textContent = "";
+  mkEl("p", { class: "card-sub" }, body).textContent = w.gps ? t("Đang tải chi tiết từ Mi Fitness…") : t("Đang tải…");
+  if (!$("#woDialog").open) $("#woDialog").showModal();
+  await loadWorkout(w);
+}
+
+async function loadWorkout(w) {
+  try {
+    const r = await api(`/api/workouts/${w.start}`);
+    if (woOpen !== w) return;
+    woData = r.workout;
+    renderWorkoutDetail(woData, w);
+  } catch (e) {
+    if (woOpen === w) $("#woBody").textContent = e.message;
+  }
+}
+
+function woSection(body, title) {
+  const sec = mkEl("section", { class: "wo-sec" }, body);
+  mkEl("h3", {}, sec).textContent = title;
+  return sec;
+}
+
+function woBars(parent, rows, cls = "") {
+  const ul = mkEl("ul", { class: `wo-bars ${cls}` }, parent);
+  const top = Math.max(1, ...rows.map((r) => r.value));
+  for (const r of rows) {
+    const li = mkEl("li", {}, ul);
+    const name = mkEl("span", {}, li);
+    name.textContent = r.name;
+    if (r.sub) mkEl("small", {}, name).textContent = r.sub;
+    mkEl("i", { style: `width:${(100 * r.value) / top}%;background:${r.color}` }, mkEl("span", { class: "bar" }, li));
+    mkEl("b", {}, li).textContent = r.text;
+  }
+  return ul;
+}
+
+/** Biểu đồ theo thời gian trong buổi tập: trục ngang là thời gian đã tập (00:00 → hết buổi). */
+function woChart(parent, points, o) {
+  const box = mkEl("div", { class: "chart" }, parent);
+  const end = Math.max(60, woSpan, ...points.map((p) => p[0]));   // cả buổi tập, như Mi Fitness
+  lineChart(box, points, {
+    t0: 0, t1: end, height: 170, gap: 120, timeFmt: fmtClock,
+    xTicks: [0, end / 3, (2 * end) / 3, end].map((x) => [x, fmtClock(x)]), ...o,
+  });
+}
+
+let woSpan = 0;   // giây từ lúc bắt đầu tới lúc kết thúc buổi tập: trục thời gian chung của các biểu đồ
+function renderWorkoutDetail(d, w) {
+  const body = $("#woBody");
+  body.textContent = "";
+  woSpan = Math.max(0, (d.end || d.start) - d.start);
+  const hero = mkEl("div", { class: "wo-hero" }, body);
+  if (d.distance) {
+    mkEl("b", {}, hero).textContent = fmtDec(d.distance / 1000, 2);
+    mkEl("span", {}, hero).textContent = "km";
+  } else {
+    mkEl("b", {}, hero).textContent = fmtClock(d.duration);
+  }
+  const badges = mkEl("div", { class: "wo-badges" }, hero);
+  for (const s of d.sources) {
+    mkEl("span", {}, badges).textContent = { band: t("Vòng tay"), mifitness: "Mi Fitness", detail: t("Từng giây"), gps: "GPS" }[s] || s;
+  }
+  const ride = d.kind === "ride";
+  const stats = [[t("Thời gian tập"), fmtClock(d.duration), ""]];
+  if (d.calories) stats.push([t("Năng lượng"), fmtInt(d.calories), "kcal"]);
+  if (d.pace && !ride && d.distance) stats.push([t("Pace"), fmtPace(d.pace), "/km"]);
+  if (d.speed && ride) stats.push([t("Tốc độ"), fmtDec(d.speed, 1), "km/h"]);
+  if (d.hr?.avg) stats.push([t("Nhịp tim TB"), String(d.hr.avg), t("nhịp/phút")]);
+  if (d.steps) stats.push([t("Bước chân"), fmtInt(d.steps), ""]);
+  if (d.cadence) stats.push([t("Nhịp bước TB"), String(d.cadence.avg), t("bước/phút")]);
+  if (d.stride) stats.push([t("Sải chân TB"), String(d.stride.avg), "cm"]);
+  if (d.altitude) stats.push([t("Lên dốc"), String(d.altitude.gain), "m"], [t("Xuống dốc"), String(d.altitude.loss), "m"]);
+  statsList(mkEl("dl", { class: "stats" }, body), stats);
+
+  if (d.hr?.series?.length) {
+    const sec = woSection(body, t("Nhịp tim"));
+    statsList(mkEl("dl", { class: "stats small" }, sec), [[t("Trung bình"), String(d.hr.avg), t("nhịp/phút")],
+      [t("Cao nhất"), String(d.hr.max ?? "—"), t("nhịp/phút")], ...(d.hr.min ? [[t("Thấp nhất"), String(d.hr.min), t("nhịp/phút")]] : [])]);
+    woChart(sec, d.hr.series, {
+      color: "var(--c-hr)", unit: t("nhịp/phút"), label: t("Nhịp tim trong buổi tập"),
+      zones: d.hr.bounds.map(([from, to], i) => ({ from, to, label: "", tint: i % 2 === 1 })),   // tên vùng ở các thanh bên dưới
+    });
+    const total = d.hr.zones.reduce((a, b) => a + b, 0);
+    if (total) {
+      woBars(sec, d.hr.zones.map((s, i) => ({ name: ZONE_NAME[i](), sub: `${d.hr.bounds[i][0]}–${d.hr.bounds[i][1]}`,
+        value: s, color: ZONE_COLOR[i], text: fmtClock(s) })).reverse());
+    }
+    if (d.hr.source === "band") mkEl("p", { class: "card-sub" }, sec).textContent = t("Nhịp tim từng phút của vòng tay (chưa có dữ liệu từng giây của Mi Fitness cho buổi này).");
+  }
+  if (d.pace_series?.length || d.speed_series?.length) {
+    const sec = woSection(body, ride ? t("Tốc độ") : t("Pace"));
+    if (ride) {
+      statsList(mkEl("dl", { class: "stats small" }, sec), [[t("Trung bình"), fmtDec(d.speed, 1), "km/h"], [t("Cao nhất"), fmtDec(d.max_speed, 1), "km/h"]]);
+      woChart(sec, d.speed_series, { color: "var(--c-steps)", unit: "km/h", label: t("Tốc độ trong buổi tập") });
+    } else {
+      statsList(mkEl("dl", { class: "stats small" }, sec), [[t("Trung bình"), fmtPace(d.pace), "/km"], [t("Nhanh nhất"), fmtPace(d.max_pace), "/km"]]);
+      woChart(sec, d.pace_series, { color: "var(--mint)", label: t("Pace trong buổi tập"), invert: true,
+        yFmt: fmtPace, valueFmt: (v) => `${fmtPace(v)} /km` });
+    }
+    if (d.splits?.length) {
+      mkEl("p", { class: "card-sub" }, sec).textContent = t("Từng km");
+      const fastest = Math.min(...d.splits.map((s) => s.pace));
+      woBars(sec, d.splits.map((s) => ({
+        name: s.partial ? `<${Math.ceil(s.km)}` : String(s.km), sub: s.hr ? `${s.hr} ${t("nhịp/phút")}` : "",
+        value: fastest / s.pace, color: s.pace === fastest ? "var(--mint)" : "var(--c-light)", text: fmtPace(s.pace),
+      })), "wo-splits");
+    }
+  }
+  if (d.cadence?.series?.length) {
+    const sec = woSection(body, t("Nhịp bước"));
+    statsList(mkEl("dl", { class: "stats small" }, sec), [[t("Trung bình"), String(d.cadence.avg), t("bước/phút")], [t("Cao nhất"), String(d.cadence.max), t("bước/phút")]]);
+    woChart(sec, d.cadence.series, { color: "var(--amber)", unit: t("bước/phút"), label: t("Nhịp bước trong buổi tập"), yMin: 0 });
+  }
+  if (d.stride?.series?.length) {
+    const sec = woSection(body, t("Sải chân (cm)"));
+    statsList(mkEl("dl", { class: "stats small" }, sec), [[t("Trung bình"), String(d.stride.avg), "cm"], ...(d.stride.max ? [[t("Dài nhất"), String(d.stride.max), "cm"]] : [])]);
+    woChart(sec, d.stride.series, { color: "#ff9a52", unit: "cm", label: t("Sải chân trong buổi tập"), yMin: 0 });
+  }
+  if (d.altitude?.series?.length) {
+    const a = d.altitude;
+    const sec = woSection(body, t("Độ cao (m)"));
+    statsList(mkEl("dl", { class: "stats small" }, sec), [[t("Thấp nhất"), String(a.min), "m"], [t("Cao nhất"), String(a.max), "m"],
+      [t("Lên dốc"), String(a.gain), "m"], [t("Xuống dốc"), String(a.loss), "m"]]);
+    woChart(sec, a.series, { color: "var(--sky)", unit: "m", label: t("Độ cao trong buổi tập"), yMin: Math.max(0, a.min - 10) });
+    if (a.terrain) {
+      woBars(sec, [["up", t("Lên dốc")], ["flat", t("Đường bằng")], ["down", t("Xuống dốc")]].map(([k, name], i) => ({
+        name, value: a.terrain[k], color: ["#5aa9ff", "#3b82f6", "#2563eb"][i], text: fmtClock(a.terrain[k]) })));
+    }
+  }
+  if (d.load) {
+    const sec = woSection(body, t("Tải tập luyện"));
+    const [name, status] = LOAD_NAME[d.load.level];
+    const row = mkEl("div", { class: "md-state" }, sec);
+    chip(mkEl("span", {}, row), status, `${name()} · TRIMP ${fmtInt(Math.round(d.load.trimp))}`, "md-chip");
+    mkEl("p", { class: "md-text" }, row).textContent = t("Tổng thời gian ở từng vùng nhịp tim nhân hệ số của vùng (TRIMP); dùng cho thời gian hồi phục, cân bằng vận động và gợi ý buổi tập tiếp theo.");
+  }
+  const sec = woSection(body, t("Trải nghiệm tập luyện"));
+  mkEl("p", { class: "card-sub" }, sec).textContent = t("Buổi tập này với bạn thế nào? Ứng dụng dùng cảm nhận này để gợi ý buổi tiếp theo.");
+  const rpe = mkEl("div", { class: "wo-rpe", role: "group", "aria-label": t("Trải nghiệm tập luyện") }, sec);
+  RPE_NAMES.forEach((name, i) => {
+    const b = mkEl("button", { type: "button", "aria-pressed": String(d.rpe === i + 1) }, rpe);
+    b.textContent = name();
+    b.onclick = () => quiet((async () => {
+      const value = d.rpe === i + 1 ? null : i + 1;   // bấm lại lựa chọn đang chọn: bỏ chọn
+      await run(null, () => api(`/api/workouts/${d.start}/rpe`, { value }), t("Đã lưu."));
+      d.rpe = value;
+      $$("button", rpe).forEach((x, k) => x.setAttribute("aria-pressed", String(value === k + 1)));
+    })());
+  });
+  if (d.note) mkEl("p", { class: "card-sub wo-note" }, body).textContent = d.note;
 }
 
 /* ---------------- nhật ký riêng: chu kỳ kinh nguyệt (hồ sơ nữ), xuất tinh (hồ sơ nam). Chỉ lưu trên máy này. */
@@ -3781,7 +4072,7 @@ function legendOne() {
 
 /** Bản đồ một buổi tập. back: mở từ bản đồ tổng (hiện nút quay lại). */
 async function openMap(w, back = false) {
-  const seq = mapOpenDialog(workoutName(w), dateTime(w.start));
+  const seq = mapOpenDialog(workoutName(w), numDateTime(w.start));
   MAP.mode = "one";
   MAP.routes = [];
   $("#mapBack").hidden = !back;
@@ -3927,6 +4218,8 @@ function openMapFromHash(target) {
 }
 
 $("#mapClose").onclick = () => $("#mapDialog").close();
+$("#woClose").onclick = () => $("#woDialog").close();
+$("#woDialog").addEventListener("close", () => { woOpen = null; woData = null; });
 $("#mapPlace").onchange = () => {
   MAP.place = $("#mapPlace").value;
   renderAllStats();
@@ -3978,6 +4271,7 @@ function rerenderLanguage() {
     () => { if (SIM) drawSim(); },
     () => DATE_PICKERS.forEach((p) => p.refresh()),
     () => { if (cloudOpen && STATE.cloud && STATE.cloud.state !== "done") renderCloud({ ...STATE.cloud, seq: null }); },
+    () => { if (woOpen && woData) renderWorkoutDetail(woData, woOpen); },
   ];
   for (const step of steps) {
     try { step(); } catch (e) { console.warn(e); }
@@ -4021,7 +4315,8 @@ function renderCloud(st) {
   const s = st.state || "idle";
   if (s === "done") {
     if (st.job === "workouts") quiet(loadHealth());
-    else fillProfile();
+    else if (cloudOpen) fillProfile();
+    else refreshProfileForm();
     if (cloudOpen) {
       closeCloud();
       toast(st.message || t("Đã lấy hồ sơ từ Mi Fitness."));

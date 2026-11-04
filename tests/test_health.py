@@ -336,7 +336,10 @@ async def test_health_sync_and_summary(client):
     activity = [since for kind, since in newer if kind == P.FETCH_ACTIVITY]
     assert activity and activity[0] > dt.datetime.now().astimezone() - dt.timedelta(minutes=5)
     again = (await (await client.get(f"/api/health?date={today}")).json())["health"]
-    assert again["steps_days"] == h["steps_days"] and len(again["workouts"]) == 4
+    assert again["steps_days"] == h["steps_days"]
+    # bấm Đồng bộ: xong phần vòng tay thì lấy tiếp lịch sử Mi Fitness (giả lập: 4 buổi cũ hơn dữ liệu vòng tay)
+    assert len(again["workouts"]) == 8 and sum(w["source"] == "mifitness" for w in again["workouts"]) == 4
+    assert db.last("cloud_workouts")
 
     r = await client.get("/api/health?date=not-a-date")
     assert r.status == 400
@@ -935,3 +938,39 @@ async def test_workout_without_route_has_no_map_button(client):
     client.service.health_db().set_track(with_gps[0]["start"], [])   # lộ trình không có điểm nào
     after = {w["start"]: w["gps"] for w in (await (await client.get(url)).json())["health"]["workouts"]}
     assert after[with_gps[0]["start"]] is False and sum(after.values()) == 2
+
+
+async def test_workout_detail_rpe_and_coach_demo(client):
+    """Trang chi tiết buổi tập (tệp từng giây + GPS của Mi Fitness, giả lập), cảm nhận sau buổi tập, gợi ý buổi tiếp theo."""
+    await connected(client)
+    await wait_sync(client.service)
+    await post(client, "/api/cloud/sync", {"job": "workouts"})
+    for _ in range(100):
+        if client.service.cloud.status["state"] == "done":
+            break
+        await asyncio.sleep(0.05)
+    today = dt.date.today().isoformat()
+    h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
+    run = next(w for w in h["workouts"] if w["gps"] and w.get("mf_type") == 1)
+    d = (await (await client.get(f"/api/workouts/{run['start']}")).json())["workout"]
+    assert d["kind"] == "run" and "detail" in d["sources"] and "gps" in d["sources"]
+    assert d["splits"] and d["splits"][0]["km"] == 1 and d["hr"]["source"] == "detail" and sum(d["hr"]["zones"]) > 600
+    assert d["cadence"]["avg"] > 100 and d["stride"]["avg"] and d["altitude"]["gain"] >= 0 and d["load"]["trimp"] > 0
+    assert client.service.health_db().workout_files(run["start"])["samples"]   # lưu lại, lần sau không tải nữa
+    # buổi tập của vòng tay (không có GPS): nhịp tim từng phút trong giờ tập
+    band = next(w for w in h["workouts"] if w["source"] == "band" and not w["gps"] and w.get("avg_hr"))
+    b = (await (await client.get(f"/api/workouts/{band['start']}")).json())["workout"]
+    assert b["hr"]["source"] == "band" and b["sources"] == ["band"]
+    # cảm nhận sau buổi tập
+    assert (await post(client, f"/api/workouts/{run['start']}/rpe", {"value": 4})).status == 200
+    assert (await (await client.get(f"/api/workouts/{run['start']}")).json())["workout"]["rpe"] == 4
+    assert (await post(client, f"/api/workouts/{run['start']}/rpe", {"value": 9})).status == 400
+    assert (await post(client, f"/api/workouts/{run['start']}/rpe", {"value": None})).status == 200
+    assert client.service.health_db().rpe(run["start"]) is None
+    assert (await client.get("/api/workouts/123")).status == 404
+    # gợi ý buổi tập tiếp theo và kế hoạch 7 ngày (chỉ cho hôm nay)
+    coach = (await (await client.get(f"/api/health?date={today}")).json())["health"]["insights"]["coach"]
+    assert coach["kind"] in ("rest", "easy", "endurance", "long", "tempo", "intervals") and len(coach["week_plan"]) == 7
+    assert coach["fitness"] and coach["fitness"]["vo2max"] > 15
+    past = (dt.date.today() - dt.timedelta(days=3)).isoformat()
+    assert (await (await client.get(f"/api/health?date={past}")).json())["health"]["insights"]["coach"] is None

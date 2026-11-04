@@ -37,7 +37,9 @@
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); bấm ô **Bước chân** ở trang Hôm nay để mở thẻ Vận động
 - Theo **hồ sơ** (Cài đặt vòng tay → Hồ sơ): nhịp tim tối đa nhập tay hoặc ước tính theo tuổi và giới tính, nhu cầu ngủ theo tuổi, **BMI** (ngưỡng cho người châu Á)
 - **Nhật ký riêng**, chỉ lưu trên máy: hồ sơ nữ có thẻ **Chu kỳ** (ghi ngày có kinh, dự đoán kỳ tiếp theo và ngày dễ thụ thai theo lịch; điểm sẵn sàng trừ phần nhịp tim nghỉ tăng ở pha hoàng thể), hồ sơ nam có thẻ **Sinh lý** (ghi ngày xuất tinh, tần suất, so sánh giấc ngủ đêm sau với các đêm khác). Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth nên phải ghi tay
-- Nhịp tim trong ngày (khi đang theo dõi liên tục, số đo trực tiếp hiện ngay, không chờ đồng bộ), căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
+- Nhịp tim trong ngày (khi đang theo dõi liên tục, số đo trực tiếp hiện ngay, không chờ đồng bộ), căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS (nút **Đồng bộ** cũng tự lấy tiếp lịch sử Mi Fitness nếu đã đăng nhập)
+- **Chi tiết buổi tập** (bấm một buổi): nhịp tim và 5 vùng nhịp tim, pace từng km, nhịp bước, sải chân, độ cao, tải tập luyện, từ dữ liệu từng giây và GPS của Mi Fitness hoặc số liệu từng phút của vòng tay; chấm **trải nghiệm tập luyện** sau mỗi buổi
+- **Buổi tập tiếp theo** và **kế hoạch 7 ngày** (ngày nào tập nặng, vừa, nhẹ, ngày nào nghỉ): theo điểm sẵn sàng, thời gian hồi phục, tải tập luyện, thói quen tập và cảm nhận của bạn; pace theo **VO2max ước tính** mà ứng dụng học từ chính các buổi chạy, đi bộ của bạn
 - Tự đồng bộ khi kết nối và theo lịch ở **Cài đặt ứng dụng** (vòng tay: 15 phút–2 giờ; Mi Fitness: 1 giờ–1 ngày; hoặc chỉ khi bấm); bấm **Đồng bộ** để lấy ngay. Cùng trang đó có ngôn ngữ giao diện, trạng thái tài khoản Mi Fitness (gia hạn, đăng nhập lại, đăng xuất) và cách tự kết nối lại.
 - **Bản đồ** của từng buổi chạy, đi bộ, đạp xe ngoài trời và bản đồ **Những nơi đã đến** gom mọi lộ trình (tô màu theo loại, **lọc theo quốc gia, thành phố**), mở ngay trong hộp thoại bằng **Apple Maps** gắn sẵn của ứng dụng macOS; **Chia sẻ ảnh** lưu ảnh bản đồ kèm số liệu rồi mở bảng chia sẻ. Trình duyệt hiện nút **Mở trong ứng dụng** thay cho bản đồ. Lộ trình được tải sẵn ở nền, mỗi lộ trình khoảng 1 giây.
 - Ứng dụng chỉ **sao chép**: không gửi lệnh xác nhận nên dữ liệu vẫn còn trên vòng tay và Mi Fitness vẫn đồng bộ bình thường. Dữ liệu lưu trên máy tại `~/Library/Application Support/MiBand6Manager/health/`
@@ -312,6 +314,8 @@ src/miband6/
   models.py     Mô hình cá nhân học từ dữ liệu cũ (hồi quy ridge, kiểm chứng chéo; Python thuần)
   risk.py       Ước tính nguy cơ bệnh: đi theo các cây của risk_models.json (Python thuần, không cần thư viện máy học)
   risk_models.json  Mô hình nguy cơ bệnh đã huấn luyện (tools/train_risk_models.py tạo)
+  workouts.py   Chi tiết buổi tập: đọc tệp từng giây, độ cao GPS của Mi Fitness; vùng nhịp tim, từng km, độ cao (hàm thuần)
+  coach.py      Buổi tập tiếp theo, kế hoạch 7 ngày, VO2max học từ các buổi tập (hàm thuần)
   watchface.py  Dựng tệp mặt đồng hồ Mi Band 6 từ ảnh nền tùy chỉnh
   cli.py        Công cụ dòng lệnh
   web/server.py Server web (aiohttp): REST API + WebSocket, dùng chung vòng lặp với Bluetooth
