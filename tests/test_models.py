@@ -60,3 +60,30 @@ def test_robust_statistics():
     assert M.median([3, 1, 2]) == 2 and M.median([4, 1, 2, 3]) == 2.5
     assert M.robust_sd([58, 58, 59, 57, 58, 90]) == pytest.approx(1.4826 * 0.5)   # một giá trị lạ không kéo lệch
     assert M.robust_sd([]) == 0.0
+
+
+def test_fast_leave_one_out_matches_refitting():
+    rows = _nights(60, lambda x: 1.5 * x["late"] + 0.8 * x["load"], noise=0.7)
+    xs, ys = [M._row(r["x"]) for r in rows], [r["y"] for r in rows]
+    fast = M.loo_residuals(xs, ys)
+    slow = [ys[i] - M.predict(M.ridge_fit(xs[:i] + xs[i + 1:], ys[:i] + ys[i + 1:]), xs[i]) for i in range(len(ys))]
+    # một lần học thay cho 60 lần: chỉ khác ở chỗ chuẩn hóa theo cả dữ liệu
+    assert max(abs(a - b) for a, b in zip(fast, slow)) < 0.05
+    assert abs(sum(map(abs, fast)) - sum(map(abs, slow))) / sum(map(abs, slow)) < 0.01
+
+
+def test_learning_curve_reports_each_history_length():
+    import datetime as dt
+
+    rows = _nights(200, lambda x: 1.8 * x["late"] + 1.0 * x["load"], noise=0.8, seed=11)
+    d0 = dt.date(2026, 1, 1)
+    for i, r in enumerate(rows):
+        r["date"] = (d0 + dt.timedelta(days=i)).isoformat()
+    curve = {c["days"]: c for c in M.learning_curve(rows)}
+    assert curve[7]["status"] == "too_few"           # 1 tuần: dưới 21 đêm, không học được
+    assert curve[365]["status"] == "need_more"       # mới có hơn 6 tháng dữ liệu
+    ok = [curve[d] for d in (30, 90, 180)]
+    assert all(c["status"] == "ok" and c["tests"] == M.CURVE_TESTS for c in ok)
+    assert ok[0]["nights"] == 30 and ok[2]["nights"] == 180
+    assert ok[2]["mae"] <= ok[0]["mae"] and all(c["mae"] < c["mae_null"] for c in ok)   # có ích, nhiều dữ liệu hơn không tệ hơn
+    assert M.learning_curve([]) == [{"days": d, "status": "need_more"} for d in M.CURVE_WINDOWS]

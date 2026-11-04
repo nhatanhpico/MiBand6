@@ -976,6 +976,19 @@ select:invalid, select.unknown { color: var(--muted); }
 .legend i.k-zone { background: rgba(255, 255, 255, .16); }
 .legend i.k-high { border-radius: 50%; background: var(--c-hr); }
 #plText { margin-top: 12px; }
+.rk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 12px; }
+.rk-item { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 15px; }
+.rk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rk-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.rk-risk { display: block; margin-top: 6px; font-size: 32px; font-weight: 700; letter-spacing: -.02em; color: var(--lv, var(--text)); font-variant-numeric: tabular-nums; }
+.rk-bar { display: block; position: relative; height: 8px; margin: 10px 0 8px; border-radius: 4px; background: var(--surface-3); }
+.rk-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--lv, var(--muted)); }
+.rk-bar b { position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 1px; background: var(--text); }
+.rk-item p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--muted); }
+.rk-item .rk-compare { color: var(--text); }
+.rk-item ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
+.rk-item .rk-metric { font-size: 12.5px; }
+.rk-model { margin-top: 12px; }
 .ci-chart .bar-work { fill: var(--c-deep); } .ci-chart .bar-free { fill: var(--c-steps); }
 .ci-chart .mid { fill: var(--text); stroke: var(--surface); stroke-width: 2; }
 .ci-chart .ref-work { stroke: var(--c-deep); stroke-dasharray: 4 4; }

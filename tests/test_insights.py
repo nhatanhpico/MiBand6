@@ -396,3 +396,35 @@ def test_night_heart_rate_needs_enough_readings(tmp_path):
     db.add_activity(_sleep_rows(start, 420, lambda k: 58 if k % 30 == 0 else 255))   # mỗi 30 phút: 14 số đo
     assert db.insights(day)["last_night"]["hr"] == 58
     db.close()
+
+
+def test_personal_model_learns_from_history_beyond_the_window(tmp_path):
+    """Lịch sử dài hơn cửa sổ 60 ngày của insights được lưu gọn theo ngày (bảng daily) và lấp dần từng đoạn, nên mô hình
+    cá nhân học được từ cả 4 tháng dữ liệu chứ không chỉ 2 tháng gần nhất."""
+    import random
+
+    from miband6 import healthdb as HDB
+    from miband6.healthdb import HealthDB
+
+    db = HealthDB(tmp_path / "h.sqlite3")
+    rnd = random.Random(5)
+    d0 = dt.date(2026, 5, 1)
+    days = 120
+    for i in range(days):
+        late = rnd.uniform(-1.5, 1.5)
+        start = H.day_bounds((d0 + dt.timedelta(days=i)).isoformat())[0] - 3600 + int(late * 3600)
+        hr = round(55 + 2.0 * late + rnd.gauss(0, 0.5))
+        db.add_activity(_sleep_rows(start, 420, lambda k, hr=hr: hr))
+    last = (d0 + dt.timedelta(days=days - 1)).isoformat()
+    first = db.insights(last)["body"]["model"]
+    assert first["nights"] < days - 5                # lần đầu: cửa sổ 60 ngày cộng một đoạn lịch sử vừa lấp
+    for _ in range(3):
+        model = db.insights(last)["body"]["model"]
+    stored = db.db.execute("SELECT COUNT(*), MIN(date) FROM daily WHERE version = ?", (HDB.DAILY_VERSION,)).fetchone()
+    # mọi ngày đã trọn đều được lưu, từ ngày có dữ liệu đầu tiên (tối 30/4, giấc ngủ của đêm thức dậy 1/5)
+    assert stored[0] >= days - 2 and stored[1] == (d0 - dt.timedelta(days=1)).isoformat()
+    assert model["nights"] >= days - 15 > 60 and model["active"]
+    curve = {c["days"]: c["status"] for c in model["curve"]}
+    assert curve == {7: "too_few", 30: "ok", 90: "ok", 180: "need_more", 365: "need_more"}
+    assert model["since"] <= (d0 + dt.timedelta(days=10)).isoformat()
+    db.close()

@@ -555,6 +555,8 @@ def _model_info(model: dict | None) -> dict | None:
     info["gain"] = round(100 * model["gain"]) if "gain" in model else None
     info["r2"] = round(100 * model["r2"]) if "r2" in model else None
     info["effects"] = [_effect_text(e) for e in model.get("effects", [])] if model["active"] else []
+    info["since"] = model.get("since")      # đêm cũ nhất đã dùng để học
+    info["curve"] = model.get("curve", [])  # sai số theo độ dài dữ liệu học (models.learning_curve)
     if model["nights"] < model["need"]:
         info["text"] = tr('Mô hình cá nhân: cần {need} đêm có nhịp tim khi ngủ để học, đang có {n}.', need=model["need"],
                           n=model["nights"])

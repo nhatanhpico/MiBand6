@@ -558,6 +558,38 @@ def test_rest_hr_analysis_item():
     assert not any(i["key"] == "rest_hr" for i in sparse["items"])
 
 
+def test_live_heart_rate_fills_today_before_the_band_syncs(tmp_path):
+    """Theo dõi liên tục bên máy tính: số đo trực tiếp (mỗi vài giây) được gộp theo phút. Phút vòng tay chưa đồng bộ hiện
+    ngay trên biểu đồ (đánh dấu 1), phút vòng tay có bản ghi nhưng không đo nhịp tim thì lấy số trực tiếp, phút vòng
+    tay đã có nhịp tim thì giữ số của vòng tay."""
+    db = HealthDB(tmp_path / "h.sqlite3")
+    day = "2026-11-04"
+    t0 = H.day_bounds(day)[0] + 14 * 3600
+    db.add_activity([(t0, 1, 0, 0, 80, 0, 0, 0), (t0 + 60, 1, 0, 0, 255, 0, 0, 0)])   # phút 2: vòng tay không đo
+    db.add_live_hr(t0 + 5, 130, 2, 64, 66)          # cùng phút với số của vòng tay (80): bỏ
+    db.add_live_hr(t0 + 75, 140, 2, 68, 72)         # phút vòng tay không đo: 70
+    db.add_live_hr(t0 + 125, 128, 2, 63, 65)        # chưa đồng bộ: 64
+    db.add_live_hr(t0 + 150, 62, 1, 62, 62)         # cùng phút đó, lần gộp sau: (128 + 62) / 3 = 63
+    assert db.live_hr(t0, t0 + 3600) == {t0: 65, t0 + 60: 70, t0 + 120: 63}
+    assert [r[4] for r in db.samples(t0, t0 + 3600)] == [80, 70]
+    s = db.summary(day)
+    assert s["day"]["hr"] == [[t0, 80], [t0 + 60, 70], [t0 + 120, 63, 1]] and s["day"]["hr_live"] == 1
+    db.close()
+
+
+async def test_live_tracking_reaches_the_health_page(client):
+    await connected(client)
+    await wait_sync(client.service)
+    r = await post(client, "/api/hr/live", {"on": True})
+    assert r.status == 200
+    await asyncio.sleep(2.3)                         # vòng tay giả lập gửi một số đo mỗi giây
+    await post(client, "/api/hr/live", {"on": False})   # tắt: phút đang gộp được lưu ngay
+    h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
+    live = [p for p in h["day"]["hr"] if len(p) == 3]
+    assert h["day"]["hr_live"] == len(live) >= 1 and all(66 <= p[1] <= 84 for p in live)
+    assert live[-1][0] > h["day"]["hr"][0][0]
+
+
 async def test_health_api_includes_analysis(client):
     await connected(client)
     await wait_sync(client.service)
@@ -861,6 +893,15 @@ async def test_health_insights_and_settings(client):
     assert stress["auto"] > 100 and stress["manual"] == 1 and 15 <= stress["avg"] <= 70 and ins["data_until"]
     assert ins["body"]["last"]["nights"] >= 7 and ins["body"]["model"]["need"] == 21
     assert ins["sleep_plan"]["wake"] == "06:50" and ins["sleep_plan"]["bedtime"].count(":") == 1
+    # nguy cơ bệnh (mô hình máy học): cần hồ sơ đủ tuổi, giới, chiều cao, cân nặng
+    assert ins["risk"] == {"available": False, "missing": ["age", "sex", "height", "weight"], "reason": "profile"}
+    r = await post(client, "/api/settings/profile", {"birth": "1990-05-01", "gender": 0, "height": 172, "weight": 70})
+    assert r.status == 200
+    risk = (await (await client.get(f"/api/health?date={today}")).json())["health"]["insights"]["risk"]
+    assert risk["available"] and [c["key"] for c in risk["conditions"]] == ["diabetes", "hypertension"]
+    # giả lập: lúc ngồi yên nhịp tim 62-82, ngủ 7 giờ 30 phút, đi bộ nhanh mỗi ngày
+    assert risk["estimated"] == [] and 62 <= risk["inputs"]["pulse"] <= 82 and risk["inputs"]["active"] == 7
+    assert all(c["metrics"]["auc"] >= 0.7 for c in risk["conditions"])
     assert ins["intensity"] and 0 <= ins["intensity"]["ratio"] <= 100 and len(ins["intensity"]["days"]) == 7
     assert ins["circadian"] and ins["circadian"]["chronotype_clock"].count(":") == 1
     assert h["rem_mode"] == "estimate"
