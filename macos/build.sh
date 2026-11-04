@@ -40,6 +40,12 @@ xcrun swiftc -swift-version 5 -O -target "$ARCH-apple-macos12.0" \
   -framework AppKit -framework WebKit -framework ServiceManagement -framework UserNotifications -framework MapKit \
   "$SRC"/Sources/*.swift -o "$CONTENTS/MacOS/MiBand6"
 
+# System Perl runs as arm64e on Apple Silicon; also include arm64 for other hosts.
+MEDIA_ARCH=(-arch "$ARCH")
+if [ "$ARCH" = arm64 ]; then MEDIA_ARCH+=(-arch arm64e); fi
+xcrun clang "${MEDIA_ARCH[@]}" -mmacosx-version-min=12.0 -fobjc-arc -dynamiclib \
+  -framework Foundation "$SRC/Helpers/MediaRemote.m" -o "$RES/MediaRemote.dylib"
+
 echo "==> Info.plist và biểu tượng"
 sed "s/__VERSION__/$VERSION/g" "$SRC/Info.plist" > "$CONTENTS/Info.plist"
 printf 'APPL????' > "$CONTENTS/PkgInfo"

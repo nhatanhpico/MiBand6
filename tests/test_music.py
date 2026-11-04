@@ -95,26 +95,32 @@ async def test_music_screen_refreshes_on_change_and_stops_on_close(monkeypatch):
     assert reads == ["open", "refresh", "refresh"]
 
 
-async def test_system_media_targets_keyboard_without_querying_or_launching_a_player(monkeypatch):
-    keys, packets = [], []
-    done = asyncio.Event()
+async def test_system_media_uses_observed_state_and_refreshes_external_changes(monkeypatch):
+    actions, packets = [], []
+    refreshed = asyncio.Event()
+    playing = True
 
-    async def script(source, key):
-        assert source == music._SYSTEM_SCRIPT
-        keys.append(key)
-        if len(keys) == 6:
-            done.set()
+    async def observed(action):
+        nonlocal playing
+        actions.append(action)
+        # A command may be ignored; only the observed state changes the band.
+        if action == "refresh":
+            playing = False
+        return P.music_info(playing, "Browser artist", "YouTube title")
 
     async def send(packet):
         packets.append(packet)
+        if packet == P.music_info(False, "Browser artist", "YouTube title"):
+            refreshed.set()
 
-    monkeypatch.setattr(music, "_osascript", script)
+    monkeypatch.setattr(music, "_system_packet", observed)
+    monkeypatch.setattr(music, "_POLL_SECONDS", 0.01)
     bridge = music.MusicBridge(send, pytest.fail)
-    for action in ("open", "play", "next", "previous", "volume_up", "volume_down", "pause"):
+    for action in ("open", "pause", "play"):
         bridge.handle(action, "system")
-    await asyncio.wait_for(done.wait(), 2)
-    assert keys == ["16", "17", "18", "0", "1", "16"]
-    assert packets == [P.music_info(v, "", "Mac") for v in (False, True, False)]
+    await asyncio.wait_for(refreshed.wait(), 2)
     task = bridge._task
     bridge.handle("close", "system")
     await asyncio.gather(task, return_exceptions=True)
+    assert actions == ["open", "pause", "play", "refresh"]
+    assert packets == [P.music_info(state, "Browser artist", "YouTube title") for state in (True, False)]

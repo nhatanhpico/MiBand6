@@ -548,6 +548,7 @@ function connectEvents() {
         break;
       case "state": applyState(msg.state); break;
       case "log": appendLog(msg.line); break;
+      case "music_error": toast(msg.message, true); break;
       case "disconnected":
         toast(msg.reconnecting ? t("Vòng tay đã ngắt kết nối. Đang tự kết nối lại…")
           : t("Vòng tay đã ngắt kết nối. Bấm Kết nối để nối lại."), true);

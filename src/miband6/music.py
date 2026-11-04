@@ -2,11 +2,14 @@
 
 import asyncio
 import json
+import os
+import sys
+from pathlib import Path
 
 from . import protocol as P
 
 
-_POLL_SECONDS = 5
+_POLL_SECONDS = 2
 _PLAYER_IDS = {"music": "com.apple.Music", "spotify": "com.spotify.client"}
 # Fixed script and allowlisted arguments. Query the running process before sending
 # any Apple event, so opening the music screen never launches an idle player.
@@ -34,9 +37,8 @@ function run(args) {
 """
 
 
-# NX_KEYTYPE_* from IOKit/hidsystem/ev_keymap.h. macOS routes these just like
-# keyboard media keys, including to a browser's active Media Session.
-_SYSTEM_KEYS = {"play": 16, "pause": 16, "next": 17, "previous": 18, "volume_up": 0, "volume_down": 1}
+# Volume remains a system key; playback uses explicit MediaRemote commands.
+_SYSTEM_KEYS = {"volume_up": 0, "volume_down": 1}
 _SYSTEM_SCRIPT = """
 ObjC.import("AppKit");
 ObjC.import("CoreGraphics");
@@ -75,6 +77,34 @@ async def _player_packet(player: str, action: str) -> bytes:
     return P.music_info(state.get("playing", False), state.get("artist", ""), state.get("title", ""), state.get("volume"))
 
 
+async def _system_packet(action: str) -> bytes:
+    if action in ("volume_up", "volume_down"):
+        await _osascript(_SYSTEM_SCRIPT, str(_SYSTEM_KEYS[action]))
+    helper = Path(sys.executable).resolve().parents[2] / "MediaRemote.dylib"
+    if not helper.is_file():
+        helper = Path(__file__).resolve().parents[2] / "dist/Mi Band 6.app/Contents/Resources/MediaRemote.dylib"
+    if not helper.is_file():
+        raise RuntimeError("Build the macOS app to enable system playback controls.")
+    # A tiny original helper runs in Apple's Perl host, as required on recent macOS.
+    loader = ('$h=DynaLoader::dl_load_file($ARGV[0],0) or die DynaLoader::dl_error(); '
+              '$s=DynaLoader::dl_find_symbol($h,"miband_media") or die "Missing media entry"; '
+              'DynaLoader::dl_install_xsub("main::run",$s); run();')
+    proc = await asyncio.create_subprocess_exec(
+        "/usr/bin/perl", "-MDynaLoader", "-e", loader, str(helper),
+        env={**os.environ, "MIBAND6_MEDIA_ACTION": action},
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), 6)
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+    if proc.returncode:
+        raise RuntimeError(stderr.decode(errors="replace").strip())
+    state = json.loads(stdout)
+    return P.music_info(state["playing"], state["artist"], state["title"])
+
+
 class MusicBridge:
     """Serialize button presses and refresh metadata only while the screen is open."""
 
@@ -108,11 +138,10 @@ class MusicBridge:
 
     async def _run(self, player, queue):
         previous = None
-        system_playing = False
         try:
             while self._queue is queue:
                 try:
-                    action = await asyncio.wait_for(queue.get(), timeout=None if player == "system" else _POLL_SECONDS)
+                    action = await asyncio.wait_for(queue.get(), timeout=_POLL_SECONDS)
                 except asyncio.TimeoutError:
                     action = "refresh"
                 if self._queue is not queue:
@@ -120,11 +149,7 @@ class MusicBridge:
                 if action == "open":
                     await asyncio.sleep(0.1)  # firmware ignores metadata immediately after opening
                 if player == "system":
-                    if action in _SYSTEM_KEYS:
-                        await _osascript(_SYSTEM_SCRIPT, str(_SYSTEM_KEYS[action]))
-                        if action in ("play", "pause"):
-                            system_playing = action == "play"
-                    packet = P.music_info(system_playing, "", "Mac")
+                    packet = await _system_packet(action)
                 else:
                     packet = await _player_packet(player, action)
                 if action == "open" or packet != previous:

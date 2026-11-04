@@ -258,7 +258,9 @@ class BandService:
         await self.require().write_chunked(P.CHUNKED_MUSIC, packet)
 
     def _music_error(self, error: str) -> None:
-        self.log(tr('Không điều khiển được nhạc: {e}', e=error))
+        message = tr('Không điều khiển được nhạc: {e}', e=error)
+        self.log(message)
+        self.push({'type': 'music_error', 'message': message})
 
     def on_event(self, kind: str, data) -> None:
         if kind == "music":
