@@ -709,7 +709,7 @@ select:invalid, select.unknown { color: var(--muted); }
   .date-btn { min-width: 0; flex: 1; }
   .cal-pop { right: auto; left: 0; }
 }
-.hnote { color: var(--faint); font-size: 12.5px; margin: 18px 2px 0; }
+.hnote { color: var(--faint); font-size: 12.5px; line-height: 1.5; margin: 18px auto 0; text-align: center; }
 .hgrid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
 }
@@ -1064,7 +1064,7 @@ a.metric:hover .mini-ring::after { background: #1b2523; }
 .split-head > div { min-width: 0; }
 .metric-badge { display: inline-flex; padding: 4px 9px; border-radius: 6px; background: var(--surface-2); color: var(--status-neutral); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
 .metric-badge.quality-attention { color: var(--status-attention); background: #372f23; }
-.footnote { margin: 2px 2px 0; color: var(--faint); font-size: 12.5px; line-height: 1.5; max-width: 96ch; }
+.footnote { margin: 4px auto 0; color: var(--faint); font-size: 12.5px; line-height: 1.5; text-align: center; }
 .footnote:empty { display: none; }
 .estimate-note { margin-top: 14px; }
 .readiness .rd-parts { border-top: 0; padding-top: 0; }
