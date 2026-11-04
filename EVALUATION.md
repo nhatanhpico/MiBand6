@@ -3,7 +3,7 @@
 > **Target Version:** 1.0.0
 > **Evaluation Scope:** Biomedical health tracking fidelity, hardware feature maximization of Xiaomi Mi Smart Band 6, and mathematical/algorithmic robustness.
 
-> **Update summary.** A user measured "Relaxed" (26) on the band while the Mental state card said "Stress" with tension 100. Cause: the stress factor needed at least 6 automatic readings per day and ignored manual readings, so tension came from resting heart rate alone. Tension now comes from the band's own stress readings (automatic and manual), a raised sleeping heart rate is reported as a physical body signal, and a personal model explains sleeping-HR changes. Gaps 2 and 3 of section 3.2 and roadmap phase 1 below had already been implemented and are marked as done. The Vietnamese version of this report is [DANH_GIA.md](DANH_GIA.md).
+> **Update summary.** A user measured "Relaxed" (26) on the band while the Mental state card said "Stress" with tension 100. Cause: the stress factor needed at least 6 automatic readings per day and ignored manual readings, so tension came from resting heart rate alone. Tension now comes from the band's own stress readings (automatic and manual), a raised sleeping heart rate is reported as a physical body signal, and a personal model explains sleeping-HR changes. Later the same day: disease-risk models (machine learning trained on 12,266 NHANES adults), live heart rate on the Health page in real time, and personal-model training on up to a year of the user's history. Gaps 2 and 3 of section 3.2 and roadmap phase 1 below had already been implemented and are marked as done. The Vietnamese version of this report is [DANH_GIA.md](DANH_GIA.md).
 
 ---
 
@@ -44,6 +44,7 @@ quadrantChart
     "GPS Sync via Happy Eyeballs & Maps": [0.80, 0.91]
     "Mental State from Band Stress": [0.40, 0.86]
     "Personal Sleeping-HR Model (LOO)": [0.70, 0.84]
+    "Disease Risk ML (NHANES, Asian-calibrated)": [0.72, 0.82]
     "2-Way Desktop Music Bridge": [0.45, 0.80]
     "Overnight Continuous SpO2 Toggle": [0.65, 0.40]
 ```
@@ -57,22 +58,22 @@ The codebase enforces a unidirectional dependency hierarchy:
 1. **`protocol.py` (Pure Protocol):** Completely decoupled from Bluetooth I/O. Contains binary packet encoders/decoders, UUID mappings, and constants. Can be unit-tested deterministically without network or mocked devices.
 2. **`crypto.py` (Low-Level Cryptography):** Handcrafted NIST B-163 (sect163r2) ECDH in little-endian format (tested against OpenSSL), AES-128-ECB, and chunked frame encoders/decoders with CRC32 verification.
 3. **`device.py` (Async BLE Client):** Wraps Bleak into the `MiBand6` abstraction. Features `known_peripheral` retrieval via macOS CoreBluetooth to bypass unnecessary scanning when the OS already maintains an active connection.
-4. **`health.py`, `insights.py` & `models.py` (Data Science & Algorithms):** Pure mathematical models for sleep stage extraction, circadian strain, Banister recovery curves, daily readiness scoring, mental state, body signals, resting-HR episodes and the sleep plan. `models.py` holds the pure-Python ridge regression with leave-one-out validation (no NumPy, so the macOS bundle stays small).
+4. **`health.py`, `insights.py`, `models.py` & `risk.py` (Data Science & Algorithms):** Pure mathematical models for sleep stage extraction, circadian strain, Banister recovery curves, daily readiness scoring, mental state, body signals, resting-HR episodes and the sleep plan. `models.py` holds the pure-Python ridge regression with leave-one-out validation and the learning curve; `risk.py` walks the gradient-boosted trees in `risk_models.json` (no NumPy or scikit-learn at runtime, so the macOS arm64 bundle stays small; training happens offline in `tools/train_risk_models.py`).
 5. **`healthdb.py` (Encrypted/Local Persistence):** Per-device SQLite databases stored at `~/Library/Application Support/MiBand6Manager/health/` with strict `0o600` POSIX permissions.
 6. **`web/server.py` & `web/static/` (Full-Stack UI):** Single-process `aiohttp` server with WebSocket event streaming (`/api/events`) and zero-build vanilla JS/CSS frontend.
 
 ### 2.2. Empirical Verification Results
 * **Internationalization Consistency (`tests/i18n_strings.py`):**
-  - HTML strings: 371 (0 missing)
-  - JS strings: 419 (0 missing)
-  - Python strings: 389 (0 missing)
+  - HTML strings: 379 (0 missing)
+  - JS strings: 451 (0 missing)
+  - Python strings: 407 (0 missing)
   - Options/Labels: 53 (0 missing)
   - Swift macOS wrapper: 50 (0 missing)
   - **Verdict:** 100% translation synchronization between Vietnamese and English.
 * **Test suite (`pytest`):**
-  - **208 tests passed, 2 skipped** (the two need macOS: the Swift compiler and macOS scripting). The suite was run in UTC and in UTC+8; two tests that depended on the time of day or on background-sync timing were fixed.
+  - **222 tests passed, 2 skipped** (the two need macOS: the Swift compiler and macOS scripting). The suite was run in UTC and in UTC+8; two tests that depended on the time of day or on background-sync timing were fixed.
   - `tests/test_gui_demo.py` (legacy Qt app) needs Qt's display libraries and runs on a desktop machine.
-  - New coverage: the user's mismatch case (relaxed band stress with a +8 bpm night), resting HR alone never producing "Stress", the personal model learning a planted bedtime effect end to end from band-shaped data, multi-night body signals, resting-HR episodes and the sleep plan.
+  - New coverage: the user's mismatch case (relaxed band stress with a +8 bpm night), resting HR alone never producing "Stress", the personal model learning a planted bedtime effect end to end from band-shaped data and from 4 months of history beyond the 60-day window, the learning curve, the hat-matrix leave-one-out against explicit refits, multi-night body signals, resting-HR episodes, the sleep plan, the disease-risk models (validated quality, monotonic behaviour, factor rules, Asian calibration) and live heart rate reaching the Health page.
 
 ---
 
@@ -102,6 +103,12 @@ The codebase enforces a unidirectional dependency hierarchy:
    * *Implementation:* Sleeping HR is compared with a robust personal baseline (median, MAD-based SD) over the last 3 nights; 2 of 3 high nights is "watch", 3 in a row "alert". A ridge regression learns how bedtime, sleep length and training load move the user's own sleeping HR, so only the unexplained part is flagged.
 8. **Heart Rate at Rest and Tonight's Sleep:**
    * Apple-style episodes (≥ 120 or < 40 bpm for ≥ 10 minutes while awake, still and outside workouts) appear in the health analysis. A sleep plan counts back from the usual wake time with gradual sleep-debt repayment.
+9. **Disease Risk by Machine Learning:**
+   * Gradient-boosted trees trained on 12,266 NHANES 2009–2012 adults estimate the current probability of diagnosed diabetes and of a resting BP ≥ 140/90 from age, sex, height, BMI and 30 days of band data, recalibrated for Asian adults and explained against a healthy same-age profile. Weaker conditions (cholesterol, low HDL, depression screen; validated AUC < 0.70) were tested and left out.
+10. **Live Heart Rate and Sampling-Robust Statistics:**
+   * Continuous-tracking readings are stored per minute and drawn on the Health page immediately; they fill band minutes without HR. Day averages and the resting pulse are time-weighted, so an hour of live tracking at a laptop doesn't outweigh a day sampled every 10 minutes, and a few false steps while typing don't break "still" detection.
+11. **Personal Learning from Long History:**
+   * Completed days are kept in a compact `daily` table, so the personal model trains on up to a year of nights (older data is filled in 45 days at a time), with a forward-in-time learning curve for 1 week to 1 year of history.
 
 ### 3.2. Identified Gaps & Areas for Improvement
 
@@ -168,6 +175,8 @@ graph TD
         RHRModel --> BodySignals["Body Signals (1 / 2 of 3 / 3 nights)"]
         StressModel --> Mind["Mental State"]
         BodySignals --> Mind
+        Profile["Profile: age, sex, height, weight"] --> Risk["Disease Risk (gradient-boosted trees, NHANES)"]
+        BaselineModel --> Risk
 
         ReadinessCalc --> ClampCheck{"Physiological Metric < 40?"}
         ClampCheck -- Yes --> Clamp["Clamp Score <= 59 (Easy / Rest)"]
@@ -222,6 +231,17 @@ graph TD
 * **Resting episodes:** consecutive readings ≤ 10 minutes apart, all ≥ 120 or < 40 bpm, spanning ≥ 10 minutes, with no steps in the 5 minutes before each reading, outside sleep and outside workouts plus 30 minutes. "Nothing unusual" is only stated with ≥ 144 closely spaced resting readings in the week.
 * **Sleep plan:** sleep need by age plus a third of the 7-day sleep debt (max 60 minutes), counted back from the median wake time of the same kind of day, minus typical night-time wakefulness and 15 minutes to fall asleep; never more than 60 minutes earlier than the usual bedtime.
 
+### 5.8. Disease Risk Models
+* **Data & labels:** NHANES 2009–2012, adults ≥ 18, not pregnant (12,266; 818 Asian). Diabetes = told by a doctor; hypertension = mean exam BP ≥ 140/90 mmHg.
+* **Model:** `HistGradientBoostingClassifier` with monotonic constraints (age, BMI, resting pulse ↑; active days ↓), hyperparameters by 5-fold CV log loss; temporal validation 2009–10 → 2011–12: diabetes AUC 0.794 (0.777–0.808), hypertension 0.758 (0.743–0.772); calibration slopes 0.94 and 1.02. Final model refit on both cycles.
+* **Asian calibration:** out-of-fold logit offset in Asian adults, shrunk by its SE (James–Stein): diabetes +0.35 (observed 11.0% vs predicted 8.1%), hypertension ≈ 0.
+* **Explanations:** the probability with one modifiable factor (BMI, resting pulse, sleep, active days) moved to a healthy reference, listed only when outside the healthy range and raising risk.
+
+### 5.9. Long History and Live Data
+* **Learning curve:** $\text{MAE}_W = \frac{1}{|T|}\sum_{k\in T} |y_k - \hat{y}_k^{(W)}|$, where $\hat{y}_k^{(W)}$ is trained only on nights in $(d_k - W, d_k)$, $W \in \{7, 30, 90, 180, 365\}$ days, $T$ = the 30 most recent nights.
+* **Fast LOO:** $e_i^{LOO} = e_i / (1 - h_{ii})$, $h_{ii} = 1/n + z_i^\top (Z^\top Z + \lambda I)^{-1} z_i$.
+* **Live HR:** per-minute aggregation of BLE readings; band minutes take precedence; time-weighted means with a 10-minute hold.
+
 ---
 
 ## 6. Actionable Engineering Roadmap
@@ -229,7 +249,7 @@ graph TD
 ```mermaid
 timeline
     title Recommended Implementation Milestones
-    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model
+    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model : Disease Risk ML : Live HR on Health page : Year-long personal training
     Phase 1 : Protocol Expansion : Remote Camera Shutter Event Listener : Nocturnal SpO2 Auto-Measurement Config : World Clock & Event Reminder UI
     Phase 2 : Advanced Telemetry : Mood / Illness Journal to check the body-signal thresholds : PDF Health Export for Clinical Review : Full Validation Against PSG Reference
 ```
@@ -239,6 +259,7 @@ timeline
 2. **User-Configurable $HR_{max}$:** a measured maximum heart rate can be saved locally (Band settings → Profile → Heart rate zones) and is used for TRIMP and HR zones.
 3. **Daytime Naps Accounting:** finished naps count in the sleep balance and the 7-day sleep debt.
 4. **Mental state, body signals, personal model, resting-HR episodes, sleep plan:** see sections 3.1 and 5.5–5.7.
+5. **Disease-risk models, live heart rate, long-history learning:** see sections 3.1 (items 9–11), 5.8 and 5.9.
 
 ### 6.2. Next: Protocol Extensions
 1. **Remote Camera Shutter Binding:**

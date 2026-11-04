@@ -1,6 +1,6 @@
 # Trang Sức khỏe
 
-Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bước chân, nhịp tim, căng thẳng, PAI, SpO2 và các buổi tập, kèm một bản **phân tích sức khỏe**, **mức sẵn sàng**, **trạng thái tinh thần** (ước tính), **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường, có mô hình cá nhân), **giấc ngủ tối nay**, **cường độ vận động** và **nhịp sinh học** dựa trên tất cả số liệu đó. Trang có trong cả bản web (`uv run miband6-web`) lẫn ứng dụng macOS.
+Trang **Sức khỏe** hiện dữ liệu Mi Band 6 đã ghi: giấc ngủ, bước chân, nhịp tim, căng thẳng, PAI, SpO2 và các buổi tập, kèm một bản **phân tích sức khỏe**, **mức sẵn sàng**, **trạng thái tinh thần** (ước tính), **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường, có mô hình cá nhân), **nguy cơ bệnh** (tiểu đường, tăng huyết áp, ước tính bằng mô hình máy học), **giấc ngủ tối nay**, **cường độ vận động** và **nhịp sinh học** dựa trên tất cả số liệu đó. Trang có trong cả bản web (`uv run miband6-web`) lẫn ứng dụng macOS.
 
 ## Đồng bộ
 
@@ -25,7 +25,7 @@ Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng d�
 | **Chu kỳ** (hồ sơ nữ) | Nhật ký kỳ kinh và dự đoán, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Sinh lý** (hồ sơ nam) | Nhật ký xuất tinh và so sánh giấc ngủ, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Xu hướng** | Như **Tóm tắt sức khỏe** của Mi Fitness: các chỉ số vừa **thay đổi rõ** (30 ngày / 26 tuần), **7 ngày qua** so với tuần trước, **hôm nay so với thường lệ** (xem [Xu hướng](#xu-hướng)) |
-| **Phân tích** | **Điểm sẵn sàng** (điểm 0–100, lời khuyên, các thành phần, thời gian hồi phục, xu hướng 14 ngày), **phân tích sức khỏe** từng mặt, **trạng thái tinh thần** ước tính và **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường, mô hình cá nhân; xem bên dưới) |
+| **Phân tích** | **Điểm sẵn sàng** (điểm 0–100, lời khuyên, các thành phần, thời gian hồi phục, xu hướng 14 ngày), **phân tích sức khỏe** từng mặt, **trạng thái tinh thần** ước tính, **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường, mô hình cá nhân) và **nguy cơ bệnh** (mô hình máy học; xem bên dưới) |
 
 Rê chuột (hoặc chọn bằng phím Tab) lên cột, đoạn hay đường trong biểu đồ để xem số liệu chi tiết.
 
@@ -58,6 +58,8 @@ Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời 
 
 - **Nhịp tim** và **căng thẳng**: vòng tay tự đo theo **Cài đặt vòng tay → Sức khỏe** (chu kỳ đo nhịp tim, Theo dõi căng thẳng). Không bật thì thẻ Căng thẳng chỉ có các lần đo tay (chấm). Các lần đo tay cũng được tính vào phân tích căng thẳng và trạng thái tinh thần. Cách đo hiện tại ghi ở cuối thẻ **Tim mạch**.
 - **Theo dõi nhịp tim liên tục** (số đo theo thời gian thực ở trang Hôm nay) bật tay ở thẻ **Đo nhịp tim**, hoặc tự bật mỗi lần kết nối nếu bật **Cài đặt ứng dụng → Nhịp tim trực tiếp**. Vòng tay đo liên tục tốn pin hơn.
+- Khi đang theo dõi liên tục (ví dụ ngồi cạnh máy tính), mỗi số đo (vài giây một lần) được gộp theo phút và **hiện ngay trên biểu đồ nhịp tim của thẻ Tim mạch** hôm nay, không chờ lần đồng bộ vòng tay sau (nhãn **Gồm số đo trực tiếp**). Phút đang đo được vẽ lại vài giây một lần; phút đã trọn được lưu trên máy (bảng `live_hr`). Khi vòng tay đồng bộ, phút đã có nhịp tim của vòng tay thì dùng số của vòng tay; phút vòng tay ghi mà không đo nhịp tim (đo theo chu kỳ) thì lấy trung bình số đo trực tiếp của phút đó, cho mọi phân tích.
+- **Trung bình** nhịp tim trong ngày tính theo thời gian: mỗi số đo đại diện cho khoảng tới số đo kế tiếp (tối đa 10 phút), nên một giờ theo dõi liên tục (mỗi phút một số) không lấn át phần còn lại của ngày đo 10 phút một lần.
 - **SpO2**: Mi Band 6 chỉ đo khi bạn mở mục SpO2 trên vòng tay và bấm đo; ứng dụng không bật đo từ xa được (giao thức không có lệnh này). Kết quả hiện sau lần đồng bộ kế tiếp.
 
 ## Giấc ngủ được tính thế nào
@@ -136,7 +138,7 @@ Thẻ đầu trang nhận xét tình trạng hiện tại từ dữ liệu 7–3
 | Nhịp tim lúc nghỉ | Các đợt nhịp tim từ 120 hoặc dưới 40 nhịp/phút kéo dài ≥ 10 phút khi không vận động, 7 ngày (xem dưới) | Không có đợt nào (chỉ kết luận khi đo đủ dày: ≥ 144 số đo lúc nghỉ cách nhau ≤ 10 phút) | Nên chú ý: có đợt; Cần lưu ý: đợt cao tới 150 |
 | Dữ liệu | Thời điểm của dữ liệu mới nhất | | Nên chú ý: cũ hơn 2 ngày |
 
-**Nhịp tim lúc nghỉ** làm như thông báo nhịp tim cao / thấp của Apple Watch (mức mặc định 120, thấp 40 nhịp/phút, 10 phút khi không vận động): chỉ xét lúc thức (ngoài giấc ngủ), không đi lại (không có bước nào trong 5 phút trước mỗi số đo, cả đợt tối đa 5 bước do tay cử động), không trong buổi tập hay 30 phút sau. Một đợt là các số đo liền nhau (cách nhau tối đa 10 phút) cùng vượt ngưỡng, ít nhất 2 số đo, kéo dài từ 10 phút. Nhịp tim cao khi nghỉ có thể do cà phê, lo âu, sốt, mất nước, thuốc, hoặc vòng tay đo sai khi tay cử động; thấp lúc thức có thể bình thường ở người tập luyện nhiều. Lặp lại hoặc kèm hồi hộp, chóng mặt, khó thở, đau ngực, ngất thì nên đi khám.
+**Nhịp tim lúc nghỉ** làm như thông báo nhịp tim cao / thấp của Apple Watch (mức mặc định 120, thấp 40 nhịp/phút, 10 phút khi không vận động): chỉ xét lúc thức (ngoài giấc ngủ), không đi lại (tối đa 5 bước trong phút đo và 5 phút trước, cả đợt cũng vậy: gõ phím, cử động tay khi ngồi máy tính có thể bị đếm thành vài bước), không trong buổi tập hay 30 phút sau. Một đợt là các số đo liền nhau (cách nhau tối đa 10 phút) cùng vượt ngưỡng, ít nhất 2 số đo, kéo dài từ 10 phút. Nhịp tim cao khi nghỉ có thể do cà phê, lo âu, sốt, mất nước, thuốc, hoặc vòng tay đo sai khi tay cử động; thấp lúc thức có thể bình thường ở người tập luyện nhiều. Lặp lại hoặc kèm hồi hộp, chóng mặt, khó thở, đau ngực, ngất thì nên đi khám.
 
 Mục nào chưa có dữ liệu thì không hiện (hoặc hiện **Chưa đủ dữ liệu**). Các ngưỡng lấy từ khuyến nghị phổ biến: ngủ 7–9 giờ mỗi đêm, 150 phút vận động vừa mỗi tuần (WHO), PAI từ 100, SpO2 bình thường từ 95%.
 
@@ -237,6 +239,8 @@ Thẻ **Tín hiệu cơ thể** (thẻ **Phân tích**) so nhịp tim khi ngủ 
 - Hồi quy ridge (hệ số phạt 4 trên yếu tố đã chuẩn hóa; ít đêm, các yếu tố liên quan nhau). Các đêm lệch quá 3,5 độ lệch chuẩn bền vững (thường là đêm ốm) không dùng để học; 3 đêm gần nhất cũng không (đó là các đêm cần đánh giá).
 - **Chỉ dùng khi tốt hơn mức nền**: cần từ 21 đêm, và sai số tuyệt đối trung bình khi kiểm chứng chéo bỏ-một (mỗi đêm được dự đoán bằng mô hình học từ các đêm còn lại) phải nhỏ hơn mô hình chỉ có hệ số chặn ít nhất 5%. Nếu không, thẻ ghi rõ và ứng dụng chỉ so với mức nền. Độ lệch chuẩn của phần không giải thích được là độ lệch chuẩn bền vững của sai số kiểm chứng chéo (tối thiểu 1,5 nhịp/phút).
 - Thẻ hiện mức dự đoán, phần chưa giải thích được, các yếu tố của đêm gần nhất (mỗi yếu tố từ 0,5 nhịp/phút) và những gì mô hình học được về bạn (chỉ yếu tố có hệ số khác 0 rõ: |t| ≥ 2), ví dụ "Đi ngủ muộn hơn 1 giờ: +1,8 nhịp/phút".
+- **Học từ nhiều tháng**: cửa sổ tính các chỉ số khác chỉ là 60 ngày, nhưng mô hình học từ **tới 1 năm** dữ liệu. Mỗi ngày đã trọn được lưu gọn một dòng (bảng `daily`: đêm chính, tải vận động, phút đeo vòng…), nên lịch sử dài ra theo thời gian dùng ứng dụng mà không phải tính lại từ dữ liệu từng phút; dữ liệu cũ hơn đã có trên máy được lấp dần, mỗi lần tối đa 45 ngày. Kiểm chứng chéo bỏ-một tính một lần qua đường chéo ma trận mũ, và mô hình chỉ học lại khi có đêm mới, nên học từ cả năm vẫn nhanh.
+- **Bảng "Học từ dữ liệu của bạn"**: mỗi đêm trong 30 đêm gần nhất được dự đoán bằng mô hình chỉ học từ 1 tuần, 1 tháng, 3 tháng, 6 tháng hay 1 năm dữ liệu trước nó (không nhìn trước), so với chỉ dùng mức nền. Dữ liệu dài hơn cho mô hình nhiều đêm để học hơn; bảng cho thấy điều đó có làm dự đoán chính xác hơn với chính bạn không. "Quá ít đêm để học": dưới 21 đêm (1 tuần không bao giờ đủ). "Cần thêm dữ liệu": lịch sử chưa dài tới mức đó.
 - Điểm sẵn sàng vẫn dùng độ lệch thật của nhịp tim nghỉ: cơ thể sau một đêm ngủ muộn vẫn chưa hồi phục hẳn, dù biết nguyên nhân.
 
 ## Giấc ngủ tối nay
@@ -247,6 +251,45 @@ Khi xem hôm nay, thẻ **Giấc ngủ** (và ô giấc ngủ ở trang **Hôm n
 - Giờ dậy: trung vị giờ dậy 28 đêm gần nhất cùng loại với ngày mai (ngày làm việc hoặc ngày nghỉ; ít hơn 3 đêm cùng loại thì dùng mọi đêm). Cần ít nhất 5 đêm.
 - Giờ lên giường = giờ dậy − thời gian ngủ cần − thời gian thức giữa đêm thường gặp (trung vị) − 15 phút để thiếp đi (10–20 phút là bình thường).
 - Không khuyên lên giường sớm hơn giờ ngủ quen thuộc quá 60 phút: đi ngủ quá sớm so với nhịp sinh học thường chỉ nằm trằn trọc; khi đó thẻ khuyên giữ giờ dậy cố định và bù dần.
+
+## Nguy cơ bệnh (máy học)
+
+Thẻ **Nguy cơ bệnh** (thẻ **Phân tích**) ước tính **khả năng hiện đang mắc** hai bệnh thường gặp, từ hồ sơ và số đo của vòng tay, bằng mô hình máy học. Đây là xác suất ở thời điểm hiện tại (như bài kiểm tra nguy cơ tiểu đường của ADA), không phải nguy cơ trong 10 năm, và **không phải chẩn đoán**.
+
+| Bệnh | Định nghĩa trong dữ liệu học | AUC kiểm chứng (95% CI) | Người châu Á |
+| --- | --- | --- | --- |
+| **Tiểu đường** | Đã được bác sĩ chẩn đoán (chủ yếu type 2) | 0,79 (0,78–0,81) | 0,80 (817 người) |
+| **Tăng huyết áp** | Huyết áp đo lúc ngồi nghỉ (trung bình tới 3 lần đo) ≥ 140/90 mmHg, định nghĩa của WHO và Bộ Y tế | 0,76 (0,74–0,77) | 0,76 (725 người) |
+
+AUC là khả năng mô hình xếp một người mắc bệnh cao hơn một người không mắc: 0,5 là đoán ngẫu nhiên, 1 là hoàn hảo. Đã thử và **bỏ**, vì từ các đặc trưng này đoán chưa đủ tốt (AUC kiểm chứng dưới 0,70): cholesterol toàn phần cao (0,67), HDL thấp (0,69), sàng lọc trầm cảm PHQ-2 (0,64).
+
+**Đầu vào** (chỉ những gì ứng dụng có):
+
+- Hồ sơ (**Cài đặt vòng tay → Hồ sơ**): tuổi (cần từ 18; từ 80 tính như 80), giới tính (Nam / Nữ), chiều cao, BMI. Thiếu một trong các mục này thì thẻ nhắc nhập.
+- **Nhịp tim lúc nghỉ**: nhịp tim lúc ngồi yên ban ngày (08:00–22:00) trong 30 ngày: lúc thức, đeo vòng, tối đa 5 bước trong phút đó và 5 phút trước, không trong buổi tập hay 30 phút sau. Lấy trung vị của từng khoảng 10 phút rồi trung vị các khoảng (cần ít nhất 30 khoảng), để một lúc theo dõi liên tục bên máy tính (mỗi phút một số đo) chỉ được tính theo thời gian của nó. Gần với mạch đếm 60 giây khi ngồi nghỉ của dữ liệu học (nhịp tim khi ngủ thấp hơn nhiều nên không dùng).
+- **Giờ ngủ**: trung bình giấc chính (cả lúc thức giữa giấc) 30 ngày, cần 3 đêm. Dữ liệu học là số giờ ngủ tự khai, thường gần thời gian trên giường hơn là thời gian ngủ thật.
+- **Số ngày vận động mỗi tuần**: trung bình mỗi tuần số ngày có từ 10 phút vận động vừa/mạnh (nhịp bước từ 100 hoặc trong buổi tập), trong 4 tuần đã trọn (các ngày đeo vòng từ 10 giờ; cần 3 ngày, quy về 7 ngày).
+- Số đo của vòng tay lấy 30 ngày (thẻ ghi số ngày thật sự có): càng nhiều ngày, con số "thường ngày" càng ổn định, giống câu hỏi "thường" (thường ngủ mấy giờ, thường tập mấy ngày) của khảo sát. Mô hình bệnh học từ dữ liệu của 12.266 người, không phải từ dữ liệu của riêng bạn: muốn học từ bạn thì cần biết bạn có mắc bệnh hay không (kết quả xét nghiệm), điều vòng tay không đo được. Dữ liệu học là số ngày tự khai có tập thể thao, vận động vừa/mạnh.
+- Thiếu số đo của vòng tay thì dùng trung vị cùng giới của dữ liệu học, ghi rõ trên thẻ, và mục đó không được tính là yếu tố.
+
+**Mô hình** (`risk.py`, tệp `src/miband6/risk_models.json`, do `tools/train_risk_models.py` tạo):
+
+- Dữ liệu học: **NHANES 2009–2012** (Khảo sát Sức khỏe và Dinh dưỡng Quốc gia Hoa Kỳ của CDC, dữ liệu công thuộc phạm vi công cộng), bản ghép sẵn trong gói R `NHANES` (Pruim); 12.266 người lớn từ 18 tuổi (bỏ người đang mang thai), trong đó 818 người châu Á. Tệp dữ liệu được kiểm SHA-256.
+- Thuật toán: **cây tăng cường độ dốc** (scikit-learn `HistGradientBoostingClassifier`) có **ràng buộc đơn điệu**: nguy cơ không giảm khi tuổi, BMI, nhịp tim lúc nghỉ tăng, không tăng khi vận động nhiều ngày hơn; giấc ngủ, chiều cao, giới không ràng buộc. Siêu tham số chọn bằng kiểm chứng chéo 5 lớp (log loss).
+- Kiểm chứng theo thời gian: học trên chu kỳ 2009–2010, đánh giá trên 2011–2012 (bảng trên). Độ dốc hiệu chuẩn: tiểu đường 0,94, tăng huyết áp 1,02 (lý tưởng 1). Mô hình dùng trong ứng dụng học lại trên cả hai chu kỳ.
+- **Hiệu chỉnh cho người châu Á**, như ngưỡng BMI của ứng dụng: từ dự đoán kiểm chứng chéo, tìm độ dịch logit để nhóm người châu Á khớp tỉ lệ mắc thật, rồi co về 0 theo sai số chuẩn. Tiểu đường +0,35 (người châu Á mắc tiểu đường nhiều hơn mức BMI của họ cho thấy: 11,0% so với 8,1% mô hình đoán); tăng huyết áp gần 0 (độ dịch −0,13 ± 0,12, không rõ khác 0).
+- Ứng dụng không cần thư viện máy học: các cây được xuất ra JSON và tính bằng Python thuần; script huấn luyện kiểm tra xác suất tính lại khớp scikit-learn (sai khác dưới 10⁻⁶). Gói ứng dụng macOS (Apple Silicon) không lớn thêm và mọi phép tính chạy trên máy, không cần mạng.
+
+**Cách hiện:**
+
+- **Mức**: tiểu đường dưới 5% thấp, 5–10% vừa, 10–25% cao, từ 25% rất cao; tăng huyết áp dưới 10% thấp, 10–20% vừa, 20–35% cao, từ 35% rất cao (lựa chọn của ứng dụng, quanh tỉ lệ mắc trong dân số: 13,7% và 17,4% ở người lớn trong dữ liệu học).
+- **So sánh**: với người cùng tuổi, giới, chiều cao có BMI 22 (giữa khoảng bình thường cho người châu Á), ngủ 7–8 giờ, vận động 5 ngày mỗi tuần và nhịp tim lúc nghỉ ở mức trung vị của người châu Á cùng giới (nam 70, nữ 72). Vạch trắng trên thanh là mức đó. Cao mà gần bằng mức đó thì thẻ ghi nguy cơ chủ yếu do tuổi.
+- **Yếu tố làm nguy cơ cao hơn**: với BMI, nhịp tim lúc nghỉ, giờ ngủ, số ngày vận động nằm ngoài khoảng lành mạnh (BMI 18,5–22,9, ngủ 7–9 giờ, vận động từ 5 ngày, nhịp tim lúc nghỉ tới 75), ứng dụng tính lại nguy cơ khi chỉ yếu tố đó ở mức so sánh; chênh từ 0,5 điểm % thì liệt kê. Không bao giờ liệt kê một yếu tố là "có lợi" (dữ liệu dân số có những liên hệ khó tin, như ngủ 5 giờ làm giảm nguy cơ tăng huyết áp).
+- **Lời khuyên**: tiểu đường: xét nghiệm đường huyết lúc đói hoặc HbA1c (ADA: từ 35 tuổi, sớm hơn nếu BMI từ 23 kèm yếu tố nguy cơ; mức cao thì nên làm sớm). Tăng huyết áp: đo huyết áp (USPSTF: mỗi năm từ 40 tuổi hoặc khi có yếu tố nguy cơ, 3–5 năm một lần ở tuổi 18–39 nếu bình thường; mức cao thì đo vài lần ở các ngày khác nhau).
+
+**Giới hạn**: dữ liệu học là dân số Hoa Kỳ (người Mỹ gốc Á không hoàn toàn giống người Việt); tiểu đường chỉ tính ca đã được chẩn đoán (khoảng một phần tư ca chưa được phát hiện, nên khả năng thật có thể cao hơn); dữ liệu không ghi thuốc huyết áp, nên người đang uống thuốc có huyết áp bình thường bị tính là không mắc; nhịp tim, giờ ngủ, vận động của vòng tay chỉ gần giống cách đo / tự khai trong khảo sát; mô hình không biết tiền sử gia đình, chế độ ăn, hút thuốc, rượu bia. Đây là liên hệ thống kê, không phải nhân quả: giảm BMI không chắc làm nguy cơ giảm đúng như con số.
+
+**Huấn luyện lại** (máy Mac M1 trở lên hay bất kỳ máy nào có `uv`): `uv run tools/train_risk_models.py`. Script tự cài thư viện cho riêng nó (ứng dụng không cần chúng), tải và kiểm tra dữ liệu, huấn luyện (khoảng 30 giây), in các chỉ số kiểm chứng, kiểm tra cây xuất ra rồi ghi `src/miband6/risk_models.json`; `--check` chỉ in chỉ số, không ghi tệp.
 
 ## Cường độ vận động
 
@@ -277,5 +320,6 @@ Dùng giấc ngủ chính mỗi đêm (giấc dài nhất kết thúc trong ngà
 | Giờ ngủ lệch vài phút so với vòng tay | Vòng tay làm tròn theo cách riêng; tổng thời gian thường khớp tới từng phút. |
 | Thẻ Căng thẳng trống | Bật **Theo dõi căng thẳng** ở **Cài đặt vòng tay → Sức khỏe**. |
 | Trạng thái tinh thần có độ tin cậy thấp hoặc nhắc bật Theo dõi căng thẳng | Vòng tay có ít hoặc không có số đo căng thẳng trong 3 ngày qua. Bật **Theo dõi căng thẳng** ở **Cài đặt vòng tay → Sức khỏe** để vòng tay tự đo cả ngày, hoặc đo tay trên vòng tay rồi đồng bộ. |
+| Thẻ Nguy cơ bệnh nhắc nhập hồ sơ | Nhập ngày sinh, giới tính (Nam / Nữ), chiều cao, cân nặng ở **Cài đặt vòng tay → Hồ sơ**. Mô hình chỉ dành cho người từ 18 tuổi. |
 | Thẻ Tín hiệu cơ thể ghi mô hình cá nhân chưa dùng | Cần ít nhất 21 đêm có nhịp tim khi ngủ (không tính 3 đêm gần nhất), và mô hình phải dự đoán tốt hơn mức nền. Với nhiều người, nhịp tim khi ngủ ít phụ thuộc giờ ngủ hay tải vận động; khi đó ứng dụng chỉ so với mức nền, vẫn đúng. |
 | Dòng dưới tiêu đề ghi "chưa lấy được: …" | Mục đó lỗi ở lần đồng bộ (thường do mất kết nối giữa chừng); bấm **Đồng bộ** lại. Chi tiết nằm trong **Nhật ký Bluetooth** ở trang **Thiết bị**. |

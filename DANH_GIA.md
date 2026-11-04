@@ -3,7 +3,7 @@
 > **Phiên bản ứng dụng:** 1.0.0
 > **Mục tiêu đánh giá:** Đánh giá độ ổn định và chính xác trong theo dõi sức khỏe, mức độ tối đa hóa chức năng phần cứng Mi Smart Band 6, và chất lượng các thuật toán sinh học/toán học đã cài đặt.
 
-> **Tóm tắt lần cập nhật.** Người dùng đo trên vòng tay thấy "Thư giãn" (26) nhưng thẻ Trạng thái tinh thần báo "Căng thẳng", mức căng 100. Nguyên nhân: yếu tố căng thẳng cần ít nhất 6 số đo tự động mỗi ngày và bỏ qua số đo tay, nên mức căng chỉ còn dựa vào nhịp tim nghỉ. Nay mức căng lấy từ chính các số đo căng thẳng của vòng tay (tự đo và đo tay), nhịp tim khi ngủ tăng được báo riêng là tín hiệu cơ thể, và một mô hình cá nhân giải thích các thay đổi của nhịp tim khi ngủ. Thiếu sót 2 và 3 ở mục 3.2 cùng giai đoạn 1 của lộ trình đã được làm từ trước và được đánh dấu là xong. Bản tiếng Anh: [EVALUATION.md](EVALUATION.md).
+> **Tóm tắt lần cập nhật.** Người dùng đo trên vòng tay thấy "Thư giãn" (26) nhưng thẻ Trạng thái tinh thần báo "Căng thẳng", mức căng 100. Nguyên nhân: yếu tố căng thẳng cần ít nhất 6 số đo tự động mỗi ngày và bỏ qua số đo tay, nên mức căng chỉ còn dựa vào nhịp tim nghỉ. Nay mức căng lấy từ chính các số đo căng thẳng của vòng tay (tự đo và đo tay), nhịp tim khi ngủ tăng được báo riêng là tín hiệu cơ thể, và một mô hình cá nhân giải thích các thay đổi của nhịp tim khi ngủ. Cũng trong ngày: mô hình nguy cơ bệnh (máy học, học từ 12.266 người lớn NHANES), nhịp tim trực tiếp hiện ngay trên trang Sức khỏe, và mô hình cá nhân học từ tới 1 năm lịch sử của người dùng. Thiếu sót 2 và 3 ở mục 3.2 cùng giai đoạn 1 của lộ trình đã được làm từ trước và được đánh dấu là xong. Bản tiếng Anh: [EVALUATION.md](EVALUATION.md).
 
 ---
 
@@ -44,6 +44,7 @@ quadrantChart
     "Đồng bộ GPS Happy Eyeballs & Map": [0.80, 0.91]
     "Trạng thái tinh thần theo căng thẳng vòng tay": [0.40, 0.86]
     "Mô hình nhịp tim khi ngủ cá nhân (LOO)": [0.70, 0.84]
+    "Nguy cơ bệnh bằng máy học (NHANES)": [0.72, 0.82]
     "Điều khiển nhạc 2 chiều (Music Bridge)": [0.45, 0.80]
     "SpO2 ban đêm / Chất lượng thở": [0.65, 0.40]
 ```
@@ -57,22 +58,22 @@ Hệ thống được thiết kế theo mô hình phân tầng nghiêm ngặt t�
 1. `protocol.py`: Định dạng nhị phân, giải mã packet và bảng hằng số (100% pure functions).
 2. `crypto.py`: AES-128-ECB, ECDH đường cong elip NIST B-163 (sect163r2) little-endian và Chunked 2021 transport.
 3. `device.py`: Lớp điều khiển `MiBand6` bất đồng bộ trên nền `bleak`, hỗ trợ inject mock client (`FakeBand`).
-4. `health.py`, `insights.py` & `models.py`: Thuật toán bóc tách giai đoạn ngủ, ước tính REM, điểm sẵn sàng, nhịp sinh học, trạng thái tinh thần, tín hiệu cơ thể, nhịp tim lúc nghỉ và kế hoạch ngủ. `models.py` là hồi quy ridge thuần Python có kiểm chứng chéo bỏ-một (không cần NumPy, nên gói ứng dụng macOS vẫn nhỏ).
+4. `health.py`, `insights.py`, `models.py` & `risk.py`: Thuật toán bóc tách giai đoạn ngủ, ước tính REM, điểm sẵn sàng, nhịp sinh học, trạng thái tinh thần, tín hiệu cơ thể, nhịp tim lúc nghỉ và kế hoạch ngủ. `models.py` là hồi quy ridge thuần Python có kiểm chứng chéo bỏ-một và đường học; `risk.py` đi theo các cây tăng cường độ dốc trong `risk_models.json` (không cần NumPy hay scikit-learn khi chạy, nên gói ứng dụng macOS arm64 vẫn nhỏ; huấn luyện chạy riêng bằng `tools/train_risk_models.py`).
 5. `healthdb.py`: Cơ sở dữ liệu SQLite cục bộ độc lập cho từng vòng tay (chmod `0o600`).
 6. `web/server.py` & `web/static/`: Máy chủ aiohttp + WebSocket và giao diện HTML/CSS/JS không cần build step.
 
 ### 2.2. Kết quả kiểm thử thực nghiệm
 * **Tính toàn vẹn dịch thuật i18n (`tests/i18n_strings.py`):**
-  - HTML: 371 chuỗi (thiếu 0)
-  - JS: 419 chuỗi (thiếu 0)
-  - Python: 389 chuỗi (thiếu 0)
+  - HTML: 379 chuỗi (thiếu 0)
+  - JS: 451 chuỗi (thiếu 0)
+  - Python: 407 chuỗi (thiếu 0)
   - Options/Labels: 53 chuỗi (thiếu 0)
   - Swift macOS: 50 chuỗi (thiếu 0)
   - **Kết luận:** Hệ thống đa ngôn ngữ (Tiếng Việt - Tiếng Anh) đồng bộ 100%.
 * **Bộ kiểm thử (`pytest`):**
-  - **208 kiểm thử đạt, 2 bỏ qua** (hai kiểm thử cần macOS: trình biên dịch Swift và môi trường script của macOS). Bộ kiểm thử được chạy ở múi giờ UTC và UTC+8; đã sửa hai kiểm thử phụ thuộc giờ trong ngày hoặc thời điểm đồng bộ chạy nền.
+  - **222 kiểm thử đạt, 2 bỏ qua** (hai kiểm thử cần macOS: trình biên dịch Swift và môi trường script của macOS). Bộ kiểm thử được chạy ở múi giờ UTC và UTC+8; đã sửa hai kiểm thử phụ thuộc giờ trong ngày hoặc thời điểm đồng bộ chạy nền.
   - `tests/test_gui_demo.py` (bản Qt cũ) cần thư viện hiển thị của Qt, chạy trên máy có màn hình.
-  - Kiểm thử mới: đúng trường hợp của người dùng (vòng tay đo thư giãn, nhịp tim khi ngủ +8), nhịp tim nghỉ một mình không bao giờ thành "Căng thẳng", mô hình cá nhân học được ảnh hưởng của giờ đi ngủ từ dữ liệu dạng vòng tay (qua toàn bộ đường xử lý), tín hiệu cơ thể nhiều đêm, các đợt nhịp tim lúc nghỉ và kế hoạch ngủ.
+  - Kiểm thử mới: đúng trường hợp của người dùng (vòng tay đo thư giãn, nhịp tim khi ngủ +8), nhịp tim nghỉ một mình không bao giờ thành "Căng thẳng", mô hình cá nhân học được ảnh hưởng của giờ đi ngủ từ dữ liệu dạng vòng tay (qua toàn bộ đường xử lý) và từ 4 tháng lịch sử ngoài cửa sổ 60 ngày, đường học, kiểm chứng bỏ-một nhanh so với học lại từng lần, tín hiệu cơ thể nhiều đêm, các đợt nhịp tim lúc nghỉ, kế hoạch ngủ, mô hình nguy cơ bệnh (chất lượng đã kiểm chứng, tính đơn điệu, quy tắc yếu tố, hiệu chỉnh châu Á) và nhịp tim trực tiếp tới trang Sức khỏe.
 
 ---
 
@@ -100,6 +101,12 @@ Hệ thống được thiết kế theo mô hình phân tầng nghiêm ngặt t�
    * *Giải pháp:* Nhịp tim khi ngủ 3 đêm gần nhất được so với mức nền bền vững của người dùng (trung vị, độ lệch chuẩn từ MAD); cao 2 trong 3 đêm là "nên chú ý", 3 đêm liền là "cần lưu ý". Hồi quy ridge học xem giờ đi ngủ, độ dài giấc ngủ và tải vận động làm nhịp tim khi ngủ của chính người dùng thay đổi bao nhiêu, để chỉ báo phần không giải thích được.
 8. **Nhịp tim lúc nghỉ và giấc ngủ tối nay:**
    * Các đợt nhịp tim kiểu Apple Watch (≥ 120 hoặc < 40 nhịp/phút kéo dài ≥ 10 phút lúc thức, ngồi yên, ngoài buổi tập) nằm trong phân tích sức khỏe. Kế hoạch ngủ tính ngược từ giờ dậy quen thuộc, bù dần nợ ngủ.
+9. **Nguy cơ bệnh bằng máy học:**
+   * Cây tăng cường độ dốc học từ 12.266 người lớn NHANES 2009–2012 ước tính khả năng hiện đã mắc tiểu đường (được chẩn đoán) và huyết áp lúc nghỉ ≥ 140/90 từ tuổi, giới, chiều cao, BMI và 30 ngày số đo của vòng tay, hiệu chỉnh cho người châu Á và giải thích bằng so sánh với người lành mạnh cùng tuổi. Các bệnh đoán kém hơn (cholesterol, HDL thấp, sàng lọc trầm cảm; AUC kiểm chứng < 0,70) đã thử và bỏ.
+10. **Nhịp tim trực tiếp và thống kê không lệch theo chu kỳ đo:**
+   * Số đo khi theo dõi liên tục được lưu theo phút và vẽ ngay trên trang Sức khỏe, lấp các phút vòng tay không đo. Trung bình trong ngày và nhịp tim lúc nghỉ tính theo thời gian, nên một giờ theo dõi bên máy tính không lấn át cả ngày đo 10 phút một lần, và vài bước đếm nhầm khi gõ phím không làm hỏng việc nhận ra lúc ngồi yên.
+11. **Mô hình cá nhân học từ lịch sử dài:**
+   * Mỗi ngày đã trọn được lưu gọn trong bảng `daily`, nên mô hình cá nhân học từ tới 1 năm (dữ liệu cũ được lấp dần 45 ngày mỗi lần), kèm đường học cho 1 tuần tới 1 năm dữ liệu.
 
 ### 3.2. Những điểm còn thiếu sót & Cần hoàn thiện
 
@@ -163,6 +170,8 @@ graph TD
         RHRModel --> BodySignals["Tín hiệu cơ thể (1 / 2 trong 3 / 3 đêm)"]
         StressModel --> Mind["Trạng thái tinh thần"]
         BodySignals --> Mind
+        Profile["Hồ sơ: tuổi, giới, chiều cao, cân nặng"] --> Risk["Nguy cơ bệnh (cây tăng cường độ dốc, NHANES)"]
+        BaselineModel --> Risk
     end
 ```
 
@@ -227,6 +236,17 @@ graph LR
 * **Đợt nhịp tim lúc nghỉ:** các số đo liền nhau cách nhau ≤ 10 phút, cùng ≥ 120 hoặc < 40 nhịp/phút, kéo dài ≥ 10 phút, không có bước nào trong 5 phút trước mỗi số đo, ngoài giấc ngủ và ngoài buổi tập cộng 30 phút. Chỉ kết luận "không có bất thường" khi tuần có ≥ 144 số đo lúc nghỉ đủ dày.
 * **Kế hoạch ngủ:** nhu cầu ngủ theo tuổi cộng 1/3 nợ ngủ 7 ngày (tối đa 60 phút), tính ngược từ trung vị giờ dậy của cùng loại ngày, trừ thời gian thức giữa đêm thường gặp và 15 phút để thiếp đi; không sớm hơn giờ ngủ quen thuộc quá 60 phút.
 
+### 5.9. Mô hình nguy cơ bệnh
+* **Dữ liệu & nhãn:** NHANES 2009–2012, người lớn ≥ 18 tuổi, không mang thai (12.266 người; 818 người châu Á). Tiểu đường = được bác sĩ chẩn đoán; tăng huyết áp = huyết áp trung bình trong buổi khám ≥ 140/90 mmHg.
+* **Mô hình:** `HistGradientBoostingClassifier` có ràng buộc đơn điệu (tuổi, BMI, nhịp tim lúc nghỉ ↑; số ngày vận động ↓), siêu tham số theo log loss kiểm chứng chéo 5 lớp; kiểm chứng theo thời gian 2009–10 → 2011–12: tiểu đường AUC 0,794 (0,777–0,808), tăng huyết áp 0,758 (0,743–0,772); độ dốc hiệu chuẩn 0,94 và 1,02. Mô hình cuối học lại trên cả hai chu kỳ.
+* **Hiệu chỉnh châu Á:** độ dịch logit out-of-fold ở người châu Á, co theo sai số chuẩn (James–Stein): tiểu đường +0,35 (thật 11,0% so với đoán 8,1%), tăng huyết áp ≈ 0.
+* **Giải thích:** xác suất khi một yếu tố thay đổi được (BMI, nhịp tim lúc nghỉ, giấc ngủ, số ngày vận động) về mức lành mạnh, chỉ liệt kê khi yếu tố nằm ngoài khoảng lành mạnh và làm nguy cơ cao hơn.
+
+### 5.10. Lịch sử dài và dữ liệu trực tiếp
+* **Đường học:** $\text{MAE}_W = \frac{1}{|T|}\sum_{k\in T} |y_k - \hat{y}_k^{(W)}|$, với $\hat{y}_k^{(W)}$ chỉ học từ các đêm trong $(d_k - W, d_k)$, $W \in \{7, 30, 90, 180, 365\}$ ngày, $T$ = 30 đêm gần nhất.
+* **Bỏ-một nhanh:** $e_i^{LOO} = e_i / (1 - h_{ii})$, $h_{ii} = 1/n + z_i^\top (Z^\top Z + \lambda I)^{-1} z_i$.
+* **Nhịp tim trực tiếp:** gộp số đo Bluetooth theo phút; phút đã có số của vòng tay thì dùng số đó; trung bình theo thời gian, mỗi số đo giữ tối đa 10 phút.
+
 ---
 
 ## 6. Lộ trình khuyến nghị nâng cấp (Actionable Roadmap)
@@ -234,7 +254,7 @@ graph LR
 ```mermaid
 timeline
     title Lộ trình đề xuất tối ưu hóa ứng dụng
-    Đã xong : Desktop Music Bridge (0xFE) : Cho phép nhập HRmax thủ công : Gộp giấc ngủ trưa (Naps) vào nợ ngủ : Trạng thái tinh thần theo căng thẳng vòng tay : Tín hiệu cơ thể & mô hình cá nhân
+    Đã xong : Desktop Music Bridge (0xFE) : Cho phép nhập HRmax thủ công : Gộp giấc ngủ trưa (Naps) vào nợ ngủ : Trạng thái tinh thần theo căng thẳng vòng tay : Tín hiệu cơ thể & mô hình cá nhân : Nguy cơ bệnh bằng máy học : Nhịp tim trực tiếp trên trang Sức khỏe : Học từ 1 năm dữ liệu
     Giai đoạn 1 : Hoàn thiện BLE : Remote Camera Shutter : Lệnh bật SpO2 tự động đêm : Giao diện nhắc việc & Giờ thế giới
     Giai đoạn 2 : Mở rộng thuật toán : Nhật ký tâm trạng / ốm để kiểm tra ngưỡng tín hiệu cơ thể : Xuất báo cáo PDF bác sĩ : Benchmark với dữ liệu PSG/ECG
 ```
@@ -244,6 +264,7 @@ timeline
 2. **Tùy chỉnh $HR_{max}$ cá nhân hóa:** nhập nhịp tim tối đa đã đo ở Cài đặt vòng tay → Hồ sơ → Vùng nhịp tim (lưu trên máy), dùng cho TRIMP và vùng nhịp tim.
 3. **Cộng bù giấc ngủ trưa (Naps):** các giấc ngủ ngắn đã kết thúc được tính vào cân bằng giấc ngủ và nợ ngủ 7 ngày.
 4. **Trạng thái tinh thần, tín hiệu cơ thể, mô hình cá nhân, nhịp tim lúc nghỉ, kế hoạch ngủ:** xem mục 3.1 và 5.6–5.8.
+5. **Mô hình nguy cơ bệnh, nhịp tim trực tiếp, học từ lịch sử dài:** xem mục 3.1 (điểm 9–11), 5.9 và 5.10.
 
 ### 6.2. Tiếp theo: mở rộng giao thức
 1. **Remote Camera Shutter:**
