@@ -58,20 +58,20 @@ The codebase enforces a unidirectional dependency hierarchy:
 1. **`protocol.py` (Pure Protocol):** Completely decoupled from Bluetooth I/O. Contains binary packet encoders/decoders, UUID mappings, and constants. Can be unit-tested deterministically without network or mocked devices.
 2. **`crypto.py` (Low-Level Cryptography):** Handcrafted NIST B-163 (sect163r2) ECDH in little-endian format (tested against OpenSSL), AES-128-ECB, and chunked frame encoders/decoders with CRC32 verification.
 3. **`device.py` (Async BLE Client):** Wraps Bleak into the `MiBand6` abstraction. Features `known_peripheral` retrieval via macOS CoreBluetooth to bypass unnecessary scanning when the OS already maintains an active connection.
-4. **`health.py`, `insights.py`, `models.py` & `risk.py` (Data Science & Algorithms):** Pure mathematical models for sleep stage extraction, circadian strain, Banister recovery curves, daily readiness scoring, mental state, body signals, resting-HR episodes and the sleep plan. `models.py` holds the pure-Python ridge regression with leave-one-out validation and the learning curve; `risk.py` walks the gradient-boosted trees in `risk_models.json` (no NumPy or scikit-learn at runtime, so the macOS arm64 bundle stays small; training happens offline in `tools/train_risk_models.py`).
+4. **`health.py`, `insights.py`, `models.py`, `risk.py`, `workouts.py` & `coach.py` (Data Science & Algorithms):** Pure mathematical models for sleep stage extraction, circadian strain, Banister recovery curves, daily readiness scoring, mental state, body signals, resting-HR episodes and the sleep plan. `models.py` holds the pure-Python ridge regression with leave-one-out validation and the learning curve; `risk.py` walks the gradient-boosted trees in `risk_models.json` (no NumPy or scikit-learn at runtime, so the macOS arm64 bundle stays small; training happens offline in `tools/train_risk_models.py`). `workouts.py` decodes Mi Fitness per-second workout files and builds the workout detail page; `coach.py` holds the personal fitness model (VO2max from steady running/walking minutes) and the next-workout and 7-day plan rules.
 5. **`healthdb.py` (Encrypted/Local Persistence):** Per-device SQLite databases stored at `~/Library/Application Support/MiBand6Manager/health/` with strict `0o600` POSIX permissions.
 6. **`web/server.py` & `web/static/` (Full-Stack UI):** Single-process `aiohttp` server with WebSocket event streaming (`/api/events`) and zero-build vanilla JS/CSS frontend.
 
 ### 2.2. Empirical Verification Results
 * **Internationalization Consistency (`tests/i18n_strings.py`):**
-  - HTML strings: 379 (0 missing)
-  - JS strings: 451 (0 missing)
-  - Python strings: 407 (0 missing)
+  - HTML strings: 381 (0 missing)
+  - JS strings: 520 (0 missing)
+  - Python strings: 427 (0 missing)
   - Options/Labels: 53 (0 missing)
   - Swift macOS wrapper: 50 (0 missing)
   - **Verdict:** 100% translation synchronization between Vietnamese and English.
 * **Test suite (`pytest`):**
-  - **222 tests passed, 2 skipped** (the two need macOS: the Swift compiler and macOS scripting). The suite was run in UTC and in UTC+8; two tests that depended on the time of day or on background-sync timing were fixed.
+  - **242 tests passed, 2 skipped** (the two need macOS: the Swift compiler and macOS scripting). The suite was run in UTC and in UTC+8; two tests that depended on the time of day or on background-sync timing were fixed.
   - `tests/test_gui_demo.py` (legacy Qt app) needs Qt's display libraries and runs on a desktop machine.
   - New coverage: the user's mismatch case (relaxed band stress with a +8 bpm night), resting HR alone never producing "Stress", the personal model learning a planted bedtime effect end to end from band-shaped data and from 4 months of history beyond the 60-day window, the learning curve, the hat-matrix leave-one-out against explicit refits, multi-night body signals, resting-HR episodes, the sleep plan, the disease-risk models (validated quality, monotonic behaviour, factor rules, Asian calibration) and live heart rate reaching the Health page.
 
@@ -249,7 +249,7 @@ graph TD
 ```mermaid
 timeline
     title Recommended Implementation Milestones
-    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model : Disease Risk ML : Live HR on Health page : Year-long personal training
+    Done : 2-Way Desktop Music Control Bridge : User-Defined Manual HRmax : Naps Reduction of Sleep Debt : Mental State from Band Stress : Body Signals & Personal Model : Disease Risk ML : Live HR on Health page : Year-long personal training : Glanceable Health page : Workout detail & next-workout coach
     Phase 1 : Protocol Expansion : Remote Camera Shutter Event Listener : Nocturnal SpO2 Auto-Measurement Config : World Clock & Event Reminder UI
     Phase 2 : Advanced Telemetry : Mood / Illness Journal to check the body-signal thresholds : PDF Health Export for Clinical Review : Full Validation Against PSG Reference
 ```
@@ -260,6 +260,8 @@ timeline
 3. **Daytime Naps Accounting:** finished naps count in the sleep balance and the 7-day sleep debt.
 4. **Mental state, body signals, personal model, resting-HR episodes, sleep plan:** see sections 3.1 and 5.5–5.7.
 5. **Disease-risk models, live heart rate, long-history learning:** see sections 3.1 (items 9–11), 5.8 and 5.9.
+6. **Glanceable Health page:** every card leads with its numbers and a colored status; explanations sit behind an (i) button and open by themselves for items worth watching or needing attention, which are listed first. Charts no longer change the viewed date (only the date button and ‹ › do), and the new date shows at once while its data loads.
+7. **Workout detail and coaching:** each workout opens a Mi Fitness-style page (heart rate and zones, pace per km, cadence, stride, altitude and terrain, TRIMP load, a training-experience rating) built from the Mi Fitness per-second file and GPS track (mifit's MIT layout tables, newer versions only accepted when their totals match the workout) or the band's minute data. The Workouts tab suggests the next session (rest / easy / endurance / long / tempo / intervals from readiness, recovery, ACWR, intensity distribution and the last rating) with target heart rate and a pace from a personal VO2max model (ACSM VO2 + %HRR ≈ %VO2R over steady minutes), and a 7-day plan of hard, moderate, light and rest days learned from the user's training weekdays. The Sync button also pulls Mi Fitness history. Thresholds are in `docs/suc-khoe.md`.
 
 ### 6.2. Next: Protocol Extensions
 1. **Remote Camera Shutter Binding:**

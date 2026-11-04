@@ -240,7 +240,7 @@
 
       <!-- Giấc ngủ -->
       <div class="hpanel" id="htab-sleep" role="tabpanel">
-        <article class="card" id="health-sleep">
+        <article class="card" id="health-sleep" data-hints>
           <header class="card-head split-head">
             <div><h2>Giấc ngủ</h2><p class="card-sub" id="slRange"></p></div>
             <span class="score-pill big" id="slScore" hidden></span>
@@ -249,20 +249,23 @@
           <div class="chart" id="slChart"></div>
           <ul class="legend" id="slLegend"></ul>
           <p class="card-sub" id="slNotes"></p>
-          <p class="card-sub sl-ref" id="slRef" hidden></p>
-          <p class="card-sub sl-check" id="slCheck" hidden></p>
+          <p class="card-sub sl-ref hint" id="slRef" hidden></p>
+          <p class="card-sub sl-check hint" id="slCheck" hidden></p>
         </article>
-        <article class="card" id="health-plan" hidden>
-          <header class="card-head"><h2>Giấc ngủ tối nay</h2><p class="card-sub">Tính ngược từ giờ dậy quen thuộc của bạn và số giờ ngủ còn thiếu 7 ngày qua.</p></header>
+        <article class="card" id="health-plan" data-hints hidden>
+          <header class="card-head"><h2>Giấc ngủ tối nay</h2><p class="card-sub hint">Tính ngược từ giờ dậy quen thuộc của bạn và số giờ ngủ còn thiếu 7 ngày qua.</p></header>
           <dl class="stats" id="plStats"></dl>
-          <p class="card-sub" id="plText"></p>
+          <p class="card-sub hint" id="plText"></p>
         </article>
         <article class="card">
-          <header class="card-head"><h2>14 đêm gần đây</h2><p class="card-sub">Bấm một cột để xem đêm đó.</p></header>
+          <header class="card-head"><h2>14 đêm gần đây</h2></header>
           <div class="chart" id="slHistory"></div>
         </article>
-        <article class="card" id="health-circadian">
-          <header class="card-head"><h2>Nhịp sinh học</h2><p class="card-sub" id="ciSub"></p></header>
+        <article class="card" id="health-circadian" data-hints>
+          <header class="card-head split-head">
+            <div><h2>Nhịp sinh học</h2><p class="card-sub" id="ciSub"></p></div>
+            <span class="score-pill" id="ciStrain" hidden></span>
+          </header>
           <dl class="stats" id="ciStats"></dl>
           <div class="chart" id="ciChart"></div>
           <ul class="legend" id="ciLegend"></ul>
@@ -278,7 +281,7 @@
           <div class="chart" id="stHourly"></div>
         </article>
         <article class="card">
-          <header class="card-head"><h2>Mọi ngày đã ghi</h2><p class="card-sub">Bấm một cột để xem ngày đó.</p></header>
+          <header class="card-head"><h2>Mọi ngày đã ghi</h2></header>
           <div class="chart" id="stHistory"></div>
           <details class="table-wrap">
             <summary>Xem dạng bảng</summary>
@@ -286,15 +289,15 @@
           </details>
         </article>
         <div class="hgrid">
-          <article class="card" id="health-intensity">
+          <article class="card" id="health-intensity" data-hints>
             <header class="card-head"><h2>Cường độ vận động</h2><p class="card-sub" id="aiSub"></p></header>
             <div class="hero-num"><b id="aiRatio">—</b><span id="aiRatioLabel"></span></div>
             <div class="chart" id="aiChart"></div>
             <ul class="legend" id="aiLegend"></ul>
             <p class="ins-detail" id="aiDetail"></p>
           </article>
-          <article class="card" id="health-pai">
-            <header class="card-head"><h2>PAI</h2><p class="card-sub">Điểm hoạt động cá nhân trong 7 ngày; giữ trên 100 để tốt cho tim mạch.</p></header>
+          <article class="card" id="health-pai" data-hints>
+            <header class="card-head"><h2>PAI</h2><p class="card-sub hint">Điểm hoạt động cá nhân trong 7 ngày; giữ trên 100 để tốt cho tim mạch.</p></header>
             <dl class="stats" id="paiStats"></dl>
             <div class="chart" id="paiChart"></div>
           </article>
@@ -303,36 +306,36 @@
 
       <!-- Tim mạch -->
       <div class="hpanel" id="htab-heart" role="tabpanel" hidden>
-        <article class="card" id="health-hr">
+        <article class="card" id="health-hr" data-hints>
           <header class="card-head split-head">
-            <div><h2>Nhịp tim</h2><p class="card-sub" id="hrSub"></p></div>
+            <div><h2>Nhịp tim</h2></div>
             <span class="metric-badge" id="hrBadge">Chưa có dữ liệu</span>
           </header>
           <dl class="stats" id="hrStats"></dl>
           <div class="chart" id="hrChart"></div>
+          <p class="card-sub hint" id="measureFacts"></p>
         </article>
         <div class="hgrid wide-left">
           <article class="card" id="health-stress">
-            <header class="card-head"><h2>Căng thẳng</h2><p class="card-sub" id="ssSub"></p></header>
+            <header class="card-head"><h2>Căng thẳng</h2></header>
             <dl class="stats" id="ssStats"></dl>
             <div class="chart" id="ssChart"></div>
           </article>
-          <article class="card" id="health-spo2">
+          <article class="card" id="health-spo2" data-hints>
             <header class="card-head split-head">
-              <div><h2>SpO2</h2><p class="card-sub">Nồng độ oxy trong máu ở các lần đo.</p></div>
+              <div><h2>SpO2</h2><p class="card-sub hint">Nồng độ oxy trong máu ở các lần đo.</p></div>
               <span class="metric-badge" id="spBadge">Đo từng lần</span>
             </header>
             <dl class="stats" id="spStats"></dl>
             <details class="table-wrap"><summary>Xem từng lần đo</summary><div class="table-scroll"><table class="data-table"><thead><tr><th>Lúc đo</th><th>SpO2</th><th>Cách đo</th></tr></thead><tbody id="spTable"></tbody></table></div></details>
           </article>
         </div>
-        <p class="footnote" id="measureFacts"></p>
       </div>
 
       <!-- Cơ thể: cân nặng, chiều cao theo thời gian -->
       <div class="hpanel" id="htab-body" role="tabpanel" hidden>
         <div class="journal-layout">
-          <article class="card" id="health-body">
+          <article class="card" id="health-body" data-hints>
             <header class="card-head split-head">
               <div><h2>Cân nặng</h2><p class="card-sub" id="bdSub"></p></div>
               <span class="score-pill" id="bdBmi" hidden></span>
@@ -342,26 +345,44 @@
             <p class="journal-effect" id="bdNotes"></p>
             <div class="chart" id="bdChart"></div>
           </article>
-          <article class="card">
-            <header class="card-head"><h2>Ghi cân nặng</h2><p class="card-sub">Lần ghi mới nhất cũng thành hồ sơ và được ghi vào vòng tay, vì vòng tay dùng chiều cao, cân nặng để tính quãng đường và năng lượng.</p></header>
+          <article class="card" data-hints>
+            <header class="card-head"><h2>Ghi cân nặng</h2><p class="card-sub hint">Lần ghi mới nhất cũng thành hồ sơ và được ghi vào vòng tay, vì vòng tay dùng chiều cao, cân nặng để tính quãng đường và năng lượng.</p></header>
             <div class="rows compact body-form">
               <label class="row"><span class="row-label">Ngày</span><input id="bdDate" type="date"></label>
               <label class="row"><span class="row-label">Cân nặng</span><span class="with-unit"><input id="bdKg" type="number" min="20" max="250" step="0.1" inputmode="decimal"><span>kg</span></span></label>
               <label class="row"><span class="row-label">Chiều cao</span><span class="with-unit"><input id="bdCm" type="number" min="100" max="230" step="1" inputmode="numeric"><span>cm</span></span></label>
             </div>
             <div class="tile-actions"><button id="bdSaveBtn" class="btn primary" type="button">Lưu</button></div>
+            <p class="card-sub hint">Lưu hồ sơ ở Cài đặt vòng tay hay đồng bộ từ Mi Fitness cũng thêm một lần ghi. Đồng bộ ngầm với Mi Fitness chỉ nhận cân nặng khi số trong Mi Fitness đã đổi, nên số bạn ghi ở đây không bị đè. Dữ liệu chỉ lưu trên máy tính này.</p>
           </article>
         </div>
-        <article class="card">
+        <article class="card" id="health-body-log" hidden>
           <header class="card-head"><h2>Các lần ghi</h2></header>
           <div class="table-scroll"><table class="data-table body-table"><thead><tr><th>Ngày</th><th>Cân nặng</th><th>Chiều cao</th><th>Nguồn</th><th><span class="sr-only">Xóa</span></th></tr></thead><tbody id="bdTable"></tbody></table></div>
         </article>
-        <p class="footnote">Lưu hồ sơ ở Cài đặt vòng tay hay đồng bộ từ Mi Fitness cũng thêm một lần ghi. Đồng bộ ngầm với Mi Fitness chỉ nhận cân nặng khi số trong Mi Fitness đã đổi, nên số bạn ghi ở đây không bị đè. Dữ liệu chỉ lưu trên máy tính này.</p>
       </div>
 
       <!-- Tập luyện -->
       <div class="hpanel" id="htab-workouts" role="tabpanel" hidden>
-        <article class="card" id="health-workouts">
+        <article class="card coach" id="health-coach" data-hints hidden>
+          <header class="card-head split-head">
+            <div><h2>Buổi tập tiếp theo</h2><p class="card-sub hint">Gợi ý theo điểm sẵn sàng, thời gian hồi phục, tải tập luyện và các buổi tập gần đây của bạn; pace theo thể lực ứng dụng học từ chính các buổi chạy, đi bộ của bạn.</p></div>
+            <span class="rd-level" id="cxChip"></span>
+          </header>
+          <p class="hero-title" id="cxTitle"></p>
+          <dl class="stats" id="cxStats"></dl>
+          <p class="cx-plan" id="cxPlan" hidden></p>
+          <ul class="ci-notes" id="cxReasons"></ul>
+          <h3 class="card-h3">7 ngày tới</h3>
+          <ol class="cx-week" id="cxWeekPlan"></ol>
+          <p class="card-sub hint">Ngày tập theo những thứ bạn hay tập trong 8 tuần qua; tối đa 2 buổi nặng mỗi tuần, cách nhau ít nhất 48 giờ, sau buổi nặng là buổi nhẹ, có ít nhất một ngày nghỉ. Kế hoạch được tính lại mỗi ngày theo điểm sẵn sàng.</p>
+          <div class="cx-foot">
+            <dl class="stats small" id="cxFitness"></dl>
+            <p class="card-sub" id="cxWeek"></p>
+          </div>
+          <p class="card-sub hint" id="cxFitNote"></p>
+        </article>
+        <article class="card" id="health-workouts" data-hints>
           <header class="card-head split-head">
             <div><h2>Tập luyện</h2><p class="card-sub" id="woSub">Các buổi tập ghi trên vòng tay.</p></div>
             <div class="head-actions">
@@ -370,19 +391,20 @@
             </div>
           </header>
           <div class="table-scroll"><table class="data-table wo-table"><thead><tr><th>Bài tập</th><th>Bắt đầu</th><th>Thời gian</th><th>Quãng đường</th><th>Năng lượng</th><th>Nhịp tim TB</th><th>Bước</th><th>Nguồn</th><th class="wo-map-col"><span class="sr-only">Bản đồ</span></th></tr></thead><tbody id="woTable"></tbody></table></div>
-          <p class="card-sub wo-note">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
+          <p class="card-sub wo-note hint">Vòng tay chỉ giữ các buổi tập gần đây (Mi Fitness đồng bộ xong có thể xóa bớt); lịch sử đầy đủ nằm trong tài khoản Mi Fitness.</p>
         </article>
       </div>
 
       <!-- Chu kỳ (hồ sơ nữ) -->
       <div class="hpanel" id="htab-cycle" role="tabpanel" hidden>
         <div class="journal-layout">
-          <article class="card" id="health-cycle">
+          <article class="card" id="health-cycle" data-hints>
             <header class="card-head"><h2 id="cyTitle">Chu kỳ kinh nguyệt</h2><p class="card-sub" id="cySub"></p></header>
             <p class="hero-big" id="cyDay">—</p>
             <dl class="stats" id="cyStats"></dl>
             <p class="journal-effect" id="cyEffect"></p>
             <div class="tile-actions"><button id="cyTodayBtn" class="btn primary" type="button" aria-pressed="false">Hôm nay có kinh</button></div>
+            <p class="card-sub hint">Dự đoán theo lịch từ các kỳ đã ghi: không dùng để tránh thai hay chẩn đoán. Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth, nên bạn ghi ở đây; dữ liệu chỉ lưu trên máy tính này.</p>
           </article>
           <article class="card journal-cal">
             <header class="card-head split-head">
@@ -394,18 +416,18 @@
             <p class="card-sub">Bấm một ngày để đánh dấu hoặc bỏ đánh dấu ngày có kinh.</p>
           </article>
         </div>
-        <p class="footnote">Dự đoán theo lịch từ các kỳ đã ghi: không dùng để tránh thai hay chẩn đoán. Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth, nên bạn ghi ở đây; dữ liệu chỉ lưu trên máy tính này.</p>
       </div>
 
       <!-- Sinh lý (hồ sơ nam) -->
       <div class="hpanel" id="htab-intimacy" role="tabpanel" hidden>
         <div class="journal-layout">
-          <article class="card" id="health-intimacy">
+          <article class="card" id="health-intimacy" data-hints>
             <header class="card-head"><h2>Nhật ký xuất tinh</h2><p class="card-sub" id="ejSub"></p></header>
             <dl class="stats" id="ejStats"></dl>
             <div class="tile-actions"><button id="ejTodayBtn" class="btn primary" type="button">Ghi hôm nay</button></div>
             <h3 class="card-h3">Giấc ngủ đêm sau so với các đêm khác</h3>
             <div class="compare" id="ejCompare"></div>
+            <p class="card-sub hint">Chỉ là so sánh trên dữ liệu của bạn, không cho thấy nguyên nhân; điểm sẵn sàng không đổi theo nhật ký này. Dữ liệu chỉ lưu trên máy tính này.</p>
           </article>
           <article class="card journal-cal">
             <header class="card-head split-head">
@@ -416,31 +438,30 @@
             <p class="card-sub">Bấm một ngày để ghi hoặc bỏ ghi.</p>
           </article>
         </div>
-        <p class="footnote">Chỉ là so sánh trên dữ liệu của bạn, không cho thấy nguyên nhân; điểm sẵn sàng không đổi theo nhật ký này. Dữ liệu chỉ lưu trên máy tính này.</p>
       </div>
 
       <!-- Xu hướng (như "Tóm tắt sức khỏe" của Mi Fitness) -->
       <div class="hpanel" id="htab-trends" role="tabpanel" hidden>
-        <article class="card" id="health-trends">
+        <article class="card" id="health-trends" data-hints>
           <header class="card-head"><h2>Thay đổi gần đây</h2><p class="card-sub" id="trSub"></p></header>
           <div class="tr-counts" id="trCounts"></div>
           <div class="tr-list" id="trChanges"></div>
+          <p class="card-sub hint">Thay đổi được báo khi mức trung bình gần đây khác rõ (kiểm định thống kê) và đủ lớn so với trước đó trong 30 ngày hoặc 26 tuần. Năng lượng vận động ước tính từ bước chân, chiều cao và cân nặng trong hồ sơ (phương trình của ACSM) cộng năng lượng các buổi tập, không gồm năng lượng lúc nghỉ. Chỉ tính ngày đeo vòng từ 10 giờ.</p>
         </article>
-        <article class="card">
-          <header class="card-head"><h2>7 ngày qua</h2><p class="card-sub">Trung bình mỗi ngày, so với 7 ngày trước đó.</p></header>
+        <article class="card" data-hints>
+          <header class="card-head"><h2>7 ngày qua</h2><p class="card-sub hint">Trung bình mỗi ngày, so với 7 ngày trước đó.</p></header>
           <div class="tr-list" id="trHighlights"></div>
         </article>
-        <article class="card">
-          <header class="card-head"><h2>Hôm nay so với thường lệ</h2><p class="card-sub">Cộng dồn tới giờ này, so với trung vị cùng giờ của 28 ngày trước.</p></header>
+        <article class="card" data-hints>
+          <header class="card-head"><h2>Hôm nay so với thường lệ</h2><p class="card-sub hint">Cộng dồn tới giờ này, so với trung vị cùng giờ của 28 ngày trước.</p></header>
           <div class="tr-list" id="trToday"></div>
         </article>
-        <p class="footnote">Thay đổi được báo khi mức trung bình gần đây khác rõ (kiểm định thống kê) và đủ lớn so với trước đó trong 30 ngày hoặc 26 tuần. Năng lượng vận động ước tính từ bước chân, chiều cao và cân nặng trong hồ sơ (phương trình của ACSM) cộng năng lượng các buổi tập, không gồm năng lượng lúc nghỉ. Chỉ tính ngày đeo vòng từ 10 giờ.</p>
       </div>
 
       <!-- Phân tích -->
       <div class="hpanel" id="htab-insights" role="tabpanel" hidden>
-        <article class="card readiness" id="health-readiness">
-          <header class="card-head"><h2>Điểm sẵn sàng hôm nay</h2><p class="card-sub" id="rdSub"></p></header>
+        <article class="card readiness" id="health-readiness" data-hints>
+          <header class="card-head"><h2>Điểm sẵn sàng hôm nay</h2><span class="est-chip" title="Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.">Ước tính</span><p class="card-sub hint" id="rdSub"></p></header>
           <div class="rd-body">
             <div class="rd-hero">
               <svg class="rd-ring" id="rdRing" viewBox="0 0 120 120" aria-hidden="true"></svg>
@@ -456,46 +477,47 @@
           <ul class="rd-parts" id="rdParts"></ul>
           <h3 class="card-h3">14 ngày gần đây</h3>
           <div class="chart" id="rdTrend"></div>
-          <p class="card-sub estimate-note">Điểm do ứng dụng ước tính; chưa được kiểm chứng lâm sàng.</p>
         </article>
-        <article class="card analysis" id="health-analysis">
+        <article class="card analysis" id="health-analysis" data-hints>
           <header class="card-head"><h2>Phân tích sức khỏe</h2><p class="card-sub" id="anSub"></p></header>
+          <div class="an-counts" id="anCounts"></div>
           <div class="insights" id="anList"></div>
-          <p class="card-sub disclaimer">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
+          <p class="card-sub disclaimer hint">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
         </article>
-        <article class="card" id="health-mind">
-          <header class="card-head"><h2>Trạng thái tinh thần</h2><p class="card-sub" id="mdSub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header>
+        <article class="card" id="health-mind" data-hints>
+          <header class="card-head"><h2>Trạng thái tinh thần</h2><span class="est-chip" title="Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.">Ước tính</span><p class="card-sub hint" id="mdSub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header>
           <div class="md-state" id="mdState"></div>
-          <p class="md-band" id="mdBand" hidden></p>
           <div class="md-meters" id="mdMeters"></div>
+          <p class="md-band hint" id="mdBand" hidden></p>
           <ul class="md-factors" id="mdFactors"></ul>
-          <ul class="ci-notes" id="mdNotes"></ul>
-          <p class="md-note">Mức căng lấy từ chính các số đo căng thẳng của vòng tay (tự đo và đo tay). Nếu buồn chán, lo âu hoặc mất ngủ kéo dài trên hai tuần, hãy trò chuyện với người thân hoặc chuyên gia sức khỏe tâm thần.</p>
+          <ul class="ci-notes hint" id="mdNotes"></ul>
+          <p class="md-note hint">Mức căng lấy từ chính các số đo căng thẳng của vòng tay (tự đo và đo tay). Nếu buồn chán, lo âu hoặc mất ngủ kéo dài trên hai tuần, hãy trò chuyện với người thân hoặc chuyên gia sức khỏe tâm thần.</p>
         </article>
-        <article class="card" id="health-signals">
-          <header class="card-head"><h2>Tín hiệu cơ thể</h2><p class="card-sub">Nhịp tim khi ngủ so với mức thường của bạn và với mức mô hình cá nhân dự đoán.</p></header>
+        <article class="card" id="health-signals" data-hints>
+          <header class="card-head"><h2>Tín hiệu cơ thể</h2><p class="card-sub hint">Nhịp tim khi ngủ so với mức thường của bạn và với mức mô hình cá nhân dự đoán.</p></header>
           <div class="md-state" id="bsState"></div>
           <dl class="stats" id="bsStats"></dl>
           <div class="chart" id="bsChart"></div>
-          <ul class="legend" id="bsLegend"></ul>
+          <ul class="legend hint" id="bsLegend"></ul>
           <ul class="ci-notes" id="bsCauses"></ul>
-          <h3 class="card-h3">Mô hình cá nhân</h3>
-          <p class="card-sub" id="bsModel"></p>
-          <ul class="ci-notes" id="bsEffects"></ul>
-          <h3 class="card-h3">Học từ dữ liệu của bạn</h3>
-          <p class="card-sub" id="bsCurveSub">Mỗi đêm gần đây được dự đoán bằng mô hình chỉ học từ dữ liệu trước nó, với độ dài khác nhau. Dữ liệu càng dài, mô hình càng có nhiều đêm để học; bảng cho thấy điều đó có giúp dự đoán chính xác hơn với bạn hay không.</p>
-          <div class="table-scroll"><table class="data-table"><thead><tr><th>Dữ liệu học</th><th>Sai số dự đoán</th><th>Chỉ dùng mức nền</th></tr></thead><tbody id="bsCurve"></tbody></table></div>
-          <p class="md-note">Không phải chẩn đoán. Nhịp tim khi ngủ cao hơn mức thường vài nhịp/phút nhiều đêm liền thường gặp khi sắp ốm hoặc tập quá sức; một đêm cao thường do nguyên nhân tạm thời.</p>
+          <details class="table-wrap bs-model">
+            <summary>Mô hình cá nhân</summary>
+            <p class="card-sub" id="bsModel"></p>
+            <ul class="ci-notes" id="bsEffects"></ul>
+            <h3 class="card-h3">Học từ dữ liệu của bạn</h3>
+            <p class="card-sub" id="bsCurveSub">Mỗi đêm gần đây được dự đoán bằng mô hình chỉ học từ dữ liệu trước nó, với độ dài khác nhau. Dữ liệu càng dài, mô hình càng có nhiều đêm để học; bảng cho thấy điều đó có giúp dự đoán chính xác hơn với bạn hay không.</p>
+            <div class="table-scroll"><table class="data-table"><thead><tr><th>Dữ liệu học</th><th>Sai số dự đoán</th><th>Chỉ dùng mức nền</th></tr></thead><tbody id="bsCurve"></tbody></table></div>
+          </details>
+          <p class="md-note hint">Không phải chẩn đoán. Nhịp tim khi ngủ cao hơn mức thường vài nhịp/phút nhiều đêm liền thường gặp khi sắp ốm hoặc tập quá sức; một đêm cao thường do nguyên nhân tạm thời.</p>
         </article>
-        <article class="card" id="health-risk">
-          <header class="card-head"><h2>Nguy cơ bệnh</h2><p class="card-sub">Ước tính bằng mô hình máy học từ hồ sơ của bạn và số đo của vòng tay.</p></header>
-          <p class="md-band" id="rkInputs" hidden></p>
+        <article class="card" id="health-risk" data-hints>
+          <header class="card-head"><h2>Nguy cơ bệnh</h2><span class="est-chip" title="Ước tính bằng mô hình máy học từ hồ sơ của bạn và số đo của vòng tay.">Ước tính</span><p class="card-sub hint">Ước tính bằng mô hình máy học từ hồ sơ của bạn và số đo của vòng tay.</p></header>
+          <p class="md-band hint" id="rkInputs" hidden></p>
           <div class="rk-list" id="rkList"></div>
-          <p class="card-sub rk-model" id="rkModel"></p>
-          <p class="md-note">Không phải chẩn đoán. Mô hình học các liên hệ thống kê trong dữ liệu dân số (khảo sát sức khỏe NHANES của Hoa Kỳ, có nhóm người châu Á), không phải quan hệ nhân quả. Nó không biết tiền sử gia đình, chế độ ăn, hút thuốc hay thuốc đang dùng. Chỉ xét nghiệm đường huyết, HbA1c và đo huyết áp mới cho biết chắc chắn.</p>
+          <p class="card-sub rk-model hint" id="rkModel"></p>
+          <p class="md-note hint">Không phải chẩn đoán. Mô hình học các liên hệ thống kê trong dữ liệu dân số (khảo sát sức khỏe NHANES của Hoa Kỳ, có nhóm người châu Á), không phải quan hệ nhân quả. Nó không biết tiền sử gia đình, chế độ ăn, hút thuốc hay thuốc đang dùng. Chỉ xét nghiệm đường huyết, HbA1c và đo huyết áp mới cho biết chắc chắn.</p>
         </article>
       </div>
-      <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
     </section>
 
     <!-- ============================================================ Cài đặt -->
@@ -992,6 +1014,17 @@
     --method amazfit --email EMAIL --password PASSWORD --bt_keys</pre>
   <p>Các cách khác có trong <a href="https://gadgetbridge.org/basics/pairing/huami-xiaomi-server/" target="_blank" rel="noopener">hướng dẫn của Gadgetbridge</a>. Đừng hủy ghép đôi vòng tay trong app của hãng, vì làm vậy mã cũ sẽ mất hiệu lực.</p>
   <form method="dialog" class="dialog-foot"><button class="btn primary">Đóng</button></form>
+</dialog>
+
+<dialog id="woDialog" class="dialog wo-dialog" aria-labelledby="woTitle">
+  <header class="wo-head">
+    <div><h2 id="woTitle">Buổi tập</h2><p class="card-sub" id="woWhen"></p></div>
+    <div class="map-actions">
+      <button id="woMapBtn" class="btn small" type="button" hidden><svg class="ic"><use href="#i-route"/></svg><span>Bản đồ</span></button>
+      <button id="woClose" class="btn ghost small" type="button">Đóng</button>
+    </div>
+  </header>
+  <div id="woBody" class="wo-body"></div>
 </dialog>
 
 <dialog id="mapDialog" class="dialog map-dialog" aria-labelledby="mapTitle">

@@ -58,20 +58,20 @@ Hệ thống được thiết kế theo mô hình phân tầng nghiêm ngặt t�
 1. `protocol.py`: Định dạng nhị phân, giải mã packet và bảng hằng số (100% pure functions).
 2. `crypto.py`: AES-128-ECB, ECDH đường cong elip NIST B-163 (sect163r2) little-endian và Chunked 2021 transport.
 3. `device.py`: Lớp điều khiển `MiBand6` bất đồng bộ trên nền `bleak`, hỗ trợ inject mock client (`FakeBand`).
-4. `health.py`, `insights.py`, `models.py` & `risk.py`: Thuật toán bóc tách giai đoạn ngủ, ước tính REM, điểm sẵn sàng, nhịp sinh học, trạng thái tinh thần, tín hiệu cơ thể, nhịp tim lúc nghỉ và kế hoạch ngủ. `models.py` là hồi quy ridge thuần Python có kiểm chứng chéo bỏ-một và đường học; `risk.py` đi theo các cây tăng cường độ dốc trong `risk_models.json` (không cần NumPy hay scikit-learn khi chạy, nên gói ứng dụng macOS arm64 vẫn nhỏ; huấn luyện chạy riêng bằng `tools/train_risk_models.py`).
+4. `health.py`, `insights.py`, `models.py`, `risk.py`, `workouts.py` & `coach.py`: Thuật toán bóc tách giai đoạn ngủ, ước tính REM, điểm sẵn sàng, nhịp sinh học, trạng thái tinh thần, tín hiệu cơ thể, nhịp tim lúc nghỉ và kế hoạch ngủ. `models.py` là hồi quy ridge thuần Python có kiểm chứng chéo bỏ-một và đường học; `risk.py` đi theo các cây tăng cường độ dốc trong `risk_models.json` (không cần NumPy hay scikit-learn khi chạy, nên gói ứng dụng macOS arm64 vẫn nhỏ; huấn luyện chạy riêng bằng `tools/train_risk_models.py`). `workouts.py` đọc tệp dữ liệu từng giây của Mi Fitness và dựng trang chi tiết buổi tập; `coach.py` là mô hình thể lực cá nhân (VO2max từ các phút chạy, đi bộ đều nhịp) và quy tắc gợi ý buổi tập tiếp theo, kế hoạch 7 ngày.
 5. `healthdb.py`: Cơ sở dữ liệu SQLite cục bộ độc lập cho từng vòng tay (chmod `0o600`).
 6. `web/server.py` & `web/static/`: Máy chủ aiohttp + WebSocket và giao diện HTML/CSS/JS không cần build step.
 
 ### 2.2. Kết quả kiểm thử thực nghiệm
 * **Tính toàn vẹn dịch thuật i18n (`tests/i18n_strings.py`):**
-  - HTML: 379 chuỗi (thiếu 0)
-  - JS: 451 chuỗi (thiếu 0)
-  - Python: 407 chuỗi (thiếu 0)
+  - HTML: 381 chuỗi (thiếu 0)
+  - JS: 520 chuỗi (thiếu 0)
+  - Python: 427 chuỗi (thiếu 0)
   - Options/Labels: 53 chuỗi (thiếu 0)
   - Swift macOS: 50 chuỗi (thiếu 0)
   - **Kết luận:** Hệ thống đa ngôn ngữ (Tiếng Việt - Tiếng Anh) đồng bộ 100%.
 * **Bộ kiểm thử (`pytest`):**
-  - **222 kiểm thử đạt, 2 bỏ qua** (hai kiểm thử cần macOS: trình biên dịch Swift và môi trường script của macOS). Bộ kiểm thử được chạy ở múi giờ UTC và UTC+8; đã sửa hai kiểm thử phụ thuộc giờ trong ngày hoặc thời điểm đồng bộ chạy nền.
+  - **242 kiểm thử đạt, 2 bỏ qua** (hai kiểm thử cần macOS: trình biên dịch Swift và môi trường script của macOS). Bộ kiểm thử được chạy ở múi giờ UTC và UTC+8; đã sửa hai kiểm thử phụ thuộc giờ trong ngày hoặc thời điểm đồng bộ chạy nền.
   - `tests/test_gui_demo.py` (bản Qt cũ) cần thư viện hiển thị của Qt, chạy trên máy có màn hình.
   - Kiểm thử mới: đúng trường hợp của người dùng (vòng tay đo thư giãn, nhịp tim khi ngủ +8), nhịp tim nghỉ một mình không bao giờ thành "Căng thẳng", mô hình cá nhân học được ảnh hưởng của giờ đi ngủ từ dữ liệu dạng vòng tay (qua toàn bộ đường xử lý) và từ 4 tháng lịch sử ngoài cửa sổ 60 ngày, đường học, kiểm chứng bỏ-một nhanh so với học lại từng lần, tín hiệu cơ thể nhiều đêm, các đợt nhịp tim lúc nghỉ, kế hoạch ngủ, mô hình nguy cơ bệnh (chất lượng đã kiểm chứng, tính đơn điệu, quy tắc yếu tố, hiệu chỉnh châu Á) và nhịp tim trực tiếp tới trang Sức khỏe.
 
@@ -254,7 +254,7 @@ graph LR
 ```mermaid
 timeline
     title Lộ trình đề xuất tối ưu hóa ứng dụng
-    Đã xong : Desktop Music Bridge (0xFE) : Cho phép nhập HRmax thủ công : Gộp giấc ngủ trưa (Naps) vào nợ ngủ : Trạng thái tinh thần theo căng thẳng vòng tay : Tín hiệu cơ thể & mô hình cá nhân : Nguy cơ bệnh bằng máy học : Nhịp tim trực tiếp trên trang Sức khỏe : Học từ 1 năm dữ liệu
+    Đã xong : Desktop Music Bridge (0xFE) : Cho phép nhập HRmax thủ công : Gộp giấc ngủ trưa (Naps) vào nợ ngủ : Trạng thái tinh thần theo căng thẳng vòng tay : Tín hiệu cơ thể & mô hình cá nhân : Nguy cơ bệnh bằng máy học : Nhịp tim trực tiếp trên trang Sức khỏe : Học từ 1 năm dữ liệu : Trang Sức khỏe đọc trong một cái nhìn : Chi tiết buổi tập & gợi ý tập luyện
     Giai đoạn 1 : Hoàn thiện BLE : Remote Camera Shutter : Lệnh bật SpO2 tự động đêm : Giao diện nhắc việc & Giờ thế giới
     Giai đoạn 2 : Mở rộng thuật toán : Nhật ký tâm trạng / ốm để kiểm tra ngưỡng tín hiệu cơ thể : Xuất báo cáo PDF bác sĩ : Benchmark với dữ liệu PSG/ECG
 ```
@@ -265,6 +265,8 @@ timeline
 3. **Cộng bù giấc ngủ trưa (Naps):** các giấc ngủ ngắn đã kết thúc được tính vào cân bằng giấc ngủ và nợ ngủ 7 ngày.
 4. **Trạng thái tinh thần, tín hiệu cơ thể, mô hình cá nhân, nhịp tim lúc nghỉ, kế hoạch ngủ:** xem mục 3.1 và 5.6–5.8.
 5. **Mô hình nguy cơ bệnh, nhịp tim trực tiếp, học từ lịch sử dài:** xem mục 3.1 (điểm 9–11), 5.9 và 5.10.
+6. **Trang Sức khỏe đọc trong một cái nhìn:** mỗi thẻ cho thấy số liệu và nhãn trạng thái màu trước tiên; lời giải thích nằm sau nút (i) và tự hiện với mục nên chú ý / cần lưu ý (các mục này lên đầu). Bấm biểu đồ không còn đổi ngày đang xem (chỉ nút ngày và ‹ ›), và ngày mới hiện ngay trong lúc tải số liệu.
+7. **Chi tiết buổi tập và gợi ý tập luyện:** mỗi buổi tập mở trang chi tiết kiểu Mi Fitness (nhịp tim và vùng nhịp tim, pace từng km, nhịp bước, sải chân, độ cao và địa hình, tải TRIMP, chấm trải nghiệm tập luyện) từ tệp dữ liệu từng giây và lộ trình GPS của Mi Fitness (bảng bố cục MIT của mifit; phiên bản mới chỉ nhận khi tổng số khớp với buổi tập) hoặc số liệu từng phút của vòng tay. Thẻ Tập luyện gợi ý buổi tiếp theo (nghỉ / nhẹ / sức bền / dài / tempo / biến tốc theo điểm sẵn sàng, hồi phục, ACWR, phân bố cường độ và cảm nhận buổi gần nhất) với vùng nhịp tim và pace theo mô hình VO2max cá nhân (VO2 theo ACSM + %HRR ≈ %VO2R trên các phút đều nhịp), kèm kế hoạch 7 ngày: ngày nặng, vừa, nhẹ, nghỉ học từ thói quen tập theo thứ. Nút Đồng bộ cũng lấy tiếp lịch sử Mi Fitness. Ngưỡng ghi trong `docs/suc-khoe.md`.
 
 ### 6.2. Tiếp theo: mở rộng giao thức
 1. **Remote Camera Shutter:**
