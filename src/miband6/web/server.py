@@ -263,7 +263,7 @@ class BandService:
     def on_event(self, kind: str, data) -> None:
         if kind == "music":
             player = self.settings.get("music_player")
-            if player in ("music", "spotify") and sys.platform == "darwin" and not self.demo and self.connected:
+            if player in ("system", "music", "spotify") and sys.platform == "darwin" and not self.demo and self.connected:
                 self.music.handle(data, player)
             return
         if kind == "disconnected":
@@ -1653,7 +1653,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             raise ApiError(tr('Nhịp tim tối đa phải là số nguyên từ 30 đến 220 nhịp/phút.'))
         if "music_player" in b:
             player = b["music_player"]
-            if player not in ("off", "music", "spotify"):
+            if player not in ("off", "system", "music", "spotify"):
                 raise ApiError(tr('Trình phát nhạc không hợp lệ.'))
             if player != "off" and (sys.platform != "darwin" or S.demo):
                 raise ApiError(tr('Điều khiển nhạc cần kết nối vòng tay thật trên macOS.'))

@@ -93,3 +93,28 @@ async def test_music_screen_refreshes_on_change_and_stops_on_close(monkeypatch):
     await asyncio.gather(task, return_exceptions=True)
     assert sent == [b"first", b"changed"]
     assert reads == ["open", "refresh", "refresh"]
+
+
+async def test_system_media_targets_keyboard_without_querying_or_launching_a_player(monkeypatch):
+    keys, packets = [], []
+    done = asyncio.Event()
+
+    async def script(source, key):
+        assert source == music._SYSTEM_SCRIPT
+        keys.append(key)
+        if len(keys) == 6:
+            done.set()
+
+    async def send(packet):
+        packets.append(packet)
+
+    monkeypatch.setattr(music, "_osascript", script)
+    bridge = music.MusicBridge(send, pytest.fail)
+    for action in ("open", "play", "next", "previous", "volume_up", "volume_down", "pause"):
+        bridge.handle(action, "system")
+    await asyncio.wait_for(done.wait(), 2)
+    assert keys == ["16", "17", "18", "0", "1", "16"]
+    assert packets == [P.music_info(v, "", "Mac") for v in (False, True, False)]
+    task = bridge._task
+    bridge.handle("close", "system")
+    await asyncio.gather(task, return_exceptions=True)

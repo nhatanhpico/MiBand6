@@ -128,6 +128,9 @@ async def test_music_is_opt_in_and_only_controls_the_selected_mac_player(client,
     await service._send_music(b"fixture")
     assert service.band._client.chunked_payloads[-1] == (P.CHUNKED_MUSIC, b"fixture")
 
+    assert (await post(client, "/api/prefs", {"music_player": "system"})).status == 200
+    service.on_event("music", "pause")
+    bridge.handle.assert_called_with("pause", "system")
     bridge.reset_mock()
     assert (await post(client, "/api/prefs", {"music_player": "off"})).status == 200
     bridge.stop.assert_called_once()

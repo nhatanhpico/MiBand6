@@ -34,9 +34,30 @@ function run(args) {
 """
 
 
-async def _player_packet(player: str, action: str) -> bytes:
+# NX_KEYTYPE_* from IOKit/hidsystem/ev_keymap.h. macOS routes these just like
+# keyboard media keys, including to a browser's active Media Session.
+_SYSTEM_KEYS = {"play": 16, "pause": 16, "next": 17, "previous": 18, "volume_up": 0, "volume_down": 1}
+_SYSTEM_SCRIPT = """
+ObjC.import("AppKit");
+ObjC.import("CoreGraphics");
+ObjC.bindFunction("CGPreflightPostEventAccess", ["bool", []]);
+ObjC.bindFunction("CGRequestPostEventAccess", ["bool", []]);
+function run(args) {
+    if (!$.CGPreflightPostEventAccess() && !$.CGRequestPostEventAccess())
+        throw Error("Enable Accessibility for the app in System Settings → Privacy & Security.");
+    const key = Number(args[0]);
+    for (const flags of [0xa00, 0xb00]) {
+        const event = $.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(
+            14, $.NSMakePoint(0, 0), flags, 0, 0, null, 8, (key << 16) | flags, -1);
+        $.CGEventPost(0, event.CGEvent);
+    }
+}
+"""
+
+
+async def _osascript(script: str, *args: str) -> bytes:
     proc = await asyncio.create_subprocess_exec(
-        "/usr/bin/osascript", "-l", "JavaScript", "-e", _SCRIPT, _PLAYER_IDS[player], action,
+        "/usr/bin/osascript", "-l", "JavaScript", "-e", script, *args,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
@@ -46,7 +67,11 @@ async def _player_packet(player: str, action: str) -> bytes:
             await proc.wait()
     if proc.returncode:
         raise RuntimeError(stderr.decode(errors="replace").strip())
-    state = json.loads(stdout)
+    return stdout
+
+
+async def _player_packet(player: str, action: str) -> bytes:
+    state = json.loads(await _osascript(_SCRIPT, _PLAYER_IDS[player], action))
     return P.music_info(state.get("playing", False), state.get("artist", ""), state.get("title", ""), state.get("volume"))
 
 
@@ -69,7 +94,7 @@ class MusicBridge:
         self._open = False
 
     def handle(self, action: str, player: str):
-        if action == "close" or player not in _PLAYER_IDS:
+        if action == "close" or (player != "system" and player not in _PLAYER_IDS):
             self.stop()
             return
         if action not in P.MUSIC_ACTIONS.values():
@@ -83,17 +108,25 @@ class MusicBridge:
 
     async def _run(self, player, queue):
         previous = None
+        system_playing = False
         try:
             while self._queue is queue:
                 try:
-                    action = await asyncio.wait_for(queue.get(), timeout=_POLL_SECONDS)
+                    action = await asyncio.wait_for(queue.get(), timeout=None if player == "system" else _POLL_SECONDS)
                 except asyncio.TimeoutError:
                     action = "refresh"
                 if self._queue is not queue:
                     return
                 if action == "open":
                     await asyncio.sleep(0.1)  # firmware ignores metadata immediately after opening
-                packet = await _player_packet(player, action)
+                if player == "system":
+                    if action in _SYSTEM_KEYS:
+                        await _osascript(_SYSTEM_SCRIPT, str(_SYSTEM_KEYS[action]))
+                        if action in ("play", "pause"):
+                            system_playing = action == "play"
+                    packet = P.music_info(system_playing, "", "Mac")
+                else:
+                    packet = await _player_packet(player, action)
                 if action == "open" or packet != previous:
                     # Finish the fragmented BLE write even if the screen closes midway.
                     owner = self._sending = asyncio.current_task()

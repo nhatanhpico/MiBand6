@@ -46,7 +46,7 @@
 - **Cài đặt vòng tay**: những gì được ghi vào vòng tay (hồ sơ, màn hình, mặt đồng hồ, ứng dụng trên vòng tay, đo sức khỏe)
 - **Cài đặt ứng dụng** (trong ứng dụng macOS: ⌘,): những gì chỉ thuộc ứng dụng trên máy tính (ngôn ngữ, lịch tự đồng bộ, tài khoản Mi Fitness, kết nối, **tự bật theo dõi nhịp tim liên tục mỗi lần kết nối**, thời tiết, ước tính REM)
 
-**Điều khiển nhạc trên Mac** — Trong **Cài đặt ứng dụng**, chọn Apple Music hoặc Spotify (mặc định tắt). Mở trình phát trên máy Mac rồi mở mục Nhạc trên vòng tay để xem tên bài hát, nghệ sĩ, phát hoặc tạm dừng, chuyển bài và chỉnh âm lượng. Nếu macOS hỏi, cho phép điều khiển trình phát.
+**Điều khiển nhạc trên Mac** — Trong **Cài đặt ứng dụng**, chọn **Nguồn phát của macOS** để điều khiển YouTube trong Chrome hoặc trình phát tệp nhạc có hỗ trợ phím đa phương tiện. Để xem thêm tên bài và nghệ sĩ, chọn riêng Apple Music hoặc Spotify. Mặc định tắt. Mở trình phát trên máy Mac rồi mở mục Nhạc trên vòng tay để xem tên bài hát, nghệ sĩ, phát hoặc tạm dừng, chuyển bài và chỉnh âm lượng. Nếu macOS hỏi, cho phép điều khiển trình phát.
 
 **Thời tiết** (**Cài đặt ứng dụng → Thời tiết**; chi tiết: [docs/thoi-tiet.md](docs/thoi-tiet.md))
 - Mỗi lần kết nối và mỗi giờ, gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm, giờ mặt trời mọc và lặn (dữ liệu Open-Meteo, không cần tài khoản)
