@@ -724,6 +724,91 @@ def fetch_sport_records(login: XiaomiLogin, start_s: int, end_s: int, regions: l
     return [], trail
 
 
+SLEEP_REPORT_PATH = "/app/v1/data/get_aggregated_fitness_data_by_time"
+
+
+def _utc_midnight(day: dt.date) -> int:
+    return int(dt.datetime.combine(day, dt.time(), dt.timezone.utc).timestamp())
+
+
+def sleep_segments(report: dict) -> list[dict]:
+    """Các giấc trong một báo cáo ngày "sleep" của Mi Fitness (trường value đã giải mã): giờ ngủ, giờ dậy (giây Unix),
+    số phút ngủ, ngủ sâu, ngủ nông, REM, thức. Điểm giấc ngủ của ngày gắn vào giấc dài nhất. Giấc ngắn Mi Fitness không
+    chia giai đoạn (ngủ trưa) có các giai đoạn là None. Tên trường theo mô tả của dự án mifit, đã đối chiếu tài khoản thật."""
+    out = []
+    for seg in report.get("segment_details") or []:
+        try:
+            start, end, minutes = int(seg["bedtime"]), int(seg["wake_up_time"]), int(seg["duration"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        stages = {k: seg.get(f"sleep_{k}_duration") for k in ("deep", "light", "rem", "awake")}
+        staged = any(isinstance(v, (int, float)) and v > 0 for v in stages.values())
+        out.append({"start": start, "end": end, "minutes": minutes, "score": None,
+                    **{k: int(v) if staged and isinstance(v, (int, float)) else None for k, v in stages.items()}})
+    if out and isinstance(report.get("sleep_score"), (int, float)) and report["sleep_score"] > 0:
+        max(out, key=lambda s: s["minutes"])["score"] = int(report["sleep_score"])
+    return out
+
+
+def fetch_sleep_reports(login: XiaomiLogin, start_s: int, end_s: int, regions: list[str] | None = None,
+                        max_pages: int = 60) -> tuple[list[dict], list[str]]:
+    """Các giấc ngủ trong báo cáo ngày của Mi Fitness cho các ngày từ start_s tới end_s (sleep_segments; thêm "date").
+
+    Báo cáo ngày (tag daily_report, key sleep) có "time" là 0 giờ UTC của ngày nó đại diện; máy chủ trả các báo cáo
+    start_time < time <= end_time. Mi Fitness không tải lên diễn biến từng phút của Mi Band 6, chỉ có tổng mỗi giấc."""
+    trail: list[str] = []
+    first = dt.datetime.fromtimestamp(start_s).date() - dt.timedelta(days=1)
+    last = dt.datetime.fromtimestamp(end_s).date() + dt.timedelta(days=1)
+    for n, region in enumerate(regions or REGIONS):
+        host = f"{region}.hlth.io.mi.com" if region else "hlth.io.mi.com"
+        segments: list[dict] = []
+        next_key = None
+        answered = False
+        for page in range(max_pages):
+            req = {"tag": "daily_report", "key": "sleep", "start_time": _utc_midnight(first - dt.timedelta(days=1)),
+                   "end_time": _utc_midnight(last), "reverse": True, "limit": 50}
+            if next_key:
+                req["next_key"] = next_key
+            try:
+                status, res = login.request(host, SLEEP_REPORT_PATH, {"data": json.dumps(req, separators=(",", ":"))},
+                                            method="GET", region=region)
+            except login.requests.exceptions.RequestException as e:
+                trail.append(f"{host} {SLEEP_REPORT_PATH}: {type(e).__name__}")
+                break
+            if status == 401 and n == 0 and page == 0:
+                raise SessionExpired(tr('Phiên đăng nhập Xiaomi đã hết hạn.'))
+            if not isinstance(res, dict) or res.get("code", 0) != 0:
+                detail = f"HTTP {status}" if res is None else f"code {res.get('code')} {str(res.get('message') or '')[:50]}"
+                trail.append(f"{host} {SLEEP_REPORT_PATH}: {detail}")
+                break
+            answered = True
+            body = res["result"] if isinstance(res.get("result"), dict) else res
+            for row in body.get("data_list") or []:
+                if not isinstance(row, dict) or row.get("deleted"):
+                    continue
+                value = row.get("value")
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        continue
+                if not isinstance(value, dict):
+                    continue
+                try:
+                    day = dt.datetime.fromtimestamp(int(row["time"]), dt.timezone.utc).date().isoformat()
+                except (KeyError, TypeError, ValueError, OverflowError, OSError):
+                    continue
+                segments += [{**seg, "date": day} for seg in sleep_segments(value)]
+            if not body.get("has_more") or not body.get("next_key") or body.get("next_key") == next_key:
+                break
+            next_key = body["next_key"]
+        if answered:
+            trail.append(f"{host} {SLEEP_REPORT_PATH}: {len(segments)}")
+        if segments:
+            return segments, trail
+    return [], trail
+
+
 GPS_LINK_PATH = "/healthapp/service/gen_download_url"
 GPS_LINK_SIGN = "/service/gen_download_url"
 FDS_IV = b"1234567887654321"

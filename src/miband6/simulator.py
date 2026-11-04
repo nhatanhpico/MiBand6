@@ -340,7 +340,9 @@ class DemoHealth:
                 level = 55 if asleep else 38 if m == wake else max(0, 25 - 3 * ((m - wake) % 1440))   # byte "ngủ"
                 kind = (0xF0 | want) if marker else 0xF0
                 hr = 52 + rnd.randint(0, 8)
-                self.activity += bytes([kind if lag else 0x50, 0, 0, hr, 0, level, 0x80 | (60 if deep else 35), 0])
+                # byte ngủ sâu: điểm của vòng tay, tăng dần khi nằm yên lâu (cao nhất ở các pha ngủ sâu)
+                score = min(100, 33 + (2 * cycle if deep else cycle % 20))
+                self.activity += bytes([kind if lag else 0x50, 0, 0, hr, 0, level, 0x80 | score, 0])
                 self.stress.append(0xFF)
             else:
                 onset = (fall - m) % 1440 <= 10   # 10 phút trước khi ngủ: byte "ngủ" bắt đầu tăng

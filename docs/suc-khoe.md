@@ -24,6 +24,7 @@ Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng d�
 | **Tập luyện** | Các buổi tập: loại, giờ bắt đầu, thời gian, quãng đường, năng lượng, nhịp tim trung bình, số bước và nguồn (vòng tay hoặc Mi Fitness); bản đồ lộ trình |
 | **Chu kỳ** (hồ sơ nữ) | Nhật ký kỳ kinh và dự đoán, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Sinh lý** (hồ sơ nam) | Nhật ký xuất tinh và so sánh giấc ngủ, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
+| **Xu hướng** | Như **Tóm tắt sức khỏe** của Mi Fitness: các chỉ số vừa **thay đổi rõ** (30 ngày / 26 tuần), **7 ngày qua** so với tuần trước, **hôm nay so với thường lệ** (xem [Xu hướng](#xu-hướng)) |
 | **Phân tích** | **Điểm sẵn sàng** (điểm 0–100, lời khuyên, các thành phần, thời gian hồi phục, xu hướng 14 ngày), **phân tích sức khỏe** từng mặt và **trạng thái tinh thần** ước tính (xem bên dưới) |
 
 Rê chuột (hoặc chọn bằng phím Tab) lên cột, đoạn hay đường trong biểu đồ để xem số liệu chi tiết.
@@ -61,15 +62,34 @@ Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời 
 
 ## Giấc ngủ được tính thế nào
 
-Mi Band 6 ghi mỗi phút một mẫu. Byte đầu của mẫu là **mốc trạng thái** (4 bit thấp: 9 ngủ nông, 11 ngủ sâu, 12 thức dậy, 1 hoạt động), chỉ ghi ở phút trạng thái đổi; các phút giữa mang "không đổi". Ứng dụng đọc giống Gadgetbridge: mỗi phút mang trạng thái của mốc gần nhất trước nó.
+Mi Band 6 ghi mỗi phút một mẫu. Byte đầu của mẫu là **mốc trạng thái** (4 bit thấp: 9 ngủ nông, 11 ngủ sâu, 12 thức dậy, 1 hoạt động, 3 không đeo, 6 đang sạc), chỉ ghi ở phút trạng thái đổi; các phút giữa mang "không đổi". Ứng dụng đọc giống Gadgetbridge: mỗi phút mang trạng thái của mốc gần nhất trước nó. Mỗi phút còn có chỉ số **"ngủ"** (0–62, tăng khi thiếp đi, tụt khi tỉnh), **điểm ngủ sâu** và (firmware từ 11/2026) **điểm REM** do vòng tay tính.
 
-Vòng tay ghi mốc ngủ và mốc dậy trễ chừng 10–12 phút. Để giờ ngủ, giờ dậy khớp với màn hình vòng tay và Mi Fitness, ứng dụng dùng thêm chỉ số "ngủ" vòng tay ghi mỗi phút: lúc thiếp đi là phút chỉ số này bắt đầu tăng, lúc dậy là phút nó tụt xuống. Mỗi đầu chỉ được chỉnh tối đa 30 phút, và bỏ qua nếu vòng tay không ghi chỉ số này.
+Các bước (`health.sleep_sessions`), kiểm chứng với báo cáo giấc ngủ của Mi Fitness trên 40 đêm thật (9–11/2026):
+
+1. **Không đeo thì không ngủ.** Phút vòng tay báo "không đeo" / "đang sạc" (ở phút đó hoặc từ trước, và từ đó chưa đo được nhịp tim) và phút có từ 20 bước không bao giờ là ngủ. Vòng tay nằm yên trên bàn trông như người đang ngủ: chỉ số "ngủ" vẫn tăng, và lúc đeo vào vòng tay hay ghi một mốc "ngủ sâu". Vừa đeo lại thì chỉ số này còn giữ mức lúc nằm trên bàn và giảm dần; ứng dụng coi là 0 cho tới khi nó tăng trở lại (tối đa 30 phút). Trước đây đêm 4/11 bị tính ngủ từ 00:54 (vòng tay trên bàn từ 00:48) và thêm 11 phút "ngủ" lúc 9:57–10:08 (tháo vòng sau khi dậy).
+2. **Lúc thiếp đi.** Vòng tay ghi mốc ngủ trễ chừng 11 phút. Ứng dụng lấy phút đầu tiên của **đợt tăng cuối cùng** của chỉ số "ngủ" (từ 9 trở lên, tăng liên tục tới khi trung vị 5 phút đạt 40), lùi tối đa 30 phút. Các lần lơ mơ rồi tỉnh trước đó, và mẩu ngủ dưới 10 phút ở đầu giấc cách phần sau từ 3 phút thức, không tính.
+3. **Lúc dậy.** Cắt phần cuối giấc có chỉ số "ngủ" (trung vị 5 phút) dưới 30, tối đa 30 phút; phút chuyển tiếp (chỉ số đang tụt) tính là đã dậy. Vòng tay không ghi chỉ số này thì giữ nguyên mốc của vòng tay.
+4. **Thức giữa giấc.** Vòng tay ít khi ghi các lần thức ngắn. Một phút là ứng viên "thức" khi nhịp tim (trung vị 3 phút) cao hơn nền khi ngủ quanh đó (phân vị 25% trong 61 phút) từ 8 nhịp/phút, kèm cử động trong ±2 phút và chỉ số "ngủ" tụt (dưới 45 và dưới 80% mức của đêm); với vòng tay có điểm REM: điểm REM ở mức sàn (≤ 21, như lúc thức) và cử động hoặc chỉ số "ngủ" tụt. Cần ít nhất 4 phút ứng viên liền nhau, đợt được nối dài khi dấu hiệu (điểm REM ở mức sàn, hoặc cử động) còn, và chỉ tính khi cả đợt từ 10 phút: các lần tỉnh ngắn hơn thường không nhớ được và Mi Fitness cũng tính là ngủ. Đêm 4/11: thức 8:29–8:40 (người dùng xác nhận 8:29–8:41), dậy 9:13.
+5. **Ngủ sâu, REM.** Mốc "ngủ sâu" của vòng tay **không** khớp với Mi Fitness (trên 40 đêm lệch trung bình 64 phút; có đêm 0 phút, có đêm 236 phút, trong khi Mi Fitness luôn 10–23%). Ứng dụng xếp các phút theo **điểm ngủ sâu** của vòng tay (trung bình 5 phút), chỉ xét phút nằm yên (không cử động trong ±2 phút) và nhịp tim không cao hơn nền quá 4 nhịp/phút, rồi chọn ngưỡng để tổng phút ngủ sâu bằng: số của **Mi Fitness cho đúng đêm đó** nếu đã lấy; nếu chưa, **tỉ lệ học được** (trung vị các đêm Mi Fitness ≥ 3 giờ gần nhất, cần ít nhất 5 đêm); nếu chưa đăng nhập Mi Fitness, **15%** (trung bình Mi Fitness trên 39 đêm là 15,3%). REM làm tương tự với điểm REM (chỉ khi vòng tay ghi), mặc định điểm > 55 như Gadgetbridge. Đoạn ngủ sâu / REM cách nhau tới 2 phút được nối, đoạn dưới 3 phút bị bỏ. Giấc dưới 60 phút (ngủ trưa) không chia giai đoạn, như Mi Fitness. Vòng tay không ghi điểm ngủ sâu thì dùng mốc ngủ sâu của nó.
 
 Các khoảng thức ngắn hơn 45 phút ở giữa đêm vẫn tính là cùng một giấc (hiện ở hàng **Thức**); giấc ngắn hơn 20 phút bị bỏ qua. Mỗi giấc được tính cho ngày bạn thức dậy, như Mi Fitness. Giấc còn đang ngủ (kéo tới phút mới nhất đã đồng bộ, vòng tay chưa ghi lúc thức dậy) chưa được tính là "đêm qua": đồng bộ lúc nửa đêm thì đêm qua không còn bị tính là giấc ngủ chỉ vài chục phút, kéo lệch điểm ngủ, mức sẵn sàng và phân tích.
 
+### So với Mi Fitness
+
+Lượt **Lấy lịch sử từ Mi Fitness** (và lượt chạy ngầm theo lịch) lấy cả **báo cáo giấc ngủ** của Mi Fitness (giờ ngủ, giờ dậy, phút ngủ sâu / nông / REM / thức, điểm ngủ). Mi Fitness không tải lên diễn biến từng phút của Mi Band 6, chỉ có tổng mỗi giấc. Báo cáo được lưu trên máy (bảng `mf_sleep`) và dùng để:
+
+- hiện dòng **Mi Fitness:** dưới biểu đồ giấc ngủ của đêm đó, kèm điểm ngủ của Mi Fitness;
+- lấy đúng số phút ngủ sâu, REM của Mi Fitness cho đêm đó (vị trí trên biểu đồ, giờ ngủ, giờ dậy và các lần thức vẫn do ứng dụng tính);
+- học tỉ lệ ngủ sâu, REM cho các đêm chưa có báo cáo (đêm qua trước khi điện thoại đồng bộ, hoặc khi chỉ dùng ứng dụng này);
+- đo **độ khớp** của thuật toán (tính như khi chưa có Mi Fitness, không hiệu chỉnh) và hiện dưới thẻ Giấc ngủ.
+
+Độ khớp trên 40 đêm (sai lệch tuyệt đối trung bình, chưa hiệu chỉnh): giờ ngủ 1,4 phút (trước đây 29 phút), giờ dậy 7,4 phút (10,7), thời lượng 6,7 phút (26,3), ngủ sâu 10,4 phút (64), thức 5,3 phút (13,2). Phần lớn sai lệch giờ dậy còn lại là các buổi sáng nằm lơ mơ sau khi tỉnh.
+
+Điểm ngủ của ứng dụng (thang kiểu Oura, xem [Điểm sẵn sàng](#điểm-sẵn-sàng-hôm-nay)) khác thang của Mi Fitness: Mi Fitness hiếm khi cho trên 80 và trừ nặng khi đi ngủ muộn (trên dữ liệu thật, mỗi giờ đi ngủ muộn hơn trừ khoảng 4 điểm), nên hai con số không so trực tiếp được.
+
 ### REM (ước tính)
 
-[Xiaomi công bố hỗ trợ REM](https://www.mi.com/sg/support/faq/details/KA-07049/), nhưng bộ giải mã Bluetooth của ứng dụng chưa xác minh được REM của hãng. Byte REM bằng 0 trong các dữ liệu đã quan sát không chứng minh rằng thiết bị hoặc mọi ứng dụng đồng hành không hỗ trợ REM. Tùy chọn dưới đây là ước tính riêng từ nhịp tim, chưa được kiểm chứng với PSG và không phải kết quả REM của Xiaomi:
+[Xiaomi công bố hỗ trợ REM](https://www.mi.com/sg/support/faq/details/KA-07049/). Trên dữ liệu thật, từ 15:11 ngày 3/11/2026 (có lẽ sau một bản cập nhật firmware) vòng tay bắt đầu ghi **điểm REM** mỗi phút (byte REM có bit 7) và Mi Fitness bắt đầu báo REM từ đêm 4/11 (trước đó luôn 0). Khi vòng tay có điểm REM, ứng dụng dùng nó (xem bước 5 ở trên). Với dữ liệu cũ không có điểm REM, tùy chọn dưới đây là ước tính riêng từ nhịp tim, chưa được kiểm chứng với PSG và không phải kết quả REM của Xiaomi:
 
 - Khi ngủ REM cơ thể gần như bất động, nhưng nhịp tim tăng so với nền NREM và dao động nhiều hơn.
 - Chỉ xét giấc từ 3 giờ trở lên có nhịp tim ở ít nhất 80% số phút. Bật **Cài đặt vòng tay → Sức khỏe → Hỗ trợ giấc ngủ** để vòng tay đo nhịp tim mỗi phút khi ngủ; đêm không đủ thì không ước tính.
@@ -77,6 +97,26 @@ Các khoảng thức ngắn hơn 45 phút ở giữa đêm vẫn tính là cùng
 - Nếu REM vượt 30% thời gian ngủ, ngưỡng được nâng dần (người lớn khỏe thường có 20–25% REM).
 
 Trên dữ liệu thật, cách này cho 15–29% REM mỗi đêm, giai đoạn REM đầu tiên sau khối ngủ sâu đầu đêm, lặp lại mỗi 60–90 phút và dài dần về sáng, đúng cấu trúc giấc ngủ thường gặp. Chưa có phép đo đa ký giấc ngủ để đối chiếu, nên đây chỉ là ước tính: các thiết bị đeo chuyên dụng dùng nhịp tim và HRV chỉ nhận ra REM với độ nhạy khoảng 60% (Firstbeat, Kuula & Pesonen 2021). Tắt REM ở **Cài đặt ứng dụng → Giấc ngủ REM** thì REM được gộp lại vào ngủ nông.
+
+## Xu hướng
+
+Thẻ **Xu hướng** làm như **Tóm tắt sức khỏe** của Mi Fitness, tính tới ngày đang xem (`trends.py`, dữ liệu do `HealthDB.trends` dựng):
+
+| Chỉ số | Theo | Mức chênh tối thiểu | Chiều tốt |
+| --- | --- | --- | --- |
+| Thời gian ngủ chính | giấc dài nhất mỗi ngày thức dậy (≥ 3 giờ) | 20 phút | tăng (giảm mà vẫn đủ nhu cầu, hay tăng khi đã ngủ quá nhu cầu 2 giờ: bình thường) |
+| Giờ đi ngủ | giờ thiếp đi của giấc đó | 20 phút | sớm hơn |
+| Tỉ lệ ngủ sâu | phút ngủ sâu / phút ngủ | 2 điểm % | tăng |
+| Nhịp tim khi ngủ | trung vị nhịp tim lúc ngủ (≥ 60 số đo) | 2 nhịp/phút | giảm |
+| Bước chân | ngày đã trọn, đeo vòng ≥ 10 giờ | 500 bước | tăng |
+| Năng lượng vận động | như trên | 20 kcal | tăng |
+| Vận động vừa và mạnh | phút nhịp bước ≥ 100 bước/phút cộng phút trong buổi tập | 5 phút | tăng |
+| Căng thẳng | trung bình các số đo tự động (≥ 12 số đo trong ngày) | 4 | giảm |
+
+- **Thay đổi gần đây**: trong 30 ngày (bước chân, năng lượng, phút vận động thêm theo tuần trong 26 tuần, chỉ tuần thứ Hai–Chủ nhật đã trọn có ≥ 4 ngày dữ liệu), thử mọi cách chia "gần đây / trước đó" (phần gần đây từ 3 ngày / tuần, không dài hơn phần trước; phần trước từ 7 ngày / 4 tuần), lấy cách chia có kiểm định t Welch lớn nhất. Báo khi |t| ≥ 2,5 (cao hơn mức 2 thường dùng vì đã thử nhiều điểm chia) và mức chênh từ ngưỡng trong bảng. Đây là cách Mi Fitness hiện "3 ngày qua so với 27 ngày trước đó", "8 ngày / 22 ngày", "5 tuần / 21 tuần".
+- **7 ngày qua**: trung bình 7 ngày qua so với 7 ngày trước đó (mỗi bên cần ≥ 4 ngày); "gần như không đổi" khi chênh dưới nửa ngưỡng trong bảng. **Giờ thức dậy**: độ lệch chuẩn 7 ngày ≤ 30 phút là đều đặn, ≤ 60 phút khá đều, hơn nữa là chưa đều.
+- **Hôm nay so với thường lệ**: bước chân và năng lượng cộng dồn theo từng 15 phút tới giờ này, so với trung vị cùng giờ của 28 ngày trước (chỉ ngày đeo vòng ≥ 10 giờ, cần ≥ 7 ngày). Lệch quá 25% (và quá 300 bước / 15 kcal) là cao hơn / thấp hơn thường lệ.
+- **Năng lượng vận động** (ước tính, không gồm năng lượng lúc nghỉ, như "calo vận động" của Mi Fitness): phương trình chuyển hóa của ACSM, đi bộ tốn thêm 0,1 ml O2/kg/m, chạy 0,2 ml O2/kg/m (phút từ 140 bước), 1 lít O2 ≈ 5 kcal; chiều dài bước ≈ 0,415 × chiều cao (nam), 0,413 × chiều cao (nữ); cân nặng, chiều cao từ hồ sơ (chưa có thì 65 kg, 170 cm). Buổi tập có số năng lượng (vòng tay / Mi Fitness) thì dùng số đó thay phần ước tính trong buổi tập. Trên dữ liệu thật: 266 kcal/ngày trong 7 ngày, Mi Fitness 281.
 
 ## Phân tích sức khỏe
 

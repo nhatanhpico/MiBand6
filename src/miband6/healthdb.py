@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS places (key TEXT PRIMARY KEY, data TEXT);
 CREATE TABLE IF NOT EXISTS journal (date TEXT NOT NULL, kind TEXT NOT NULL, value INTEGER NOT NULL DEFAULT 1,
                                     PRIMARY KEY (date, kind));
 CREATE TABLE IF NOT EXISTS body (date TEXT PRIMARY KEY, height REAL, weight REAL, source TEXT);
+CREATE TABLE IF NOT EXISTS mf_sleep (start INTEGER PRIMARY KEY, end INTEGER, date TEXT, minutes INTEGER, deep INTEGER,
+                                     light INTEGER, rem INTEGER, awake INTEGER, score INTEGER);
 """
 
 JOURNAL_KINDS = ("period", "ejaculation")   # nhật ký người dùng tự ghi (personal.py); chỉ lưu trên máy
@@ -143,6 +145,75 @@ class HealthDB:
         with self.db:
             self.db.execute("INSERT OR REPLACE INTO places VALUES (?, ?)", (key, json.dumps(place)))
 
+    # ------------------------------------------------------------ báo cáo giấc ngủ của Mi Fitness
+    def add_cloud_sleep(self, rows: list[dict]) -> int:
+        """Lưu các giấc ngủ trong báo cáo ngày của Mi Fitness (xiaomi_cloud.fetch_sleep_reports). Giấc trùng giờ bắt đầu
+        (±3 phút) thì thay bằng bản mới. Trả về số giấc mới."""
+        added = 0
+        with self.db:
+            for r in rows:
+                old = self.db.execute("SELECT start FROM mf_sleep WHERE start BETWEEN ? AND ?",
+                                      (r["start"] - 180, r["start"] + 180)).fetchone()
+                if old:
+                    self.db.execute("DELETE FROM mf_sleep WHERE start = ?", (old[0],))
+                else:
+                    added += 1
+                self.db.execute("INSERT INTO mf_sleep VALUES (?,?,?,?,?,?,?,?,?)",
+                                (r["start"], r["end"], r.get("date"), r.get("minutes"), r.get("deep"), r.get("light"),
+                                 r.get("rem"), r.get("awake"), r.get("score")))
+            self.db.execute("INSERT OR REPLACE INTO sync VALUES ('mf_sleep', ?)", (int(time.time()),))
+        return added
+
+    def sleep_reference(self, t0: int, t1: int) -> list[dict]:
+        """Giấc ngủ của Mi Fitness chồng lên [t0, t1)."""
+        cols = ("start", "end", "date", "minutes", "deep", "light", "rem", "awake", "score")
+        rows = self.db.execute(f"SELECT {', '.join(cols)} FROM mf_sleep WHERE end > ? AND start < ? ORDER BY start",
+                               (t0, t1)).fetchall()
+        return [dict(zip(cols, r)) for r in rows]
+
+    CALIB_NIGHTS = 60   # số đêm Mi Fitness gần nhất dùng để học tỉ lệ ngủ sâu / REM
+
+    def sleep_calibration(self) -> dict | None:
+        """Tỉ lệ ngủ sâu, REM (trung vị) trong các đêm dài >= 3 giờ Mi Fitness đã chia giai đoạn: dùng cho các đêm chưa có
+        báo cáo của Mi Fitness. REM chỉ tính các đêm Mi Fitness có REM (vòng tay mới ghi REM từ firmware 11/2026)."""
+        rows = self.db.execute("SELECT minutes, deep, rem FROM mf_sleep WHERE minutes >= 180 AND deep > 0 "
+                               "ORDER BY start DESC LIMIT ?", (self.CALIB_NIGHTS,)).fetchall()
+        if len(rows) < 5:
+            return None
+        deep = sorted(d / m for m, d, _r in rows)
+        rem = sorted(r / m for m, _d, r in rows if r)
+        return {"deep_share": round(deep[len(deep) // 2], 4), "rem_share": round(rem[len(rem) // 2], 4) if rem else None,
+                "nights": len(rows)}
+
+    def sleep_validation(self, days: int = 60) -> dict | None:
+        """Độ khớp của thuật toán giấc ngủ với báo cáo Mi Fitness, các đêm >= 3 giờ trong `days` ngày gần nhất: sai lệch
+        tuyệt đối trung bình (phút) của giờ ngủ, giờ dậy, thời lượng, ngủ sâu, REM. Tính như khi chưa có Mi Fitness
+        (không dùng số của đêm đó, không hiệu chỉnh), để con số là độ chính xác thật của riêng thuật toán."""
+        last = self.db.execute("SELECT MAX(end) FROM mf_sleep").fetchone()[0]
+        if not last:
+            return None
+        t0 = last - days * 86400
+        refs = [r for r in self.sleep_reference(t0, last + 1) if (r["minutes"] or 0) >= 180]
+        if not refs:
+            return None
+        sessions = H.sleep_sessions(self.samples(t0 - 43200, last + 43200), self.kind_before(t0 - 43200))
+        errs: dict[str, list[float]] = {k: [] for k in ("start", "end", "minutes", "deep", "rem")}
+        for ref in refs:
+            ours = H._matching(sessions, ref["start"], ref["end"])
+            if not ours:
+                continue
+            errs["start"].append(abs(ours["start"] - ref["start"]) / 60)
+            errs["end"].append(abs(ours["end"] - ref["end"]) / 60)
+            errs["minutes"].append(abs(ours["minutes"] - ref["minutes"]))
+            if ref["deep"]:
+                errs["deep"].append(abs(ours["deep"] - ref["deep"]))
+            if ref["rem"]:
+                errs["rem"].append(abs(ours["rem"] - ref["rem"]))
+        if not errs["start"]:
+            return None
+        return {"nights": len(errs["start"]), "of": len(refs),
+                **{k: round(sum(v) / len(v), 1) if v else None for k, v in errs.items()}}
+
     # ------------------------------------------------------------ nhật ký cá nhân (người dùng tự ghi)
     def journal(self, kind: str) -> dict[str, int]:
         """{ngày: giá trị} của một loại nhật ký (period: 1 = có kinh; ejaculation: số lần trong ngày)."""
@@ -219,7 +290,8 @@ class HealthDB:
         đồng bộ lúc nửa đêm mà tính nó thì đêm qua chỉ còn vài chục phút, kéo lệch điểm ngủ, mức sẵn sàng và phân tích.
         samples: self.samples(t0, t1) nếu đã lấy sẵn."""
         samples = self.samples(t0, t1) if samples is None else samples
-        sessions = H.sleep_sessions(samples, self.kind_before(t0), rem=rem)
+        sessions = H.sleep_sessions(samples, self.kind_before(t0), rem=rem, calib=self.sleep_calibration(),
+                                    reference=self.sleep_reference(t0, t1))
         last = self.db.execute("SELECT MAX(ts) FROM activity").fetchone()[0]
         for sess in sessions:
             sess["ongoing"] = last is not None and sess["end"] >= last + 60
@@ -427,6 +499,152 @@ class HealthDB:
                          "load_min_wear_minutes": I.LOAD_MIN_WEAR, "load_min_hr_coverage": I.LOAD_MIN_COVERAGE,
                          "recovery_min_hr_coverage": RECOVERY_MIN_HR_COVERAGE, "recovery_window_seconds": 300},
         }
+
+    # ------------------------------------------------------------ tóm tắt sức khỏe (trends.py)
+    def _activity_days(self, t0: int, t1: int, weight: float, stride: float) -> dict[str, dict]:
+        """Mỗi ngày trong [t0, t1): bước, năng lượng vận động (ước tính, personal.active_kcal), phút vận động vừa / mạnh
+        (nhịp bước >= BRISK_STEPS hoặc trong buổi tập), số phút đeo vòng."""
+        days = {}
+        for d, steps, run, brisk, wear in self.db.execute(
+                "SELECT date(ts, 'unixepoch', 'localtime') AS d, SUM(steps), SUM(CASE WHEN steps >= ? THEN steps ELSE 0 END),"
+                " SUM(CASE WHEN steps >= ? THEN 1 ELSE 0 END),"
+                " SUM(CASE WHEN (kind & 15) IN (?, ?) AND NOT (hr BETWEEN 30 AND 220) THEN 0 ELSE 1 END)"
+                " FROM activity WHERE ts >= ? AND ts < ? GROUP BY d",
+                (PS.RUN_CADENCE, H.BRISK_STEPS, *H.OFF_WRIST, t0, t1)):
+            days[d] = {"steps": steps or 0, "calories": PS.active_kcal(steps or 0, run or 0, weight, stride),
+                       "active": brisk or 0, "wear": wear or 0}
+        for (data,) in self.db.execute("SELECT data FROM workouts WHERE start >= ? AND start < ?", (t0, t1)):
+            w = json.loads(data)
+            end = int(w.get("end") or w["start"])
+            d = days.get(H.local_date(w["start"]))
+            if d is None or end <= w["start"]:
+                continue
+            steps, run, brisk = self.db.execute(
+                "SELECT COALESCE(SUM(steps), 0), COALESCE(SUM(CASE WHEN steps >= ? THEN steps ELSE 0 END), 0),"
+                " COALESCE(SUM(CASE WHEN steps >= ? THEN 1 ELSE 0 END), 0) FROM activity WHERE ts >= ? AND ts < ?",
+                (PS.RUN_CADENCE, H.BRISK_STEPS, w["start"], end)).fetchone()
+            d["active"] += max(0, (end - w["start"]) // 60 - brisk)
+            if w.get("calories"):   # buổi tập có số năng lượng của vòng tay / Mi Fitness: dùng thay phần ước tính
+                d["calories"] += max(0.0, w["calories"] - PS.active_kcal(steps, run, weight, stride))
+        return days
+
+    def _quarter_curves(self, date: str, weight: float, stride: float) -> dict[str, tuple]:
+        """Bước chân, năng lượng vận động cộng dồn theo từng 15 phút của ngày `date` và USUAL_DAYS ngày trước (chỉ ngày
+        đeo vòng đủ lâu) cho trends.vs_usual."""
+        from . import trends as TR
+
+        d0 = dt.date.fromisoformat(date)
+        t0 = H.day_bounds((d0 - dt.timedelta(days=TR.USUAL_DAYS)).isoformat())[0]
+        _, t1 = H.day_bounds(date)
+        per: dict[str, dict[str, list[float]]] = {}
+        for d, q, steps, run in self.db.execute(
+                "SELECT date(ts, 'unixepoch', 'localtime') AS d,"
+                " CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) * 4"
+                " + CAST(strftime('%M', ts, 'unixepoch', 'localtime') AS INTEGER) / 15 AS q,"
+                " SUM(steps), SUM(CASE WHEN steps >= ? THEN steps ELSE 0 END) FROM activity"
+                " WHERE ts >= ? AND ts < ? GROUP BY d, q", (PS.RUN_CADENCE, t0, t1)):
+            day = per.setdefault(d, {"steps": [0.0] * 96, "calories": [0.0] * 96})
+            day["steps"][q] += steps or 0
+            day["calories"][q] += PS.active_kcal(steps or 0, run or 0, weight, stride)
+        full = {d["date"] for d in self.daily_steps() if d["worn"] >= 600}
+
+        def cum(v: list[float]) -> list[float]:
+            out, s = [], 0.0
+            for x in v:
+                s += x
+                out.append(s)
+            return out
+
+        now = dt.datetime.now()
+        upto = now.hour * 4 + now.minute // 15 + 1 if date == now.date().isoformat() else 96
+        out = {}
+        for key in ("steps", "calories"):
+            today = cum(per.get(date, {}).get(key, [0.0] * 96))
+            usual = [cum(v[key]) for d, v in per.items() if d != date and d in full]
+            out[key] = (today, usual, upto)
+        return out
+
+    def trends(self, date: str | None = None, profile: dict | None = None, insights: dict | None = None) -> dict:
+        """Tóm tắt sức khỏe kiểu Mi Fitness tới ngày `date` (trends.summary): chỉ số vừa thay đổi rõ (30 ngày, 26 tuần),
+        7 ngày qua so với tuần trước, hôm nay so với thường lệ. Giấc ngủ theo ngày thức dậy (giấc dài nhất); bước chân,
+        năng lượng, phút vận động chỉ tính ngày đã trọn và đeo vòng >= 10 giờ."""
+        from . import insights as I
+        from . import trends as TR
+
+        date = date or dt.date.today().isoformat()
+        d0 = dt.date.fromisoformat(date)
+        sex = PS.sex_of(profile)
+        weight = PS.body_weight((profile or {}).get("weight"))
+        stride = PS.stride_m((profile or {}).get("height"), sex)
+        need = (insights or {}).get("profile", {}).get("sleep_need") or I.sleep_need(PS.age_of(profile, d0))
+        first = d0 - dt.timedelta(days=TR.DAYS - 1)
+        days = [(first + dt.timedelta(days=i)).isoformat() for i in range(TR.DAYS)]
+        _, t1 = H.day_bounds(date)
+
+        # giấc ngủ: giấc dài nhất theo ngày thức dậy
+        t0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
+        samples = self.samples(t0, t1)
+        by_ts = {s[0]: s for s in samples}
+        nights: dict[str, dict] = {}
+        for sess in self.sleep_sessions(t0, t1, samples=samples):
+            day = H.local_date(sess["end"])
+            if not sess["ongoing"] and (day not in nights or sess["minutes"] > nights[day]["minutes"]):
+                nights[day] = sess
+
+        def clock(ts: int, around_midnight: bool) -> float:
+            t = dt.datetime.fromtimestamp(ts)
+            m = t.hour * 60 + t.minute
+            return m - 1440 if around_midnight and m >= 720 else m
+
+        def night_hr(sess: dict) -> float | None:
+            hrs = sorted(by_ts[t][4] for a, b, k in sess["stages"] if k != "awake" for t in range(a, b, 60)
+                         if t in by_ts and H.valid_hr(by_ts[t][4]))
+            return hrs[len(hrs) // 2] if len(hrs) >= 60 else None
+
+        def night(day: str, fn):
+            s = nights.get(day)
+            return fn(s) if s and s["minutes"] >= 180 else None
+
+        daily: dict[str, list] = {
+            "sleep": [(d, night(d, lambda s: s["minutes"])) for d in days],
+            "bedtime": [(d, night(d, lambda s: clock(s["start"], True))) for d in days],
+            "deep": [(d, night(d, lambda s: s["deep"] * 100 / s["minutes"] if s["deep"] else None)) for d in days],
+            "sleep_hr": [(d, night(d, night_hr)) for d in days],
+        }
+        wake = [(d, night(d, lambda s: clock(s["end"], False))) for d in days]
+
+        # vận động: ngày đã trọn, đeo vòng >= 10 giờ
+        today = dt.date.today().isoformat()
+        a0 = H.day_bounds((d0 - dt.timedelta(days=7 * TR.WEEKS + 7)).isoformat())[0]
+        act = self._activity_days(a0, t1, weight, stride)
+
+        def act_val(day: str, key: str):
+            d = act.get(day)
+            return d[key] if d and d["wear"] >= 600 and day < today else None
+
+        for key in ("steps", "calories", "active"):
+            daily[key] = [(d, act_val(d, key)) for d in days]
+        stress: dict[str, list[int]] = {}
+        for ts, value in self.db.execute("SELECT ts, value FROM stress WHERE auto = 1 AND ts >= ? AND ts < ?",
+                                         (H.day_bounds(days[0])[0], t1)):
+            if T.assess("stress", value)["usable"]:
+                stress.setdefault(H.local_date(ts), []).append(value)
+        daily["stress"] = [(d, sum(stress[d]) / len(stress[d]) if len(stress.get(d, [])) >= 12 else None) for d in days]
+
+        # theo tuần (thứ Hai - Chủ nhật), chỉ các tuần đã trọn có >= 4 ngày dữ liệu
+        monday = d0 - dt.timedelta(days=d0.weekday())
+        weekly: dict[str, list] = {k: [] for k in ("steps", "calories", "active")}
+        for w in range(TR.WEEKS, 0, -1):
+            start = monday - dt.timedelta(days=7 * w)
+            week = [(start + dt.timedelta(days=i)).isoformat() for i in range(7)]
+            for key in weekly:
+                vals = [v for v in (act_val(d, key) for d in week) if v is not None]
+                weekly[key].append((start.isoformat(), sum(vals) / len(vals) if len(vals) >= 4 else None))
+
+        curves = self._quarter_curves(date, weight, stride)
+        out = TR.summary(daily, weekly, wake, curves, need)
+        out["date"] = date
+        return out
 
     @staticmethod
     def _last_night(nights: list[dict], chronotype: float | None, need: int) -> dict:

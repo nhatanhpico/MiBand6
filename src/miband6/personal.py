@@ -241,6 +241,39 @@ def ejaculation_stats(events: dict[str, int], nights: list[dict], today: dt.date
 
 # ---------------------------------------------------------------- chiều cao, cân nặng theo thời gian
 
+# ---------------------------------------------------------------- năng lượng vận động (ước tính từ bước chân)
+# Phương trình chuyển hóa của ACSM: phần năng lượng thêm khi đi bộ 0,1 ml O2/kg/m, chạy 0,2 ml O2/kg/m (trên mặt
+# phẳng); 1 lít O2 ~ 5 kcal. Chiều dài bước ~ 0,415 x chiều cao (nam), 0,413 x chiều cao (nữ). Phút có từ RUN_CADENCE
+# bước tính là chạy. Đây là năng lượng do vận động (không gồm năng lượng nghỉ), như "calo vận động" của Mi Fitness.
+WALK_KCAL_PER_KG_M = 0.0005
+RUN_CADENCE = 140
+DEFAULT_WEIGHT = 65.0
+DEFAULT_HEIGHT = 170.0
+
+
+def stride_m(height_cm: float | None, sex: str | None) -> float:
+    try:
+        h = float(height_cm)
+    except (TypeError, ValueError):
+        h = DEFAULT_HEIGHT
+    if not 100 <= h <= 250:
+        h = DEFAULT_HEIGHT
+    return h / 100 * (0.413 if sex == SEX_FEMALE else 0.415)
+
+
+def body_weight(weight_kg: float | None) -> float:
+    try:
+        w = float(weight_kg)
+    except (TypeError, ValueError):
+        return DEFAULT_WEIGHT
+    return w if 20 <= w <= 300 else DEFAULT_WEIGHT
+
+
+def active_kcal(steps: float, run_steps: float, weight_kg: float, stride: float) -> float:
+    """Năng lượng vận động (kcal) của `steps` bước, trong đó `run_steps` bước chạy (tốn gấp đôi đi bộ)."""
+    return WALK_KCAL_PER_KG_M * weight_kg * stride * (steps + run_steps)
+
+
 WEIGHT_CHANGE_PCT = 5.0   # % trong khoảng 6 tháng
 WEIGHT_FAST_LOSS = -1.0   # kg/tuần
 WEIGHT_FAST_GAIN = 0.5    # kg/tuần

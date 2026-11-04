@@ -29,8 +29,27 @@ SLEEP_GAP_MINUTES = 45   # thức giấc ngắn hơn ngần này vẫn tính là
 MIN_SLEEP_MINUTES = 20   # giấc ngắn hơn ngần này bỏ qua (thường là ngồi yên)
 # Vòng tay ghi mốc ngủ / thức trễ chừng 10 phút; byte "ngủ" (byte thứ 6) cho thấy lúc thật sự ngủ / dậy:
 ONSET_LEVEL = 10         # phút trước mốc ngủ có byte "ngủ" từ ngần này trở lên: đã ngủ
-WAKE_LEVEL = 30          # phút cuối giấc có byte "ngủ" dưới ngần này: đã dậy
+WAKE_LEVEL = 30          # phút cuối giấc có byte "ngủ" (trung vị 5 phút) dưới ngần này: đã dậy
 EDGE_MINUTES = 30        # chỉ chỉnh mỗi đầu giấc tối đa ngần này phút
+# Các ngưỡng dưới đây được chỉnh và kiểm chứng trên 40 đêm có báo cáo của Mi Fitness (docs/suc-khoe.md).
+WALK_STEPS = 20          # phút có từ ngần này bước: đang đi lại, không phải ngủ (trong giấc ngủ tối đa ~20 bước/phút)
+JUNK_LEVEL = 10          # đoạn vòng tay đánh dấu ngủ mà byte "ngủ" (trung vị) dưới ngần này: thật ra đang thức
+CORE_LEVEL = 40          # byte "ngủ" (trung vị 5 phút) từ ngần này: đã ngủ hẳn
+ONSET_FLOOR = 9          # lúc thiếp đi: phút đầu của đợt tăng cuối cùng của byte "ngủ", từ ngần này trở lên
+RISE_SLACK = 2           # đợt tăng cho phép byte "ngủ" chững lại chừng này
+STALE_MINUTES = 30       # vừa đeo lại: byte "ngủ" còn giữ mức lúc vòng nằm yên trên bàn, tối đa ngần này phút
+ISLAND_MINUTES = 10      # mẩu ngủ ở đầu giấc ngắn hơn ngần này, cách phần sau >= ISLAND_GAP phút thức: chưa ngủ
+ISLAND_GAP = 3
+WAKE_HR = 8              # thức giữa giấc: nhịp tim cao hơn nền khi ngủ quanh đó ít nhất ngần này nhịp/phút
+WAKE_CORE = 4            # ... liên tục ít nhất ngần này phút
+WAKE_MINUTES = 10        # ... cả đợt ít nhất ngần này phút; đợt ngắn hơn (thường không nhớ) tính là ngủ nông
+WAKE_FLOOR = 21          # vòng tay có byte REM: byte này ở mức sàn (<= ngần này) khi đang thức
+STAGE_MIN_SLEEP = 60     # giấc ngắn hơn (ngủ trưa) không chia giai đoạn sâu / REM, như Mi Fitness
+DEEP_SHARE = 0.15        # phần ngủ sâu mặc định: Mi Fitness 15,3% (trung bình 39 đêm), người lớn 13-23%
+REM_LEVEL = 55           # byte REM & 127 trên ngần này là REM (Gadgetbridge) khi chưa có số của Mi Fitness để so
+STAGE_MERGE = 2          # nối hai đoạn cùng giai đoạn cách nhau tối đa ngần này phút
+STAGE_MIN_RUN = 3        # bỏ đoạn ngủ sâu / REM ngắn hơn ngần này phút
+DEEP_HR = 4              # phút ngủ sâu: nhịp tim không cao hơn nền khi ngủ quá ngần này nhịp/phút
 
 
 def _ts(t: dt.datetime) -> int:
@@ -298,71 +317,327 @@ def sleep_stage(sample: tuple, kind: int | None) -> str | None:
     return "deep" if kind == KIND_DEEP_SLEEP else "light"
 
 
-def sleep_sessions(samples: list[tuple], previous: int | None = None, rem: bool = False) -> list[dict]:
-    """Gom các phút ngủ thành từng giấc; khoảng thức ngắn ở giữa tính là 'thức'.
+def off_wrist(samples: list[tuple], previous: int | None = None) -> list[bool]:
+    """Phút vòng tay không ở trên tay: vòng tay báo "không đeo" / "đang sạc" (ở phút đó hoặc từ một phút trước) và từ
+    đó chưa đo được nhịp tim. Nhịp tim chỉ đo được khi đeo; vòng tay không phải lúc nào cũng ghi lại mốc "đang đeo"
+    khi đeo vào, nên một số đo nhịp tim hợp lệ cũng kết thúc trạng thái "không đeo"."""
+    out = []
+    state = previous in OFF_WRIST
+    for s in samples:
+        raw = s[1] & 0x0F
+        if raw in OFF_WRIST:
+            state = True
+        elif raw not in (KIND_NO_CHANGE, KIND_IGNORE):
+            state = False
+        if valid_hr(s[4]):
+            state = False
+        out.append(state)
+    return out
 
-    samples liền nhau theo phút (ts tăng dần); previous: loại hoạt động trước mẫu đầu tiên.
-    rem: ước tính REM từ nhịp tim (estimate_rem) cho giấc vòng tay không ghi REM."""
-    kinds = effective_kinds(samples, previous)
-    stages = [sleep_stage(s, k) for s, k in zip(samples, kinds)]
 
-    # chỉnh hai đầu theo byte "ngủ": lùi lúc bắt đầu, cắt phần cuối đã tỉnh (vòng tay ghi mốc trễ)
-    i = 0
-    while i < len(samples):
-        if stages[i] is None or (i and stages[i - 1] is not None):
+def _fresh_levels(samples: list[tuple], off: list[bool]) -> list[int]:
+    """Byte "ngủ" từng phút. Vòng tay nằm yên trên bàn trông như đang ngủ: vừa đeo lại thì byte này còn giữ mức đó và
+    giảm dần; coi là 0 tới khi nó tăng trở lại (tối đa STALE_MINUTES phút)."""
+    out = [s[5] for s in samples]
+    for x in range(1, len(samples)):
+        if off[x - 1] and not off[x]:
+            k = x
+            while k < len(samples) and k - x < STALE_MINUTES and not off[k] \
+                    and (k == x or samples[k][5] <= samples[k - 1][5]):
+                out[k] = 0
+                k += 1
+    return out
+
+
+def _median5(values: list, k: int) -> float:
+    w = sorted(values[max(0, k - 2):k + 3])
+    return w[len(w) // 2]
+
+
+def _asleep_mask(samples: list[tuple], kinds: list, off: list[bool]) -> list[bool]:
+    """Phút đang ngủ theo mốc của vòng tay, chỉnh hai đầu theo byte "ngủ" (vòng tay ghi mốc trễ chừng 11 phút).
+
+    Không bao giờ tính là ngủ: phút không đeo vòng, phút đi lại (>= WALK_STEPS bước)."""
+    n = len(samples)
+    on = [not o and s[3] < WALK_STEPS for s, o in zip(samples, off)]
+    asleep = [k in (KIND_LIGHT_SLEEP, KIND_DEEP_SLEEP) and ok for k, ok in zip(kinds, on)]
+    has_level = any(s[5] for s in samples)
+    lvl = _fresh_levels(samples, off)
+    i = 0   # lùi lúc bắt đầu về các phút trước mốc đã có byte "ngủ" đủ cao
+    while i < n:
+        if not asleep[i] or (i and asleep[i - 1]):
             i += 1
             continue
-        j = i   # i: phút ngủ đầu tiên của một đoạn
-        while i - j < EDGE_MINUTES and j > 0 and stages[j - 1] is None \
-                and samples[j - 1][0] == samples[j][0] - 60 and samples[j - 1][5] >= ONSET_LEVEL:
+        j = i
+        while i - j < EDGE_MINUTES and j > 0 and not asleep[j - 1] and on[j - 1] \
+                and samples[j - 1][0] == samples[j][0] - 60 and lvl[j - 1] >= ONSET_LEVEL:
             j -= 1
         for k in range(j, i):
-            stages[k] = "light"
+            asleep[k] = True
         i += 1
-    for i in range(len(samples) - 1, -1, -1):
-        if stages[i] is None or (i + 1 < len(samples) and stages[i + 1] is not None):
+    for i in range(n - 1, -1, -1):   # cắt phần cuối đã tỉnh; bỏ đoạn vòng tay đánh dấu ngủ nhầm
+        if not asleep[i] or (i + 1 < n and asleep[i + 1]):
             continue
-        j = i   # i: phút ngủ cuối cùng của một đoạn; j lùi về đầu đoạn
-        while j > 0 and stages[j - 1] is not None:
+        j = i
+        while j > 0 and asleep[j - 1]:
             j -= 1
-        levels = sorted(samples[k][5] for k in range(j, i + 1))
-        if levels[len(levels) // 2] < WAKE_LEVEL:
+        levels = sorted(lvl[j:i + 1])
+        med = levels[len(levels) // 2]
+        if has_level and med < JUNK_LEVEL:
+            for k in range(j, i + 1):
+                asleep[k] = False
+            continue
+        if med < WAKE_LEVEL:
             continue   # vòng tay không ghi byte "ngủ" cho giấc này: giữ nguyên mốc
         k = i
-        while i - k < EDGE_MINUTES and stages[k] is not None and samples[k][5] < WAKE_LEVEL:
-            stages[k] = None
+        while i - k < EDGE_MINUTES and asleep[k] and _median5(lvl, k) < WAKE_LEVEL:
+            asleep[k] = False
             k -= 1
-        if k < i and k > j:
-            stages[k] = None   # phút chuyển tiếp (byte "ngủ" đang tụt) tính là đã dậy, như vòng tay hiển thị
+        if j < k < i:
+            asleep[k] = False   # phút chuyển tiếp (byte "ngủ" đang tụt) tính là đã dậy, như vòng tay hiển thị
+    if has_level:
+        _refine_onsets(samples, asleep, on, lvl)
+    return asleep
 
-    sessions: list[dict] = []
-    cur: dict | None = None
-    last_ts = None
-    for s, stage in zip(samples, stages):
-        if stage is None:
+
+def _refine_onsets(samples: list[tuple], asleep: list[bool], on: list[bool], lvl: list[int]) -> None:
+    """Lúc thiếp đi = phút đầu của đợt tăng cuối cùng của byte "ngủ" trước khi ngủ hẳn (như Mi Fitness): các lần lơ
+    mơ rồi tỉnh lại trước đó không tính."""
+    n = len(samples)
+    i = 0
+    while i < n:
+        if not asleep[i] or (i and asleep[i - 1]):
+            i += 1
             continue
-        ts = s[0]
-        if cur is None or ts - last_ts > SLEEP_GAP_MINUTES * 60:
-            cur = {"start": ts, "end": ts + 60, "deep": 0, "light": 0, "rem": 0, "awake": 0, "stages": []}
-            sessions.append(cur)
-        elif ts - last_ts > 60:
-            cur["awake"] += (ts - last_ts) // 60 - 1
-            cur["stages"].append([last_ts + 60, ts, "awake"])
-        cur[stage] += 1
-        cur["end"] = ts + 60
-        st = cur["stages"]
-        if st and st[-1][2] == stage and st[-1][1] == ts:
-            st[-1][1] = ts + 60
-        else:
-            st.append([ts, ts + 60, stage])
-        last_ts = ts
+        e = i
+        while e + 1 < n and asleep[e + 1]:
+            e += 1
+        core = next((k for k in range(i, e + 1) if _median5(lvl, k) >= CORE_LEVEL), None)
+        if core is not None:
+            s0 = core
+            while core - s0 < EDGE_MINUTES and s0 > 0 and on[s0 - 1] and samples[s0 - 1][0] == samples[s0][0] - 60 \
+                    and ONSET_FLOOR <= lvl[s0 - 1] <= lvl[s0] + RISE_SLACK:
+                s0 -= 1
+            for k in range(min(i, s0), core + 1):
+                asleep[k] = k >= s0
+        i = e + 1
+
+
+def _rolling(values: list, half: int, fn) -> list:
     out = []
-    by_ts = {s[0]: s for s in samples} if rem else {}
-    for sess in sessions:
-        sess["minutes"] = sess["deep"] + sess["light"] + sess["rem"]
-        if sess["minutes"] >= MIN_SLEEP_MINUTES:
-            if rem and not sess["rem"]:
-                estimate_rem(sess, by_ts)
+    for i in range(len(values)):
+        w = [v for v in values[max(0, i - half):i + half + 1] if v is not None]
+        out.append(fn(w) if w else None)
+    return out
+
+
+def _hr_excess(rows: list) -> list:
+    """Nhịp tim (trung vị 3 phút) cao hơn nền khi ngủ quanh đó (phân vị 25% trong 61 phút) bao nhiêu; None nếu không đo."""
+    hr = [r[4] if r and valid_hr(r[4]) else None for r in rows]
+    smooth = _rolling(hr, 1, lambda w: sorted(w)[len(w) // 2])
+    floor = _rolling(smooth, 30, lambda w: sorted(w)[int((len(w) - 1) * 0.25)])
+    return [None if a is None or b is None else a - b for a, b in zip(smooth, floor)]
+
+
+def _wake_bouts(rows: list, asleep: list[bool], rem_byte: bool, excess: list) -> list[bool]:
+    """Các đợt thức giữa giấc mà vòng tay vẫn ghi là ngủ: nhịp tim cao hơn nền khi ngủ quanh đó >= WAKE_HR, kèm cử
+    động / byte "ngủ" tụt, hoặc (vòng tay có byte REM) byte REM ở mức sàn như lúc thức. Trả về cờ thức từng phút."""
+    n = len(rows)
+    levels = sorted(r[5] for r in rows if r)
+    lmed = levels[len(levels) // 2] if levels else 0
+    moving = [bool(r and r[2] > 0) for r in rows]
+
+    def sign(k: int) -> bool:   # dấu hiệu thức không cần nhịp tim: để nối dài một đợt đã chắc là thức
+        r = rows[k]
+        if r is None or not asleep[k]:
+            return False
+        return (r[7] & 127) <= WAKE_FLOOR if rem_byte else r[2] > 0
+
+    cand = []
+    for k, r in enumerate(rows):
+        if r is None or not asleep[k] or excess[k] is None or excess[k] < WAKE_HR:
+            cand.append(False)
+            continue
+        near_move = any(moving[max(0, k - 2):k + 3])
+        low = r[5] < min(45, 0.8 * lmed)
+        cand.append(sign(k) and (near_move or low) if rem_byte else near_move and low)
+    awake = [not a for a in asleep]
+    k = 0
+    while k < n:
+        if not cand[k]:
+            k += 1
+            continue
+        j = k   # nối các phút ứng viên, bỏ qua lỗ 1 phút
+        while j + 1 < n and asleep[j + 1] and (cand[j + 1] or (j + 2 < n and cand[j + 2])):
+            j += 1
+        if j - k + 1 >= WAKE_CORE:
+            a, b = k, j
+            while b + 1 < n and sign(b + 1):
+                b += 1
+            while a > 0 and sign(a - 1) and not awake[a - 1]:
+                a -= 1
+            if b - a + 1 >= WAKE_MINUTES:
+                for x in range(a, b + 1):
+                    awake[x] = True
+            j = max(j, b)
+        k = j + 1
+    return awake
+
+
+def _stage_runs(score: list, eligible: list[bool], threshold: float) -> set[int]:
+    """Các phút có điểm > threshold, nối đoạn cách nhau <= STAGE_MERGE phút (khoảng giữa cũng hợp lệ), bỏ đoạn ngắn."""
+    runs: list[list[int]] = []
+    for k, (v, ok) in enumerate(zip(score, eligible)):
+        if not ok or v is None or v <= threshold:
+            continue
+        if runs and k - runs[-1][1] <= STAGE_MERGE and all(eligible[runs[-1][1]:k]):
+            runs[-1][1] = k + 1
+        else:
+            runs.append([k, k + 1])
+    return {k for a, b in runs if b - a >= STAGE_MIN_RUN for k in range(a, b)}
+
+
+def _fit_stage(score: list, eligible: list[bool], quota: int) -> set[int]:
+    """Chọn ngưỡng sao cho tổng phút của giai đoạn gần quota nhất (tìm nhị phân trên các mức điểm có thật)."""
+    if quota <= 0:
+        return set()
+    levels = sorted({v for v, ok in zip(score, eligible) if ok and v is not None})
+    if not levels:
+        return set()
+    best: set[int] = set()
+    best_at = len(levels) - 1
+    lo, hi = 0, len(levels) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        picked = _stage_runs(score, eligible, levels[mid] - 1e-9)
+        if abs(len(picked) - quota) < abs(len(best) - quota):
+            best, best_at = picked, mid
+        if len(picked) > quota:
+            lo = mid + 1
+        elif len(picked) < quota:
+            hi = mid - 1
+        else:
+            return best
+    # nối / bỏ đoạn ngắn làm tổng nhảy bậc: thử thêm các mức quanh mức tốt nhất
+    for k in range(max(0, best_at - 12), min(len(levels), best_at + 13)):
+        picked = _stage_runs(score, eligible, levels[k] - 1e-9)
+        if abs(len(picked) - quota) < abs(len(best) - quota):
+            best = picked
+    return best
+
+
+def _matching(reference: list[dict] | None, start: int, end: int) -> dict | None:
+    """Báo cáo của Mi Fitness trùng giấc này (chồng lên >= một nửa giấc ngắn hơn)."""
+    best, best_ov = None, 0
+    for ref in reference or []:
+        ov = min(end, ref["end"]) - max(start, ref["start"])
+        if ov > best_ov and ov >= 0.5 * min(end - start, ref["end"] - ref["start"]):
+            best, best_ov = ref, ov
+    return best
+
+
+def _stage_session(mins: list[int], rows: list, asleep: list[bool], kinds: list, rem: bool,
+                   calib: dict | None, reference: list[dict] | None) -> dict | None:
+    """Một giấc từ các phút [đầu, cuối): phút thức, ngủ sâu, REM, ngủ nông."""
+    rem_byte = any(r and r[7] for r in rows)   # vòng tay ghi điểm REM (Mi Band 6 từ firmware 11/2026)
+    excess = _hr_excess(rows)
+    awake = _wake_bouts(rows, asleep, rem_byte, excess)
+    n = len(mins)
+    runs: list[list[int]] = []   # các đoạn ngủ; bỏ mẩu ngủ ngắn đứng riêng ở đầu giấc
+    for k in range(n):
+        if not awake[k]:
+            if runs and runs[-1][1] == k:
+                runs[-1][1] = k + 1
+            else:
+                runs.append([k, k + 1])
+    while len(runs) > 1 and runs[0][1] - runs[0][0] < ISLAND_MINUTES and runs[1][0] - runs[0][1] >= ISLAND_GAP:
+        a, b = runs.pop(0)
+        for k in range(a, b):
+            awake[k] = True
+    if not runs:
+        return None
+    first, last = runs[0][0], runs[-1][1]
+    mins, rows, awake, kinds = mins[first:last], rows[first:last], awake[first:last], kinds[first:last]
+    excess = excess[first:last]
+    n = len(mins)
+    sleep = [not a for a in awake]
+    total = sum(sleep)
+    ref = _matching(reference, mins[0], mins[-1] + 60)
+    calib = calib or {}
+    deep: set[int] = set()
+    rem_set: set[int] = set()
+    source = "mifitness" if ref else "calibrated" if calib.get("deep_share") else "default"
+    if total >= STAGE_MIN_SLEEP:
+        dscore = [r[6] & 127 if r and s else None for r, s in zip(rows, sleep)]
+        if len({v for v in dscore if v is not None}) >= 3:   # điểm ngủ sâu có thay đổi theo phút (dùng được)
+            smooth = _rolling(dscore, 2, lambda w: sum(w) / len(w))
+            share = calib.get("deep_share") or DEEP_SHARE
+            quota = ref["deep"] if ref and ref.get("deep") is not None else round(share * total)
+            # ngủ sâu: nằm yên, nhịp tim ở mức nền (không ngay cạnh cử động hay lúc nhịp tim tăng)
+            still = [s and not any(r and r[2] > 0 for r in rows[max(0, k - 2):k + 3])
+                     and (excess[k] is None or excess[k] <= DEEP_HR) for k, s in enumerate(sleep)]
+            deep = _fit_stage([v if ok else None for v, ok in zip(smooth, still)], still, min(quota, sum(still)))
+        else:   # vòng tay không ghi điểm ngủ sâu: dùng mốc ngủ sâu của nó
+            deep = {k for k in range(n) if sleep[k] and kinds[k] == KIND_DEEP_SLEEP}
+            source = "markers"
+        if rem_byte and len({r[7] & 127 for r, s in zip(rows, sleep) if r and s}) >= 3:
+            rscore = [r[7] & 127 if r else None for r in rows]
+            free = [s and k not in deep for k, s in enumerate(sleep)]
+            if ref and ref.get("rem"):
+                rem_set = _fit_stage(rscore, free, ref["rem"])
+            elif calib.get("rem_share"):
+                rem_set = _fit_stage(rscore, free, round(calib["rem_share"] * total))
+            else:
+                rem_set = _stage_runs(rscore, free, REM_LEVEL)
+    labels = ["awake" if awake[k] else "deep" if k in deep else "rem" if k in rem_set else "light" for k in range(n)]
+    stages: list[list] = []
+    for t, label in zip(mins, labels):
+        if stages and stages[-1][2] == label and stages[-1][1] == t:
+            stages[-1][1] = t + 60
+        else:
+            stages.append([t, t + 60, label])
+    sess = {"start": mins[0], "end": mins[-1] + 60, "stages": stages, "stage_source": source,
+            **{k: labels.count(k) for k in ("deep", "light", "rem", "awake")}}
+    sess["minutes"] = sess["deep"] + sess["light"] + sess["rem"]
+    if ref:
+        sess["reference"] = {k: ref.get(k) for k in ("start", "end", "minutes", "deep", "light", "rem", "awake", "score")}
+    if rem and not rem_byte and total >= STAGE_MIN_SLEEP:
+        estimate_rem(sess, {t: r for t, r in zip(mins, rows) if r})
+    return sess
+
+
+def sleep_sessions(samples: list[tuple], previous: int | None = None, rem: bool = False,
+                   calib: dict | None = None, reference: list[dict] | None = None) -> list[dict]:
+    """Gom các phút ngủ thành từng giấc; khoảng thức ở giữa tính là 'thức'.
+
+    samples liền nhau theo phút (ts tăng dần); previous: loại hoạt động trước mẫu đầu tiên.
+    rem: ước tính REM từ nhịp tim (estimate_rem) cho giấc vòng tay không ghi REM.
+    calib: {"deep_share", "rem_share"} học từ các đêm có báo cáo Mi Fitness (HealthDB.sleep_calibration).
+    reference: báo cáo từng giấc của Mi Fitness {start, end, deep, rem, ...}; giấc trùng thì lấy đúng số phút ngủ
+    sâu / REM của nó (chỉ vị trí trên biểu đồ là của ứng dụng). Mỗi giấc có stage_source: "mifitness",
+    "calibrated", "default" hoặc "markers" (vòng tay không ghi điểm ngủ sâu)."""
+    kinds = effective_kinds(samples, previous)
+    off = off_wrist(samples, previous)
+    asleep = _asleep_mask(samples, kinds, off)
+    groups: list[list[int]] = []
+    last_ts = None
+    for idx, (s, a) in enumerate(zip(samples, asleep)):
+        if not a:
+            continue
+        if not groups or s[0] - last_ts > SLEEP_GAP_MINUTES * 60:
+            groups.append([])
+        groups[-1].append(idx)
+        last_ts = s[0]
+    by_ts = {s[0]: (s, k, a) for s, k, a in zip(samples, kinds, asleep)}
+    out = []
+    for g in groups:
+        if len(g) < MIN_SLEEP_MINUTES:
+            continue
+        mins = list(range(samples[g[0]][0], samples[g[-1]][0] + 60, 60))
+        cells = [by_ts.get(t) for t in mins]
+        sess = _stage_session(mins, [c[0] if c else None for c in cells], [bool(c and c[2]) for c in cells],
+                              [c[1] if c else None for c in cells], rem, calib, reference)
+        if sess and sess["minutes"] >= MIN_SLEEP_MINUTES:
             out.append(sess)
     return out
 
@@ -386,14 +661,6 @@ REM_MAX_INTENSITY = 25
 REM_MERGE = 10
 REM_MIN = 6
 REM_MAX_SHARE = 0.30
-
-
-def _rolling(values: list, half: int, fn) -> list:
-    out = []
-    for i in range(len(values)):
-        w = [v for v in values[max(0, i - half):i + half + 1] if v is not None]
-        out.append(fn(w) if w else None)
-    return out
 
 
 def _median(w: list) -> float:

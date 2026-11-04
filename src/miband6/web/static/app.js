@@ -204,8 +204,9 @@ const quiet = (p) => p.catch(() => {});
 const PAGES = ["overview", "health", "settings", "alarms", "tools", "device", "app"];   // settings: vòng tay; app: ứng dụng
 const SUBS = ["profile", "display", "face", "apps", "health"];
 // Thẻ của trang Sức khỏe; cycle chỉ cho hồ sơ nữ, intimacy chỉ cho hồ sơ nam. Địa chỉ cũ (#health/steps…) vẫn mở đúng thẻ.
-const HTABS = ["sleep", "activity", "heart", "body", "workouts", "cycle", "intimacy", "insights"];
-const HTAB_ALIAS = { readiness: "insights", analysis: "insights", mind: "insights", hr: "heart", stress: "heart", spo2: "heart",
+const HTABS = ["sleep", "activity", "heart", "body", "workouts", "cycle", "intimacy", "trends", "insights"];
+const HTAB_ALIAS = { readiness: "insights", analysis: "insights", mind: "insights", summary: "trends", changes: "trends",
+  hr: "heart", stress: "heart", spo2: "heart",
   measure: "heart", steps: "activity", pai: "activity", intensity: "activity", circadian: "sleep", weight: "body", bmi: "body" };
 /** Giới tính trong hồ sơ (Cài đặt vòng tay → Hồ sơ): 0 nam, 1 nữ; "Khác" / chưa chọn: null. */
 const profileSex = () => ({ 0: "male", 1: "female" })[Number(STATE.profile?.gender ?? -1)] ?? null;
@@ -2866,7 +2867,7 @@ function renderHealth() {
   showHealthTab();
   $("#hEmpty").hidden = !!H?.has_data;
   const draw = { sleep: renderSleepTab, activity: renderActivityTab, heart: renderHeartTab, body: renderBodyTab, workouts: renderWorkoutsTab,
-    cycle: renderCycleTab, intimacy: renderIntimacyTab, insights: renderInsightsTab }[healthTab];
+    cycle: renderCycleTab, intimacy: renderIntimacyTab, trends: renderTrendsTab, insights: renderInsightsTab }[healthTab];
   draw?.(H);
 }
 
@@ -2900,6 +2901,7 @@ function renderSleepTab(H) {
     mkEl("b", {}, li).textContent = sl ? fmtMinutes(sl[key]) : "—";
   }
   $("#slNotes").textContent = night?.notes?.length ? t("Lưu ý: {notes}.", { notes: night.notes.join("; ") }) : "";
+  renderSleepReference(sl, H?.sleep_check);
   const days = H?.sleep_days || [];
   const slept = days.filter((d) => d.minutes);
   const avgSleep = slept.length ? slept.reduce((a, d) => a + d.minutes, 0) / slept.length : 0;
@@ -2914,6 +2916,185 @@ function renderSleepTab(H) {
     refs: avgSleep ? [{ value: avgSleep / 60, name: t("Trung bình"), text: fmtMinutes(avgSleep) }] : [],
   });
   renderCircadian(H?.insights?.circadian);
+}
+
+/** Giấc ngủ của Mi Fitness cùng đêm (nếu đã lấy từ tài khoản) và độ khớp của thuật toán với Mi Fitness. */
+function renderSleepReference(sl, check) {
+  const ref = sl?.reference;
+  const el = $("#slRef");
+  el.hidden = !ref;
+  el.textContent = "";
+  if (ref) {
+    const parts = [t("{start}–{end}", { start: hhmm(ref.start), end: hhmm(ref.end) }), fmtMinutes(ref.minutes)];
+    if (ref.deep != null) parts.push(t("ngủ sâu {t}", { t: fmtMinutes(ref.deep) }));
+    if (ref.rem) parts.push(t("REM {t}", { t: fmtMinutes(ref.rem) }));
+    if (ref.score) parts.push(t("điểm {n}", { n: ref.score }));
+    mkEl("b", {}, el).textContent = t("Mi Fitness:");
+    el.append(` ${parts.join(" · ")}. `);
+    el.append(sl.stage_source === "mifitness" ? t("Ứng dụng dùng đúng số phút ngủ sâu của Mi Fitness (cả REM khi Mi Fitness có REM); vị trí trên biểu đồ, giờ ngủ, giờ dậy và các lần thức do ứng dụng tính.") : "");
+  }
+  const v = check?.validation;
+  const c = $("#slCheck");
+  c.hidden = !v && !(sl && sl.stage_source === "calibrated");
+  const lines = [];
+  if (v) {
+    lines.push(t("Thuật toán so với Mi Fitness ({n} đêm, chưa hiệu chỉnh): giờ ngủ lệch trung bình {a} phút, giờ dậy {b} phút, thời lượng {c} phút, ngủ sâu {d} phút.",
+      { n: v.nights, a: fmtMin1(v.start), b: fmtMin1(v.end), c: fmtMin1(v.minutes), d: fmtMin1(v.deep) }));
+  }
+  if (sl?.stage_source === "calibrated" && check?.calibration) {
+    lines.push(t("Đêm này chưa có báo cáo Mi Fitness: ngủ sâu, REM theo tỉ lệ học từ {n} đêm Mi Fitness gần nhất.", { n: check.calibration.nights }));
+  }
+  c.textContent = lines.join(" ");
+}
+const fmtMin1 = (x) => (x == null ? "—" : Number(x).toLocaleString(LOCALE, { maximumFractionDigits: 1 }));
+
+/* ---------------- Xu hướng: thay đổi gần đây, 7 ngày qua, hôm nay so với thường lệ (trends.py) */
+
+const TREND_COLOR = { sleep: "var(--c-rem)", bedtime: "var(--c-rem)", wake: "var(--c-rem)", deep: "var(--c-deep)",
+  sleep_hr: "var(--c-hr)", steps: "var(--c-steps)", calories: "var(--c-awake)", active: "var(--c-light)", stress: "var(--c-stress)" };
+const TREND_STATUS = { good: "good", watch: "watch", neutral: "ok" };
+
+function renderTrendsTab(H) {
+  const tr = H?.trends;
+  const changes = tr?.changes || [];
+  $("#trSub").textContent = tr ? t("Trong 30 ngày và 26 tuần tới {day}.", { day: dayLabelOf().toLowerCase() }) : t("Chưa có dữ liệu");
+  const counts = $("#trCounts");
+  counts.textContent = "";
+  if (tr) {
+    const add = (n, label) => { const s = mkEl("span", {}, counts); mkEl("b", {}, s).textContent = String(n); s.append(` ${label}`); };
+    add(changes.length, t("thay đổi"));
+    add(tr.counts.watch, t("mục nên chú ý"));
+    add(tr.counts.good, t("mục tốt"));
+  }
+  const list = $("#trChanges");
+  list.textContent = "";
+  if (tr && !changes.length) mkEl("p", { class: "tr-empty" }, list).textContent = t("Không có thay đổi rõ: các chỉ số vẫn quanh mức thường lệ của bạn.");
+  for (const c of changes) list.append(trendCard(c, c.scope === "weeks"
+    ? [t("Trung bình {n} tuần trước đó", { n: c.base_n }), t("Trung bình {n} tuần gần đây", { n: c.recent_n })]
+    : [t("Trung bình {n} ngày trước đó", { n: c.base_n }), t("Trung bình {n} ngày gần đây", { n: c.recent_n })]));
+  const hl = $("#trHighlights");
+  hl.textContent = "";
+  for (const h of tr?.highlights || []) hl.append(trendCard(h, h.key === "wake" ? null : [t("7 ngày trước đó"), t("7 ngày qua")]));
+  const today = $("#trToday");
+  today.textContent = "";
+  for (const u of tr?.today || []) today.append(usualCard(u));
+  if (tr && !(tr.today || []).length) mkEl("p", { class: "tr-empty" }, today).textContent = t("Cần ít nhất 7 ngày đeo vòng trước đó để so.");
+}
+
+function trendHead(card, item) {
+  card.dataset.status = item.status === "neutral" ? "ok" : item.status;
+  const [label, icon] = STATUS[TREND_STATUS[item.status] || "ok"];
+  const chipEl = mkEl("span", { class: "ins-status" }, card);
+  mkEl("b", {}, chipEl).textContent = icon;
+  chipEl.append(item.status === "neutral" ? t("Bình thường") : label());
+  mkEl("h3", {}, card).textContent = item.title;
+  mkEl("p", { class: "tr-text" }, card).textContent = item.text;
+}
+
+/** Thẻ một chỉ số: cột từng ngày / tuần (phần trước xám, phần gần đây có màu) và đường trung bình mỗi phần. */
+function trendCard(item, footer) {
+  const card = mkEl("div", { class: "insight tr-item" });
+  trendHead(card, item);
+  const box = mkEl("div", { class: "chart" }, card);
+  requestAnimationFrame(() => trendChart(box, item));
+  if (footer) {
+    const f = mkEl("div", { class: "tr-foot" }, card);
+    mkEl("span", {}, f).textContent = item.base_text ? `${footer[0]}: ${item.base_text}` : "";
+    mkEl("span", {}, f).textContent = `${footer[1]}: ${item.recent_text}`;
+  }
+  return card;
+}
+
+function trendChart(el, item) {
+  const pts = item.series || [];
+  const H = 96, top = 14, bottom = 14;
+  const { svg, w } = chartBox(el, H, item.title);
+  const vals = pts.map((p) => p.value).filter((v) => v != null);
+  if (!vals.length) { svText(svg, w / 2, H / 2, t("Chưa có dữ liệu"), "empty-msg", "middle"); return; }
+  const color = TREND_COLOR[item.key] || "var(--accent)";
+  const line = item.unit === "clock";   // giờ đi ngủ / thức dậy: đường nối các điểm
+  let lo = line ? Math.min(...vals) : 0, hi = Math.max(...vals, item.base ?? 0, item.recent ?? 0);
+  if (line) { lo = Math.min(lo, item.base ?? lo, item.recent ?? lo) - 15; hi += 15; }
+  const Y = (v) => top + (H - top - bottom) * (1 - (v - lo) / Math.max(1e-9, hi - lo));
+  const step = w / pts.length;
+  const X = (i) => step * i + step / 2;
+  const recentFrom = pts.findIndex((p) => p.recent);
+  if (line) {
+    let d = "";
+    pts.forEach((p, i) => { if (p.value != null) d += `${d ? "L" : "M"}${X(i)},${Y(p.value)}`; });
+    sv("path", { d, fill: "none", stroke: color, "stroke-width": 2, opacity: 0.8 }, svg);
+    pts.forEach((p, i) => {
+      if (p.value == null) return;
+      const c = sv("circle", { cx: X(i), cy: Y(p.value), r: 3.5, fill: "var(--surface)", stroke: p.recent || recentFrom < 0 ? color : "var(--muted)", "stroke-width": 2 }, svg);
+      hoverable(c, () => [[trendValue(item, p.value), trendLabel(item, p.label)]]);
+    });
+  } else {
+    const bw = Math.max(2, Math.min(18, step * 0.62));
+    pts.forEach((p, i) => {
+      if (p.value == null) return;
+      const y = Y(p.value);
+      const r = sv("rect", { x: X(i) - bw / 2, y, width: bw, height: Math.max(2, H - bottom - y), rx: Math.min(4, bw / 2),
+        class: p.recent || recentFrom < 0 ? "mark" : "mark tr-base" }, svg);
+      if (p.recent || recentFrom < 0) r.setAttribute("fill", color);
+      hoverable(r, () => [[trendValue(item, p.value), trendLabel(item, p.label)]]);
+    });
+  }
+  const avg = (v, from, to, cls) => {
+    if (v == null) return;
+    sv("line", { x1: X(from) - step / 2 + 2, x2: X(to) + step / 2 - 2, y1: Y(v), y2: Y(v), class: `tr-avg ${cls}`,
+      stroke: cls === "recent" ? color : "var(--muted)" }, svg);
+  };
+  if (recentFrom > 0) {
+    avg(item.base, 0, recentFrom - 1, "base");
+    avg(item.recent, recentFrom, pts.length - 1, "recent");
+  } else {
+    avg(item.recent, 0, pts.length - 1, "recent");
+  }
+  svText(svg, 0, H - 1, trendLabel(item, pts[0].label), "axis");
+  svText(svg, w, H - 1, trendLabel(item, pts[pts.length - 1].label), "axis", "end");
+}
+
+function trendValue(item, v) {
+  if (item.unit === "clock") { const m = ((Math.round(v) % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; }
+  if (item.unit === "min") return fmtMinutes(v);
+  if (item.unit === "pct") return `${Math.round(v)}%`;
+  if (item.unit === "bpm") return t("{n} nhịp/phút", { n: Math.round(v) });
+  if (item.unit === "steps") return t("{n} bước", { n: fmtInt(Math.round(v)) });
+  if (item.unit === "kcal") return `${fmtInt(Math.round(v))} kcal`;
+  return fmtInt(Math.round(v));
+}
+const trendLabel = (item, label) => (item.scope === "weeks" ? t("Tuần từ {d}", { d: shortDate(label) }) : shortDate(label));
+
+/** Hôm nay so với thường lệ: đường cộng dồn thường lệ (cả ngày, xám) và hôm nay tới giờ này (có màu). */
+function usualCard(u) {
+  const card = mkEl("div", { class: "insight tr-item" });
+  trendHead(card, u);
+  const box = mkEl("div", { class: "chart" }, card);
+  requestAnimationFrame(() => usualChart(box, u));
+  const f = mkEl("div", { class: "tr-foot" }, card);
+  mkEl("span", {}, f).textContent = t("Thường lệ: {v}", { v: u.usual_text });
+  mkEl("span", {}, f).textContent = t("Hôm nay: {v}", { v: u.now_text });
+  return card;
+}
+
+function usualChart(el, u) {
+  const H = 110, top = 16, bottom = 16;
+  const { svg, w } = chartBox(el, H, u.title);
+  const color = TREND_COLOR[u.key];
+  const hi = Math.max(1, ...u.usual_curve, ...u.today);
+  const X = (q) => (w * q) / 96;
+  const Y = (v) => top + (H - top - bottom) * (1 - v / hi);
+  const path = (vals) => vals.map((v, q) => `${q ? "L" : "M"}${X(q + 1)},${Y(v)}`).join("");
+  sv("path", { d: path(u.usual_curve), class: "tr-usual" }, svg);
+  sv("path", { d: path(u.today), class: "tr-now", stroke: color }, svg);
+  const x = X(u.upto), y = Y(u.now);
+  sv("line", { x1: x, x2: x, y1: top - 6, y2: H - bottom, class: "crosshair" }, svg);
+  sv("circle", { cx: x, cy: y, r: 4.5, fill: color }, svg);
+  svText(svg, Math.min(w - 4, x + 6), Math.max(12, y - 6), trendValue(u, u.now), "value-label");
+  svText(svg, 0, H - 1, "0:00", "axis");
+  svText(svg, w, H - 1, "24:00", "axis", "end");
+  hoverable(sv("rect", { x: 0, y: 0, width: w, height: H, class: "hit" }, svg),
+    () => [[trendValue(u, u.now), t("Hôm nay")], [trendValue(u, u.usual_curve[u.upto - 1]), t("Thường lệ cùng giờ")]]);
 }
 
 function renderActivityTab(H) {

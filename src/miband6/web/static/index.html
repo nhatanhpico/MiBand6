@@ -232,6 +232,7 @@
         <button role="tab" data-htab="workouts">Tập luyện</button>
         <button role="tab" data-htab="cycle" hidden>Chu kỳ</button>
         <button role="tab" data-htab="intimacy" hidden>Sinh lý</button>
+        <button role="tab" data-htab="trends">Xu hướng</button>
         <button role="tab" data-htab="insights">Phân tích</button>
       </div>
       <p class="banner info" id="hEmpty" hidden>Chưa có dữ liệu. Kết nối vòng tay rồi bấm Đồng bộ để lấy dữ liệu vòng tay đã lưu: giấc ngủ, nhịp tim, bước chân, PAI, căng thẳng, SpO2 và các buổi tập.</p>
@@ -247,6 +248,8 @@
           <div class="chart" id="slChart"></div>
           <ul class="legend" id="slLegend"></ul>
           <p class="card-sub" id="slNotes"></p>
+          <p class="card-sub sl-ref" id="slRef" hidden></p>
+          <p class="card-sub sl-check" id="slCheck" hidden></p>
         </article>
         <article class="card">
           <header class="card-head"><h2>14 đêm gần đây</h2><p class="card-sub">Bấm một cột để xem đêm đó.</p></header>
@@ -408,6 +411,24 @@
           </article>
         </div>
         <p class="footnote">Chỉ là so sánh trên dữ liệu của bạn, không cho thấy nguyên nhân; điểm sẵn sàng không đổi theo nhật ký này. Dữ liệu chỉ lưu trên máy tính này.</p>
+      </div>
+
+      <!-- Xu hướng (như "Tóm tắt sức khỏe" của Mi Fitness) -->
+      <div class="hpanel" id="htab-trends" role="tabpanel" hidden>
+        <article class="card" id="health-trends">
+          <header class="card-head"><h2>Thay đổi gần đây</h2><p class="card-sub" id="trSub"></p></header>
+          <div class="tr-counts" id="trCounts"></div>
+          <div class="tr-list" id="trChanges"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><h2>7 ngày qua</h2><p class="card-sub">Trung bình mỗi ngày, so với 7 ngày trước đó.</p></header>
+          <div class="tr-list" id="trHighlights"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><h2>Hôm nay so với thường lệ</h2><p class="card-sub">Cộng dồn tới giờ này, so với trung vị cùng giờ của 28 ngày trước.</p></header>
+          <div class="tr-list" id="trToday"></div>
+        </article>
+        <p class="footnote">Thay đổi được báo khi mức trung bình gần đây khác rõ (kiểm định thống kê) và đủ lớn so với trước đó trong 30 ngày hoặc 26 tuần. Năng lượng vận động ước tính từ bước chân, chiều cao và cân nặng trong hồ sơ (phương trình của ACSM) cộng năng lượng các buổi tập, không gồm năng lượng lúc nghỉ. Chỉ tính ngày đeo vòng từ 10 giờ.</p>
       </div>
 
       <!-- Phân tích -->

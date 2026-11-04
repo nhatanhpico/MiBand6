@@ -12,8 +12,9 @@ import threading
 import time
 
 from ..i18n import tr
-from ..xiaomi_cloud import (LoginError, SessionExpired, XiaomiLogin, fetch_profile, fetch_sport_records,
-                            profile_for_band)
+from .. import health as H
+from ..xiaomi_cloud import (LoginError, SessionExpired, XiaomiLogin, fetch_profile, fetch_sleep_reports,
+                            fetch_sport_records, profile_for_band)
 
 ACTIVE = ("checking", "login", "fetching")
 JOBS = ("profile", "workouts")
@@ -41,6 +42,22 @@ def demo_sport_records() -> list[dict]:
     return out
 
 
+def demo_sleep_reports(db) -> list[dict]:
+    """Báo cáo giấc ngủ kiểu Mi Fitness cho chế độ xem thử, dựng từ các đêm của vòng tay giả lập."""
+    if db is None:
+        return []
+    now = int(time.time())
+    out = []
+    for s in db.sleep_sessions(now - 30 * 86400, now):
+        if s["minutes"] < 180 or s.get("ongoing"):
+            continue
+        minutes = s["minutes"] - 3
+        deep = round(minutes * 0.14)
+        out.append({"start": s["start"] + 120, "end": s["end"] - 60, "minutes": minutes, "deep": deep, "rem": 0,
+                    "light": minutes - deep, "awake": s["awake"], "score": 70, "date": H.local_date(s["end"])})
+    return out
+
+
 class CloudSync:
     """Một lượt đồng bộ chạy nền; trạng thái được đẩy tới trình duyệt qua WebSocket (kiểu "cloud")."""
 
@@ -54,6 +71,7 @@ class CloudSync:
         self._cancel = threading.Event()
         self.job = "profile"
         self.since: int | None = None     # lịch sử buổi tập: chỉ lấy từ thời điểm này (None: cả lịch sử)
+        self.sleep_from: int | None = None   # báo cáo giấc ngủ: lấy từ thời điểm này (cùng lượt với buổi tập)
         self.interactive = True
 
     @property
@@ -80,12 +98,23 @@ class CloudSync:
             self.factory.forget()
         self.job = job if job in JOBS else "profile"
         self.since = since
+        self.sleep_from = self._sleep_from() if self.job == "workouts" else None
         self.interactive = interactive
         self._cancel = threading.Event()
         if interactive:
             self._set(state="checking")
         self._task = asyncio.ensure_future(self._run(write, interactive))
         return self.status
+
+    def _sleep_from(self) -> int:
+        """Báo cáo giấc ngủ cần lấy: lần đầu từ ngày cũ nhất có dữ liệu vòng tay, sau đó từ lần trước lùi 3 ngày (Mi
+        Fitness còn cập nhật báo cáo vài ngày gần nhất). Tính ở đây vì HealthDB chỉ dùng được trên luồng chính."""
+        db = self.service.health_db()
+        last = db.last("mf_sleep") if db else None
+        if last:
+            return last - 3 * 86400
+        first = db.first("activity") if db else None
+        return int(first or time.time()) - 86400
 
     async def wait(self) -> None:
         """Chờ lượt đang chạy xong (không ném lỗi nếu lượt đó bị hủy)."""
@@ -143,14 +172,21 @@ class CloudSync:
         self._set(state="fetching")
         await asyncio.sleep(0.6)
         if self.job == "workouts":
-            return demo_sport_records()
+            return {"workouts": demo_sport_records(), "sleep": demo_sleep_reports(self.service.health_db())}
         return dict(DEMO_PROFILE)
 
     def _download(self, login):
         """Gọi API của việc đang làm; trả về (dữ liệu, nhật ký)."""
         if self.job == "workouts":
             end = int(time.time())
-            return fetch_sport_records(login, self.since or end - CLOUD_HISTORY_DAYS * 86400, end)
+            records, trail = fetch_sport_records(login, self.since or end - CLOUD_HISTORY_DAYS * 86400, end)
+            try:   # cùng lượt: báo cáo giấc ngủ (để so và hiệu chỉnh thuật toán giấc ngủ); lỗi thì vẫn giữ buổi tập
+                sleep, more = fetch_sleep_reports(login, self.sleep_from or end - 30 * 86400, end)
+            except SessionExpired:
+                raise
+            except Exception as e:  # noqa: BLE001
+                sleep, more = None, [f"sleep: {type(e).__name__}"]
+            return {"workouts": records, "sleep": sleep}, trail + more
         return fetch_profile(login)
 
     def _checked(self, raw, trail: list[str]):

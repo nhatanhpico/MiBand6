@@ -128,6 +128,87 @@ def test_sleep_edges_follow_sleep_level_not_late_markers():
     assert sess["start"] == BASE + 60 * (fall + 11) and sess["end"] == BASE + 60 * (wake + 12)
 
 
+def row(m, kind, level=0, hr=60, intensity=0, steps=0, deep=0x80, rem=0):
+    return (BASE + 60 * m, kind, intensity, steps, hr, level, deep, rem)
+
+
+def test_off_wrist_band_on_table_is_not_sleep():
+    """Đêm 4/11/2026 thật: trước khi ngủ và sau khi dậy vòng tay nằm trên bàn (vòng ghi "không đeo" từng phút, không
+    có nhịp tim) nên byte "ngủ" vẫn tăng như đang ngủ; lúc đeo vào vòng ghi một mốc ngủ sâu dù đang đi lại.
+    Trước đây giấc ngủ bị kéo sớm 27 phút và thêm 11 phút "ngủ" lúc 9:57-10:08."""
+    fall, wake = 100, 400
+    rows = [row(m, 0x50, hr=70) for m in range(60)]
+    rows += [row(m, 0x73, level=min(60, 3 * (m - 60)), hr=255) for m in range(60, 80)]          # trên bàn
+    rows += [row(80, 0xFB, level=58, hr=75, intensity=40)]                                      # đeo vào: mốc ngủ sâu
+    rows += [row(m, 0x50, level=60 - 6 * (m - 80), hr=80, intensity=40) for m in range(81, 90)]  # mức cũ đang giảm
+    rows += [row(m, 0x50, level=m - 91, hr=72) for m in range(90, fall)]                         # nằm, chưa ngủ (< 9)
+    rows += [row(m, 0x50, level=9 + 5 * (m - fall), hr=66) for m in range(fall, fall + 11)]
+    rows += [row(fall + 11, 0xF9, level=58)]                                                    # mốc ngủ nông trễ
+    rows += [row(m, 0xF0, level=58, deep=0x80 | (30 + 2 * (m % 30))) for m in range(fall + 12, wake)]
+    rows += [row(wake, 0xF0, level=38)] + [row(m, 0xF0, level=max(0, 24 - 3 * (m - wake))) for m in range(wake + 1, wake + 12)]
+    rows += [row(wake + 12, 0x6C, hr=75)] + [row(m, 0x50, hr=75) for m in range(wake + 13, 430)]
+    rows += [row(m, 0x73, level=min(57, 3 * (m - 430)), hr=255) for m in range(430, 451)]       # lại trên bàn
+    rows += [row(451, 0x8B, level=42, hr=86, intensity=96, steps=78)]                          # đeo vào rồi đi luôn
+    rows += [row(m, 0x11, hr=95, intensity=120, steps=100) for m in range(452, 470)]
+    (sess,) = H.sleep_sessions(rows, previous=H.KIND_ACTIVITY)
+    assert sess["start"] == BASE + 60 * fall and sess["end"] == BASE + 60 * wake
+    assert sess["awake"] == 0 and sess["minutes"] == wake - fall
+    assert 0.10 * 300 <= sess["deep"] <= 0.20 * 300 and sess["stage_source"] == "default"   # theo tỉ lệ mặc định
+
+
+def test_off_wrist_state_ends_with_a_heart_rate():
+    rows = [row(0, 0x73, hr=255), row(1, 0x50, hr=255), row(2, 0x50, hr=72), row(3, 0x50, hr=255), row(4, 0xF3, hr=255)]
+    assert H.off_wrist(rows) == [True, True, False, False, True]
+    assert H.off_wrist([row(0, 0x50, hr=255)], previous=H.KIND_NOT_WORN) == [True]
+
+
+def rem_night(bouts=((200, 12), (300, 6))):
+    """Đêm kiểu firmware mới (byte REM có bit 7): ngủ phút 30-400, các đợt thức (phút đầu, độ dài) nhịp tim tăng 20,
+    cử động, byte REM ở mức sàn 17; một đoạn REM (byte REM 70) ở phút 250-269; điểm ngủ sâu tăng dần khi nằm yên."""
+    awake = {m for a, n in bouts for m in range(a, a + n)}
+    rows = [row(m, 0x50, hr=72) for m in range(20)]
+    rows += [row(m, 0x50, level=9 + 4 * (m - 20), hr=66) for m in range(20, 30)]
+    for m in range(30, 400):
+        kind = 0xF9 if m == 30 else 0xF0
+        if m in awake:
+            rows.append(row(m, kind, level=40, hr=80, intensity=30 if m % 3 == 0 else 0, deep=0x80 | 30, rem=0x80 | 17))
+        else:
+            rem_block = 250 <= m < 270   # REM: nhịp tim cao hơn nền một chút, nên không thể là ngủ sâu
+            rows.append(row(m, kind, level=58, hr=66 if rem_block else 60, deep=0x80 | (33 + (m % 45) * 3 // 2),
+                            rem=0x80 | (70 if rem_block else 35 + (m * 3) % 15)))
+    rows += [row(400, 0xF0, level=38, hr=70)]   # phút chuyển tiếp: byte "ngủ" đang tụt, tính là đã dậy
+    rows += [row(m, 0xF0, level=20, hr=75) for m in range(401, 405)]
+    rows += [row(m, 0x6C if m == 410 else 0x50, hr=78) for m in range(405, 420)]
+    return rows
+
+
+def test_wake_bout_inside_sleep():
+    """Thức 12 phút (như 8:29-8:41 đêm 4/11) là "thức"; đợt 6 phút (thường không nhớ) vẫn tính là ngủ nông."""
+    (sess,) = H.sleep_sessions(rem_night(), previous=H.KIND_ACTIVITY)
+    # thiếp đi lúc byte "ngủ" bắt đầu đợt tăng cuối (từ 9, phút 20), không phải mốc trễ của vòng tay (phút 30)
+    assert sess["start"] == BASE + 60 * 20 and sess["end"] == BASE + 60 * 400
+    assert sess["awake"] == 12 and [BASE + 200 * 60, BASE + 212 * 60, "awake"] in sess["stages"]
+    assert sess["rem"] == 20 and [BASE + 250 * 60, BASE + 270 * 60, "rem"] in sess["stages"]   # byte REM > 55
+    assert sess["minutes"] == 380 - 12
+
+
+def test_stages_follow_mi_fitness_report_or_learned_shares():
+    ref = [{"start": BASE + 21 * 60, "end": BASE + 402 * 60, "minutes": 378, "deep": 40, "light": 320, "rem": 18,
+            "awake": 0, "score": 71}]
+    (sess,) = H.sleep_sessions(rem_night(), previous=H.KIND_ACTIVITY, reference=ref)
+    assert sess["stage_source"] == "mifitness" and sess["reference"]["score"] == 71
+    assert abs(sess["deep"] - 40) <= 5 and abs(sess["rem"] - 18) <= 3 and sess["awake"] == 12
+    (sess,) = H.sleep_sessions(rem_night(), previous=H.KIND_ACTIVITY, calib={"deep_share": 0.2, "rem_share": 0.05})
+    assert sess["stage_source"] == "calibrated" and "reference" not in sess
+    assert abs(sess["deep"] - 0.2 * 368) <= 5 and abs(sess["rem"] - 0.05 * 368) <= 4
+    # giấc ngắn (ngủ trưa) không chia giai đoạn, như Mi Fitness
+    nap = [row(m, 0x50, level=9 + 4 * m, hr=66) for m in range(10)] \
+        + [row(m, 0xF9 if m == 10 else 0xF0, level=58, deep=0x80 | (20 + m % 30)) for m in range(10, 50)] \
+        + [row(m, 0x6C if m == 50 else 0x50, hr=75) for m in range(50, 70)]
+    (sess,) = H.sleep_sessions(nap, previous=H.KIND_ACTIVITY)
+    assert sess["minutes"] >= 40 and sess["deep"] == 0 and sess["rem"] == 0
+
+
 # ---------------------------------------------------------------- lấy dữ liệu từ vòng tay
 
 
@@ -496,6 +577,48 @@ def test_fetch_sport_records_pages():
         X.fetch_sport_records(Expired(), 100, 200)
 
 
+def test_sleep_reports_from_mi_fitness(tmp_path):
+    from miband6 import xiaomi_cloud as X
+
+    report = {"sleep_score": 74, "segment_details": [
+        {"bedtime": 1_800_000_000, "wake_up_time": 1_800_028_380, "duration": 473, "sleep_deep_duration": 53,
+         "sleep_light_duration": 371, "sleep_rem_duration": 49, "sleep_awake_duration": 1},
+        {"bedtime": 1_800_050_000, "wake_up_time": 1_800_052_220, "duration": 37}]}   # ngủ trưa: không chia giai đoạn
+    night, nap = X.sleep_segments(report)
+    assert (night["minutes"], night["deep"], night["rem"], night["score"]) == (473, 53, 49, 74)
+    assert nap["deep"] is None and nap["score"] is None
+    pages = {None: {"code": 0, "result": {"data_list": [{"time": 1_800_057_600, "value": json.dumps(report)},
+                                                        {"time": 1, "value": "{}", "deleted": True}],
+                                          "has_more": True, "next_key": "k2"}},
+             "k2": {"code": 0, "result": {"data_list": [], "has_more": False}}}
+    calls = []
+
+    class Login:
+        class requests:  # noqa: N801
+            class exceptions:  # noqa: N801
+                RequestException = OSError
+
+        def request(self, host, path, plain, method="POST", region="sg", **_):
+            req = json.loads(plain["data"])
+            calls.append((path, method, req))
+            return 200, pages[req.get("next_key")]
+
+    rows, _trail = X.fetch_sleep_reports(Login(), 1_799_900_000, 1_800_060_000)
+    assert len(rows) == 2 and rows[0]["date"] == "2027-01-16"
+    assert calls[0][:2] == ("/app/v1/data/get_aggregated_fitness_data_by_time", "GET")
+    assert calls[0][2]["tag"] == "daily_report" and calls[0][2]["key"] == "sleep" and calls[1][2]["next_key"] == "k2"
+
+    db = HealthDB(tmp_path / "h.sqlite3")
+    assert db.add_cloud_sleep(rows) == 2 and db.add_cloud_sleep(rows) == 0   # lấy lại không nhân đôi
+    assert [r["minutes"] for r in db.sleep_reference(1_800_000_000, 1_800_000_060)] == [473]
+    assert db.sleep_calibration() is None   # cần ít nhất 5 đêm
+    for i in range(1, 6):
+        db.add_cloud_sleep([{**night, "start": night["start"] - i * 86400, "end": night["end"] - i * 86400,
+                             "deep": 60 + i, "rem": 0}])
+    cal = db.sleep_calibration()
+    assert cal["nights"] == 6 and abs(cal["deep_share"] - 63 / 473) < 0.002 and cal["rem_share"] == round(49 / 473, 4)
+
+
 async def test_cloud_workouts_job_demo(client):
     await connected(client)
     await wait_sync(client.service)
@@ -509,6 +632,13 @@ async def test_cloud_workouts_job_demo(client):
     assert st["state"] == "done" and st["job"] == "workouts" and "4" in st["message"]
     h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
     assert sum(1 for w in h["workouts"] if w["source"] == "mifitness") == 4
+    # cùng lượt: báo cáo giấc ngủ của Mi Fitness, để so và hiệu chỉnh thuật toán giấc ngủ
+    assert client.service.health_db().last("mf_sleep")
+    check = h["sleep_check"]
+    assert check["validation"]["nights"] >= 5 and check["validation"]["start"] <= 3
+    assert check["calibration"]["nights"] >= 5
+    assert h["day"]["sleep"]["stage_source"] == "mifitness" and h["day"]["sleep"]["reference"]["score"] == 70
+    assert {"changes", "counts", "highlights", "today"} <= set(h["trends"])
 
 
 

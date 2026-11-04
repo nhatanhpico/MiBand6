@@ -755,17 +755,25 @@ class BandService:
         # next minute, then overlap on the next sync rather than skipping 60 seconds.
         return (max(r[0] for r in rows) // 60 + 1) * 60 if rows else None
 
-    def import_cloud_workouts(self, records: list[dict]) -> str:
-        """Lưu buổi tập lấy từ tài khoản Mi Fitness (gộp với buổi vòng tay đã ghi)."""
+    def import_cloud_workouts(self, records: list[dict] | dict) -> str:
+        """Lưu buổi tập lấy từ tài khoản Mi Fitness (gộp với buổi vòng tay đã ghi) và báo cáo giấc ngủ cùng lượt
+        (records: {"workouts": [...], "sleep": [...] hoặc None}; danh sách trần là chỉ có buổi tập)."""
         db = self.health_db()
         if db is None:
             raise LoginError(tr('Kết nối vòng tay một lần trước khi lấy lịch sử buổi tập.'))
+        sleep = records.get("sleep") if isinstance(records, dict) else None
+        records = records.get("workouts") or [] if isinstance(records, dict) else records
         rows = [w for w in (H.workout_from_cloud(v) for v in records) if w]
         added = db.add_cloud_workouts(rows)
         db.set_last("cloud_workouts", int(time.time()))
+        message = tr('Đã lấy {n} buổi tập từ Mi Fitness, {new} buổi mới.', n=len(rows), new=added)
+        if sleep is not None:
+            new_nights = db.add_cloud_sleep(sleep)
+            message += " " + tr('Đã lấy {n} giấc ngủ từ Mi Fitness để so với ứng dụng, {new} giấc mới.',
+                                n=len(sleep), new=new_nights)
         self.push({"type": "health_data"})
         self.prefetch_tracks()
-        return tr('Đã lấy {n} buổi tập từ Mi Fitness, {new} buổi mới.', n=len(rows), new=added)
+        return message
 
     async def workout_track(self, start: int) -> list:
         """Lộ trình GPS của một buổi tập (tải từ Mi Fitness lần đầu, sau đó dùng bản đã lưu trên máy).
@@ -909,10 +917,17 @@ class BandService:
         summary = db.summary(date, rem=rem)
         summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000), rem=rem, profile=self.profile)
         body = tuple(self.profile.get(k) for k in ("birth", "gender", "height", "weight", "max_hr_override"))
-        key = (date, db.last("last_sync"), db.last("cloud_workouts"), db.last("journal"), rem, get_lang(), body)
+        key = (date, db.last("last_sync"), db.last("cloud_workouts"), db.last("mf_sleep"), db.last("journal"), rem,
+               get_lang(), body)
         if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, ngôn ngữ, hồ sơ, nhật ký…
-            self._insight_cache = {"key": key, "value": db.insights(date, self.profile, rem=rem)}
+            insights = db.insights(date, self.profile, rem=rem)
+            self._insight_cache = {"key": key, "value": insights,
+                                   "trends": db.trends(date, self.profile, insights),
+                                   "sleep_check": {"validation": db.sleep_validation(),
+                                                   "calibration": db.sleep_calibration()}}
         summary["insights"] = self._insight_cache["value"]
+        summary["trends"] = self._insight_cache["trends"]
+        summary["sleep_check"] = self._insight_cache["sleep_check"]
         summary["rem_mode"] = self.settings.get("rem_mode", "estimate")
         # nhật ký riêng chỉ cho đúng giới tính trong hồ sơ: nữ ghi kỳ kinh, nam ghi xuất tinh
         sex = PS.sex_of(self.profile)
