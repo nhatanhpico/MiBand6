@@ -1052,5 +1052,10 @@
   "Đang thiếu cân mà cân nặng vẫn giảm.": "You're underweight and your weight is still dropping.",
   "Đang tăng khoảng {r} kg mỗi tuần.": "Gaining about {r} kg a week.",
   "Đã lưu cân nặng.": "Weight saved.",
-  "Đã xóa lần ghi.": "Entry deleted."
+  "Đã xóa lần ghi.": "Entry deleted.",
+  "Năm trước": "Previous year",
+  "Năm sau": "Next year",
+  "Các năm trước": "Earlier years",
+  "Các năm sau": "Later years",
+  "Chọn tháng, năm": "Choose month and year"
 }

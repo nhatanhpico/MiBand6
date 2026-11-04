@@ -57,6 +57,8 @@ SYNC_CHOICES = {"band_minutes": (0, 15, 30, 60, 120), "cloud_hours": (0, 1, 3, 6
                 "renew_hours": (0, 12, 24, 168), "retry_max": (10, 30, 60, 300)}
 CLOUD_TICK = 60                        # giây giữa hai lần kiểm tra lịch đồng bộ Mi Fitness / gia hạn phiên
 MAX_AUTH_FAILURES = 3                  # vòng tay từ chối xác thực ngần này lần liền thì thôi tự kết nối lại
+CONNECT_TIMEOUT = 60.0                 # giây: một lần kết nối + xác thực lâu hơn thì bỏ, để vòng tự kết nối lại thử lần sau
+AFTER_CONNECT_TIMEOUT = 15.0           # giây cho mỗi việc đọc / ghi ngay sau khi kết nối (pin, báo thức, hồ sơ…)
 FIRST_SYNC_DAYS = 30                   # lần đồng bộ đầu tiên lấy tối đa chừng này ngày (vòng tay giữ cỡ đó)
 BACKFILL_DAYS = 3 * 365                # một lần duy nhất: hỏi vòng tay mọi dữ liệu cũ hơn lần đầu, tới chừng này ngày
 CLOUD_PROFILE_EVERY = 12 * 3600        # tự lấy lại hồ sơ Mi Fitness (nếu còn phiên đăng nhập) sau chừng này giây
@@ -160,6 +162,7 @@ class BandService:
         self.weather_status: dict = {"state": "idle"}
         self._ip_place: tuple[float, W.Place] | None = None
         self._health_task: asyncio.Task | None = None
+        self._health_band: MiBand6 | None = None   # kết nối mà lượt đồng bộ đang chạy thuộc về
         self._dbs: dict[str, HealthDB] = {}
         self.watchface_busy = False
         self.cloud = CloudSync(self, demo=demo, **({"login_factory": login_factory} if login_factory else {}))
@@ -345,7 +348,14 @@ class BandService:
                 client = simulator.FakeBand(key, "both")
                 client.hr_delay = 6.0
             self.band = MiBand6(target, key, proto, on_event=self.on_event, log=self.log, client=client, name=name)
-            used = await self.band.connect()
+            try:
+                # CoreBluetooth có thể chờ mãi (máy vừa ngủ dậy, đang hỏi quyền Bluetooth…): giới hạn để lần tự kết nối
+                # sau, hay /api/reconnect khi máy thức dậy, còn chạy được thay vì kẹt cả đêm
+                used = await asyncio.wait_for(self.band.connect(), CONNECT_TIMEOUT)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(self.band.disconnect(), 5)
+                raise
         except AuthTimeout as e:   # vòng tay không trả lời bước xác thực: thử lại sau, không phải key sai
             raise ApiError(str(e), 504) from e
         except AuthError as e:     # 401 chỉ khi vòng tay nói key sai: tự kết nối lại dừng sau MAX_AUTH_FAILURES lần
@@ -372,27 +382,35 @@ class BandService:
         return used
 
     async def _after_connect(self) -> None:
+        """Sau mỗi lần kết nối (kể cả tự kết nối lại): đọc trạng thái vòng tay rồi đồng bộ sức khỏe ngay.
+
+        Mỗi việc đọc / ghi có giới hạn thời gian: một thao tác Bluetooth không bao giờ trả lời (thường ngay sau khi máy
+        ngủ dậy) không được chặn lượt đồng bộ và lịch đồng bộ định kỳ phía sau."""
         band = self.band
+
+        async def step(job, message) -> None:
+            try:
+                await asyncio.wait_for(job(), AFTER_CONNECT_TIMEOUT)
+            except Exception as e:  # noqa: BLE001 - kể cả hết thời gian chờ
+                self.log(message(str(e) or type(e).__name__))
+
+        async def write_profile() -> None:
+            await self._write_profile()
+            self.log(tr('Đã ghi hồ sơ lấy từ Mi Fitness vào vòng tay.'))
+
         if self.profile.get("pending_sync"):
-            try:
-                await self._write_profile()
-                self.log(tr('Đã ghi hồ sơ lấy từ Mi Fitness vào vòng tay.'))
-            except Exception as e:  # noqa: BLE001
-                self.log(tr('Lỗi khi ghi hồ sơ: {e}', e=e))
+            await step(write_profile, lambda e: tr('Lỗi khi ghi hồ sơ: {e}', e=e))
         for job in (band.refresh_all, band.request_alarms):
-            try:
-                await job()
-            except Exception as e:  # noqa: BLE001
-                self.log(tr('Lỗi khi đọc dữ liệu: {e}', e=e))
+            await step(job, lambda e: tr('Lỗi khi đọc dữ liệu: {e}', e=e))
+        if self.auto_health and self.band is band and self.connected:
+            self.start_health_sync()
+            self._spawn(self._periodic_health(band))
         if self.settings.get("live_hr_auto") and self.band is band and self.connected:
-            await self._live_hr_quiet(True)
+            await step(lambda: self._live_hr_quiet(True), lambda e: tr('Không bật được theo dõi nhịp tim liên tục: {e}', e=e))
         if self.auto_cloud:
             self._spawn(self._cloud_background())
         if self.weather_settings()["enabled"]:
             self._spawn(self._periodic_weather(band))
-        if self.auto_health and self.band is band and self.connected:
-            self.start_health_sync()
-            self._spawn(self._periodic_health(band))
 
     async def _cloud_background(self, on_connect: bool = True) -> None:
         """Nếu đã đăng nhập Xiaomi (phiên đã lưu), tự lấy hồ sơ và các buổi tập mới từ Mi Fitness theo lịch ở
@@ -580,7 +598,12 @@ class BandService:
 
     def start_health_sync(self) -> dict:
         self.require()
-        if not (self._health_task and not self._health_task.done()):
+        running = self._health_task is not None and not self._health_task.done()
+        if running and self._health_band is not self.band:   # lượt của kết nối đã rớt chưa kịp dừng: bỏ, chạy lượt mới
+            self._health_task.cancel()
+            running = False
+        if not running:
+            self._health_band = self.band
             self._health_task = asyncio.ensure_future(self._sync_health(self.band))
         return self.health_status
 

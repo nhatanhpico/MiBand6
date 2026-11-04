@@ -1098,6 +1098,19 @@ a.metric:hover .mini-ring::after { background: #1b2523; }
 .journal-effect.warn { background: rgba(255, 181, 71, .09); color: #ffd79a; }
 .journal-effect.warn.lv-alert { background: rgba(255, 123, 123, .1); color: #ffbcbc; }
 #bdChart { margin-top: 14px; }
+/* ô chọn ngày dùng chung (datePicker): cùng kiểu với lịch của trang Sức khỏe */
+.date-field { display: inline-flex; position: relative; }
+.date-native { display: none !important; }
+.row .date-btn { height: 40px; min-width: 230px; }
+.date-btn.empty b { color: var(--muted); font-weight: 500; }
+.cal-pop.date-pop { position: fixed; right: auto; top: 0; left: 0; z-index: 60; }
+.cal-title { border: 0; background: transparent; color: var(--text); font: 600 15px var(--font); padding: 5px 10px;
+  border-radius: 9px; cursor: pointer; text-transform: capitalize; }
+.cal-title:hover:not(:disabled) { background: var(--surface-3); }
+.cal-title:disabled { cursor: default; }
+.cal-grid.cal-wide { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.cal-grid.cal-wide .cal-day { height: 46px; text-transform: capitalize; }
+@media (max-width: 760px) { .row .date-field, .row .date-btn { flex: 1 1 100%; width: 100%; } }
 .compare { margin-top: 8px; }
 .compare .data-table td:first-child { color: var(--muted); }
 .compare .data-table td:not(:first-child), .compare .data-table th:not(:first-child) { text-align: right; }

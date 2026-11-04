@@ -413,3 +413,66 @@ async def test_background_mifitness_sync_keeps_weight_logged_in_app(client):
     await s.apply_cloud_profile({"height": 176, "weight": 59.0}, interactive=False)
     assert s.profile["weight"] == 59.0
     assert s.health_db().body_history()[-1]["source"] == "mifitness"
+
+
+async def wait_health_done(service, after=0, timeout=10.0):
+    return await wait_for(lambda: service.health_status.get("state") == "done"
+                          and (service.health_status.get("last_sync") or 0) >= after, timeout)
+
+
+async def test_auto_reconnect_syncs_health_again(client):
+    """Tự kết nối lại sau khi rớt: lấy dữ liệu sức khỏe mới ngay, như lần kết nối đầu."""
+    s = client.service
+    await connect(client)
+    assert await wait_health_done(s)
+    s.reconnect_delays = (0.01,)
+    s.band._client.drop()
+    assert await wait_for(lambda: s.connected, 5)
+    fresh = s.band._client
+    assert await wait_for(lambda: fresh.fetch_requests, 5)        # vòng tay mới được hỏi dữ liệu
+    assert await wait_health_done(s)
+
+
+async def test_hung_band_read_does_not_block_sync_after_reconnect(client, monkeypatch):
+    """Một lần đọc Bluetooth không bao giờ trả lời (máy vừa ngủ dậy) không được chặn lượt đồng bộ sau khi kết nối lại."""
+    from miband6.device import MiBand6
+    from miband6.web import server as srv
+
+    await connect(client)
+    s = client.service
+    assert await wait_health_done(s)
+    monkeypatch.setattr(srv, "AFTER_CONNECT_TIMEOUT", 0.05)
+
+    async def hang(self):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(MiBand6, "refresh_all", hang)
+    s.reconnect_delays = (0.01,)
+    s.band._client.drop()
+    assert await wait_for(lambda: s.connected, 5)
+    assert await wait_for(lambda: s.band._client.fetch_requests, 5)
+    assert any("Lỗi khi đọc dữ liệu" in line for line in s.logs)
+
+
+async def test_stuck_connect_attempt_times_out_and_retries(client, monkeypatch):
+    """Một lần kết nối kẹt (CoreBluetooth không trả lời) bị bỏ sau CONNECT_TIMEOUT; vòng tự kết nối lại thử tiếp."""
+    from miband6.device import MiBand6
+    from miband6.web import server as srv
+
+    await connect(client)
+    s = client.service
+    monkeypatch.setattr(srv, "CONNECT_TIMEOUT", 0.05)
+    real = MiBand6.connect
+    calls = []
+
+    async def stuck_once(self, timeout=20.0):
+        calls.append(1)
+        if len(calls) == 1:
+            await asyncio.sleep(3600)
+        return await real(self, timeout)
+
+    monkeypatch.setattr(MiBand6, "connect", stuck_once)
+    s.reconnect_delays = (0.01,)
+    s.band._client.drop()
+    assert await wait_for(lambda: s.connected, 5)
+    assert len(calls) == 2

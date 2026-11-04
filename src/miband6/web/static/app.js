@@ -911,8 +911,9 @@ $$("[data-save]").forEach((btn) => btn.addEventListener("click", async () => {
   const missing = incompleteField(btn.closest(".group"));
   if (missing) {
     toast(t("Chọn giá trị cho mọi mục trong nhóm này trước khi lưu."), true);
-    (missing.closest(".seg") ? $("label", missing.closest(".seg")) : missing).scrollIntoView({ block: "center" });
-    missing.focus();
+    const target = missing.classList.contains("date-native") ? missing.nextElementSibling : missing;
+    (missing.closest(".seg") ? $("label", missing.closest(".seg")) : target).scrollIntoView({ block: "center" });
+    target.focus();
     return;
   }
   try {
@@ -2108,6 +2109,163 @@ document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".day-na
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#calPop").hidden) { closeCal(); $("#hDateBtn").focus(); }
 });
+/* ---- ô chọn ngày dùng chung: cùng giao diện với lịch ở đầu trang Sức khỏe (thay lịch của trình duyệt).
+   Giữ nguyên <input type="date"> (ẩn) làm nơi chứa giá trị, nên mã đọc / ghi .value như cũ. Bấm tiêu đề để chọn
+   tháng, rồi năm (ngày sinh không phải bấm lùi từng tháng). Hộp lịch đặt cố định trên trang để khung có góc bo
+   (overflow: hidden) không cắt mất. */
+const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+let openPicker = null;
+
+function datePicker(input, opts = {}) {
+  const wrap = document.createElement("span");
+  wrap.className = "date-field";
+  input.replaceWith(wrap);
+  input.classList.add("date-native");
+  input.tabIndex = -1;
+  const btn = mkEl("button", { type: "button", class: "date-btn", "aria-haspopup": "dialog", "aria-expanded": "false" });
+  btn.innerHTML = '<svg class="ic"><use href="#i-calendar"/></svg><span class="date-txt"><b></b><span></span></span>';
+  wrap.append(input, btn);
+  const pop = mkEl("div", { class: "cal-pop date-pop", role: "dialog" }, document.body);
+  pop.hidden = true;
+  pop.innerHTML = '<div class="cal-head"><button type="button" class="nav-arrow small prev"><svg class="ic"><use href="#i-chev-left"/></svg></button>'
+    + '<button type="button" class="cal-title"></button><button type="button" class="nav-arrow small next"><svg class="ic"><use href="#i-chev-right"/></svg></button></div>'
+    + '<div class="cal-grid"></div><div class="cal-foot"><span></span><span class="cal-quick"></span></div>';
+  const [prev, title, next] = [$(".prev", pop), $(".cal-title", pop), $(".next", pop)];
+  let view = "days";
+  let cursor = new Date();   // ngày đầu tháng đang xem (view days) / năm đang xem (months, years)
+
+  const dateOf = (iso) => new Date(`${iso}T12:00:00`);
+  const max = () => input.max || "9999-12-31";
+  const min = () => input.min || "0000-01-01";
+  function refresh() {
+    const v = nativeValue.get.call(input);
+    $("b", btn).textContent = v ? new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long", year: "numeric" }).format(dateOf(v)) : t("Chọn ngày");
+    $(".date-txt span", btn).textContent = v ? new Intl.DateTimeFormat(LOCALE, { weekday: "long" }).format(dateOf(v)) : "";
+    btn.classList.toggle("empty", !v);
+  }
+  // mã khác gán .value (điền hồ sơ, điền sẵn hôm nay): cập nhật chữ trên nút
+  Object.defineProperty(input, "value", { configurable: true, get() { return nativeValue.get.call(this); },
+    set(v) { nativeValue.set.call(this, v); refresh(); } });
+
+  function cell(grid, text, { disabled, selected, today, onPick, label }) {
+    const b = mkEl("button", { type: "button", class: "cal-day" }, grid);
+    b.textContent = text;
+    b.disabled = disabled;
+    b.classList.toggle("today", !!today);
+    b.setAttribute("aria-selected", String(!!selected));
+    if (label) b.setAttribute("aria-label", label);
+    b.onclick = onPick;
+    return b;
+  }
+  function render() {
+    const grid = $(".cal-grid", pop);
+    grid.textContent = "";
+    grid.classList.toggle("cal-wide", view !== "days");
+    const value = input.value;
+    const now = new Date();
+    if (view === "days") {
+      title.textContent = new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric" }).format(cursor);
+      prev.setAttribute("aria-label", t("Tháng trước"));
+      next.setAttribute("aria-label", t("Tháng sau"));
+      for (const name of weekdays()) mkEl("span", { class: "cal-dow" }, grid).textContent = name;
+      for (let i = 0; i < (cursor.getDay() + 6) % 7; i++) grid.append(document.createElement("span"));
+      const d = new Date(cursor);
+      while (d.getMonth() === cursor.getMonth()) {
+        const iso = isoOf(d);
+        cell(grid, String(d.getDate()), { disabled: iso > max() || iso < min(), selected: iso === value, today: iso === isoOf(now),
+          label: new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d),
+          onPick: () => choose(iso) });
+        d.setDate(d.getDate() + 1);
+      }
+      next.disabled = isoOf(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)) > max();
+    } else if (view === "months") {
+      const y = cursor.getFullYear();
+      title.textContent = String(y);
+      prev.setAttribute("aria-label", t("Năm trước"));
+      next.setAttribute("aria-label", t("Năm sau"));
+      for (let m = 0; m < 12; m++) {
+        const first = new Date(y, m, 1);
+        cell(grid, new Intl.DateTimeFormat(LOCALE, { month: "short" }).format(first), {
+          disabled: isoOf(first) > max() || isoOf(new Date(y, m + 1, 0)) < min(),
+          selected: value && dateOf(value).getFullYear() === y && dateOf(value).getMonth() === m,
+          today: now.getFullYear() === y && now.getMonth() === m,
+          onPick: () => { cursor = first; view = "days"; render(); } });
+      }
+      next.disabled = `${y + 1}-01-01` > max();
+    } else {
+      const start = cursor.getFullYear() - (cursor.getFullYear() % 12);
+      title.textContent = `${start} – ${start + 11}`;
+      prev.setAttribute("aria-label", t("Các năm trước"));
+      next.setAttribute("aria-label", t("Các năm sau"));
+      for (let y = start; y < start + 12; y++) {
+        cell(grid, String(y), { disabled: `${y}-01-01` > max() || `${y}-12-31` < min(),
+          selected: value && dateOf(value).getFullYear() === y, today: now.getFullYear() === y,
+          onPick: () => { cursor = new Date(y, 0, 1); view = "months"; render(); } });
+      }
+      next.disabled = `${start + 12}-01-01` > max();
+    }
+    title.setAttribute("aria-label", t("Chọn tháng, năm"));
+    title.disabled = view === "years";
+  }
+  function choose(iso) {
+    input.value = iso;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    close();
+    btn.focus();
+  }
+  function place() {
+    const r = btn.getBoundingClientRect();
+    const h = pop.offsetHeight;
+    const below = window.innerHeight - r.bottom > h + 12;
+    pop.style.top = `${below ? r.bottom + 8 : Math.max(8, r.top - h - 8)}px`;
+    pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
+  }
+  function open() {
+    if (openPicker && openPicker !== close) openPicker();
+    const base = input.value ? dateOf(input.value) : dateOf(max() < todayISO() ? max() : todayISO());
+    cursor = new Date(base.getFullYear(), base.getMonth(), 1);
+    view = opts.startView && !input.value ? opts.startView : "days";
+    render();
+    pop.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    place();
+    openPicker = close;
+    ($(".cal-day[aria-selected=true]", pop) || $(".cal-day:not(:disabled)", pop))?.focus();
+  }
+  function close() {
+    if (pop.hidden) return;
+    pop.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    if (openPicker === close) openPicker = null;
+  }
+  title.onclick = () => { view = view === "days" ? "months" : "years"; render(); };
+  const shift = (dir) => {
+    cursor = view === "days" ? new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1)
+      : new Date(cursor.getFullYear() + dir * (view === "months" ? 1 : 12), 0, 1);
+    render();
+  };
+  prev.onclick = () => shift(-1);
+  next.onclick = () => shift(1);
+  if (opts.today) {
+    const quick = $(".cal-quick", pop);
+    const b = mkEl("button", { type: "button", class: "btn small" }, quick);
+    b.textContent = t("Hôm nay");
+    b.onclick = () => choose(todayISO());
+  } else {
+    $(".cal-foot", pop).remove();
+  }
+  btn.onclick = () => (pop.hidden ? open() : close());
+  document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && !btn.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { close(); btn.focus(); } });
+  window.addEventListener("resize", close);
+  $(".main")?.addEventListener("scroll", close, { passive: true });
+  refresh();
+  return { refresh, close, button: btn };
+}
+
+const DATE_PICKERS = [datePicker($("#pBirth"), { startView: "years" }), datePicker($("#bdDate"), { today: true })];
+
 $("#hPrev").onclick = () => { healthDate = shiftDate(healthDate, -1); quiet(loadHealth()); };
 $("#hNext").onclick = () => { if (healthDate < todayISO()) { healthDate = shiftDate(healthDate, 1); quiet(loadHealth()); } };
 $("#hSyncBtn").onclick = () => quiet(run($("#hSyncBtn"), async () => {
@@ -3349,6 +3507,7 @@ function rerenderLanguage() {
     // trang ẩn thì để lúc mở trang (route -> loadHealth) vẽ lại, tránh vẽ biểu đồ khi chưa có kích thước
     () => { if (healthData && !$("#page-health").hidden) { renderDateNav(); renderHealth(); } },
     () => { if (SIM) drawSim(); },
+    () => DATE_PICKERS.forEach((p) => p.refresh()),
     () => { if (cloudOpen && STATE.cloud && STATE.cloud.state !== "done") renderCloud({ ...STATE.cloud, seq: null }); },
   ];
   for (const step of steps) {
