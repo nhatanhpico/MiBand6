@@ -513,6 +513,7 @@ ol.apps.shortcuts { margin: 0 22px 18px; }
   max-width: min(560px, calc(100vw - 32px)); padding: 12px 18px; border-radius: 14px;
   background: #eef3f1; color: #101615; font-size: 14.5px; font-weight: 500;
   box-shadow: 0 12px 40px rgba(0, 0, 0, .45); animation: toast-in .25s var(--ease);
+  top: auto; right: auto; margin: 0; border: 0; overflow: visible;   /* bỏ kiểu mặc định của popover */
 }
 .toast.error { background: var(--coral); color: #2b0007; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }

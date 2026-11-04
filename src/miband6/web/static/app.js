@@ -175,6 +175,11 @@ function toast(msg, error = false) {
   el.textContent = msg;
   el.classList.toggle("error", error);
   el.hidden = false;
+  // popover: hiện lại để nằm trên hộp thoại đang mở (showModal đưa hộp thoại lên lớp trên cùng, che mọi thứ khác)
+  if (el.showPopover) {
+    if (el.matches(":popover-open")) el.hidePopover();
+    el.showPopover();
+  }
   el.style.animation = "none";
   void el.offsetWidth;
   el.style.animation = "";
@@ -3714,11 +3719,35 @@ async function openWorkout(w) {
   $("#woWhen").textContent = numDateTime(w.start);
   $("#woMapBtn").hidden = !w.gps;
   $("#woMapBtn").onclick = () => quiet(openMap(w));
+  $("#woGpxBtn").hidden = !w.gps;
+  $("#woGpxBtn").onclick = () => quiet(run($("#woGpxBtn"), () => exportGpx(w)));
   const body = $("#woBody");
   body.textContent = "";
   mkEl("p", { class: "card-sub" }, body).textContent = w.gps ? t("Đang tải chi tiết từ Mi Fitness…") : t("Đang tải…");
   if (!$("#woDialog").open) $("#woDialog").showModal();
   await loadWorkout(w);
+}
+
+/** Tải tệp GPX của buổi tập (lộ trình, giờ, độ cao, nhịp tim) để tải lên Strava, Garmin Connect… */
+async function exportGpx(w) {
+  let res;
+  try {
+    res = await fetch(`/api/workouts/${w.start}/gpx`);
+  } catch {
+    throw new Error(t("Không liên lạc được với server trên máy tính."));
+  }
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || `HTTP ${res.status}`);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `workout-${w.start}.gpx`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = name;
+  a.click();
+  // ứng dụng macOS (WKWebView) tải tệp bất đồng bộ: thu hồi blob ngay thì tệp tải về bị rỗng
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return { message: t("Đã xuất {file}.", { file: name }) };
 }
 
 async function loadWorkout(w) {

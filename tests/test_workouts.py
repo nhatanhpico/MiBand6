@@ -1,6 +1,7 @@
 """Chi tiết buổi tập (workouts.py): đọc tệp dữ liệu từng giây, độ cao GPS của Mi Fitness, dựng trang chi tiết."""
 
 import struct
+import time
 
 import pytest
 
@@ -121,3 +122,48 @@ def test_track_distance_ignores_jumps():
     track = [[T0, 10.0, 106.0], [T0 + 1, 10.00001, 106.0], [T0 + 2, 11.0, 106.0], [T0 + 3, 10.00002, 106.0]]
     d = W.track_distance(track)
     assert d[1][1] == pytest.approx(1.11, abs=0.05) and d[2][1] == d[1][1]   # nhảy 110 km trong 1 giây: bỏ
+
+
+GPX_NS = {"g": "http://www.topografix.com/GPX/1/1", "x": "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"}
+
+
+def parse_gpx(text: str) -> list[dict]:
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(text.encode())
+    out = []
+    for p in root.iterfind(".//g:trkpt", GPX_NS):
+        ele, hr = p.find("g:ele", GPX_NS), p.find(".//x:hr", GPX_NS)
+        out.append({"lat": float(p.get("lat")), "lon": float(p.get("lon")), "time": p.find("g:time", GPX_NS).text,
+                    "ele": float(ele.text) if ele is not None else None, "hr": int(hr.text) if hr is not None else None})
+    return out
+
+
+def test_gpx_from_mi_fitness_files():
+    """Tệp GPX cho Strava: giờ UTC tăng dần, độ cao GPS, nhịp tim từng giây; buổi chạy có thẻ <type>running</type>."""
+    w = {"start": T0, "end": T0 + 600, "active_seconds": 600, "distance": 1500, "steps": 1800, "avg_hr": 150,
+         "mf_proto": 22, "mf_sid": "x", "source": "mifitness", "mf_type": 1}
+    samples = W.demo_record(w)
+    track = [[T0 + i, 10.8 + i * 2e-5, 106.7] for i in range(600)]
+    track.insert(10, [T0 + 5, 10.9, 106.9])   # điểm có giờ đi lùi: bỏ
+    text = W.gpx(w, track, samples, W.demo_altitude(track), [])
+    pts = parse_gpx(text)
+    assert "<type>running</type>" in text and "<name>" not in text
+    assert len(pts) == 600 and pts[0]["time"] == time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(T0))
+    assert pts[0]["lat"] == pytest.approx(10.8) and all(p["lat"] < 10.85 for p in pts)
+    assert all(p["ele"] is not None and 80 <= p["ele"] <= 100 for p in pts)
+    assert [p["hr"] for p in pts[:5]] == [s[1] for s in samples[:5]]   # từng giây: đúng số của giây đó
+
+
+def test_gpx_from_band_minutes():
+    """Không có tệp từng giây: nhịp tim từng phút (đặt ở giữa phút) nội suy theo giờ; khoảng trống dài không nội suy."""
+    w = {"start": T0, "end": T0 + 600, "type": 3, "source": "band", "version": 519, "avg_hr": 112}
+    minutes = [[T0 + 60 * i, 100 + 3 * i, 100] for i in range(10)]
+    minutes[5][1] = minutes[6][1] = minutes[7][1] = None   # vòng tay không đo được 3 phút
+    track = [[T0 + i, 10.8, 106.7 + i * 1e-5] for i in range(0, 600, 10)]
+    text = W.gpx(w, track, None, None, minutes)
+    pts = {p["time"]: p for p in parse_gpx(text)}
+    at = lambda s: pts[time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(T0 + s))]   # noqa: E731
+    assert "<type>walking</type>" in text and "<ele>" not in text
+    assert at(30)["hr"] == 100 and at(50)["hr"] == 101 and at(90)["hr"] == 103   # giữa hai phút: nội suy
+    assert at(250)["hr"] == 111 and at(400)["hr"] is None and at(530)["hr"] == 125   # khoảng trống 4 phút: bỏ

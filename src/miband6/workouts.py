@@ -12,8 +12,10 @@ bản tóm tắt của chính buổi tập đó.
 
 from __future__ import annotations
 
+import bisect
 import math
 import struct
+import time
 
 RECORD_FILE = 0   # loại tệp trên máy chủ: dữ liệu từng giây
 GPS_FILE = 2      # lộ trình GPS
@@ -487,6 +489,95 @@ def detail(w: dict, samples: list[list] | None, track: list[list] | None, alt: l
         altitude["series"] = [[ts - start, v] for ts, v in altitude["series"]]
         out["altitude"] = altitude
     return out
+
+
+# ---------------------------------------------------------------- xuất tệp GPX (Strava, Garmin Connect…)
+
+GPX_TYPES = {"run": "running", "walk": "walking", "ride": "cycling"}   # thẻ <type> mà Strava nhận ra
+GPX_NEAREST = 5      # giây: nhịp tim từng giây / độ cao lệch giờ điểm GPS quá mức này thì bỏ
+GPX_HR_GAP = 180     # giây: hai số nhịp tim từng phút cách nhau hơn mức này thì không nội suy qua khoảng trống
+
+
+def _nearest(points: list[list], tol: int):
+    """Hàm ts -> giá trị của điểm gần ts nhất trong points [[ts, giá trị]] (đã sắp xếp), None nếu xa hơn tol giây."""
+    xs = [p[0] for p in points]
+
+    def at(ts: int):
+        i = bisect.bisect_left(xs, ts)
+        best = min((j for j in (i - 1, i) if 0 <= j < len(xs)), key=lambda j: abs(xs[j] - ts), default=None)
+        return points[best][1] if best is not None and abs(xs[best] - ts) <= tol else None
+
+    return at
+
+
+def _interpolate(points: list[list]):
+    """Hàm ts -> giá trị nội suy tuyến tính giữa các điểm [[ts, giá trị]]; ngoài hai đầu hoặc trong khoảng trống dài
+    hơn GPX_HR_GAP thì lấy điểm gần nhất nếu cách dưới một phút, không thì None."""
+    xs = [p[0] for p in points]
+    near = _nearest(points, 60)
+
+    def at(ts: int):
+        i = bisect.bisect_left(xs, ts)
+        if 0 < i < len(xs) and xs[i] - xs[i - 1] <= GPX_HR_GAP:
+            (t0, v0), (t1, v1) = points[i - 1], points[i]
+            return v0 + (v1 - v0) * (ts - t0) / (t1 - t0)
+        return near(ts)
+
+    return at
+
+
+def gpx(w: dict, track: list[list], samples: list[list] | None, alt: list[list] | None,
+        minutes: list[list]) -> str:
+    """Tệp GPX 1.1 của một buổi tập có lộ trình, để tải lên Strava, Garmin Connect…
+
+    Mỗi điểm GPS [[ts, vĩ độ, kinh độ]] thành một <trkpt> có giờ (UTC), độ cao GPS nếu có (alt: gps_altitudes) và nhịp
+    tim (phần mở rộng TrackPointExtension của Garmin, Strava đọc được): từ tệp từng giây nếu có, không thì nhịp tim
+    từng phút của vòng tay (giá trị trung bình của phút, đặt ở giữa phút) nội suy theo thời gian. Không ghi tên buổi tập:
+    Strava tự đặt tên ("Evening Walk"…) theo ngôn ngữ của người dùng."""
+    start, end = int(w["start"]), int(w.get("end") or w["start"])
+    hr, each = hr_points(samples, minutes, start, end, w.get("avg_hr"))
+    if each == 1:
+        hr_at = _nearest(hr, GPX_NEAREST)
+    else:
+        hr_at = _interpolate([[ts + 30, v] for ts, v in hr])
+    ele_at = _nearest(sorted(alt), GPX_NEAREST) if alt else (lambda _ts: None)
+
+    def iso(ts: int) -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<gpx version="1.1" creator="MiBand6Manager" xmlns="http://www.topografix.com/GPX/1/1"'
+        ' xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"'
+        ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
+        ' xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd'
+        ' http://www.garmin.com/xmlschemas/TrackPointExtension/v1'
+        ' http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd">',
+        f"  <metadata><time>{iso(int(track[0][0]) if track else start)}</time></metadata>",
+        "  <trk>",
+    ]
+    kind = GPX_TYPES.get(sport_kind(w))
+    if kind:
+        lines.append(f"    <type>{kind}</type>")
+    lines.append("    <trkseg>")
+    last = None
+    for ts, lat, lon in track:
+        ts = int(ts)
+        if last is not None and ts <= last:   # giờ phải tăng dần, Strava bỏ cả tệp nếu giờ đi lùi
+            continue
+        last = ts
+        point = f'      <trkpt lat="{lat:.6f}" lon="{lon:.6f}">'
+        ele = ele_at(ts)
+        if ele is not None:
+            point += f"<ele>{ele:.1f}</ele>"
+        point += f"<time>{iso(ts)}</time>"
+        bpm = hr_at(ts)
+        if bpm:
+            point += (f"<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>{int(round(bpm))}</gpxtpx:hr>"
+                      "</gpxtpx:TrackPointExtension></extensions>")
+        lines.append(point + "</trkpt>")
+    lines += ["    </trkseg>", "  </trk>", "</gpx>", ""]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- dữ liệu giả lập cho chế độ xem thử

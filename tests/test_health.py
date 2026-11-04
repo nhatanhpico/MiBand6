@@ -4,6 +4,7 @@ import asyncio
 import base64
 import datetime as dt
 import json
+import re
 import struct
 
 import pytest
@@ -793,6 +794,33 @@ async def test_workout_track_endpoint_demo(client):
     no_gps = next(w for w in h["workouts"] if not w["gps"])
     assert (await client.get(f"/api/workouts/{no_gps['start']}/track")).status == 404
     assert (await client.get("/api/workouts/123/track")).status == 404
+
+
+async def test_workout_gpx_export_demo(client):
+    """Nút Xuất GPX: tệp GPX tải về (attachment) của buổi tập có lộ trình, có giờ, độ cao và nhịp tim cho Strava."""
+    import xml.etree.ElementTree as ET
+
+    await connected(client)
+    await wait_sync(client.service)
+    await post(client, "/api/cloud/sync", {"job": "workouts"})
+    for _ in range(100):
+        if client.service.cloud.status["state"] == "done":
+            break
+        await asyncio.sleep(0.05)
+    h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
+    run = next(w for w in h["workouts"] if w["gps"] and w.get("mf_type") == 1)
+    r = await client.get(f"/api/workouts/{run['start']}/gpx")
+    assert r.status == 200 and r.content_type == "application/gpx+xml"
+    assert re.fullmatch(r'attachment; filename="run-\d{8}-\d{4}\.gpx"', r.headers["Content-Disposition"])
+    ns = {"g": "http://www.topografix.com/GPX/1/1", "x": "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"}
+    root = ET.fromstring(await r.read())
+    pts = root.findall(".//g:trkpt", ns)
+    assert root.find(".//g:type", ns).text == "running" and len(pts) == len(client.service.health_db().track(run["start"]))
+    assert pts[0].find("g:ele", ns) is not None and pts[0].find(".//x:hr", ns) is not None
+    no_gps = next(w for w in h["workouts"] if not w["gps"])
+    r = await client.get(f"/api/workouts/{no_gps['start']}/gpx")
+    assert r.status == 404 and (await r.json())["error"]
+    assert (await client.get("/api/workouts/123/gpx")).status == 404
 
 
 async def test_all_tracks_prefetched_in_background(client):
