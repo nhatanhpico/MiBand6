@@ -946,6 +946,27 @@ class BandService:
         out["source"] = w.get("source")
         return out
 
+    async def workout_gpx(self, start: int) -> tuple[str, str]:
+        """(tên tệp, nội dung) tệp GPX của một buổi tập có lộ trình, để tải lên Strava. Lộ trình và tệp từng giây chưa có
+        trên máy thì tải từ Mi Fitness trước, như trang chi tiết."""
+        db = self.health_db()
+        w = db.workout(start) if db else None
+        if w is None:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404)
+        if H.has_gps(w) and (db.track(start) is None or db.workout_files(start) is None):
+            try:
+                await self._files(start)
+            except ApiError:
+                if not db.track(start):   # đã có lộ trình thì vẫn xuất được, chỉ thiếu nhịp tim từng giây / độ cao
+                    raise
+        track = db.track(start)
+        if not track:
+            raise ApiError(tr('Buổi tập này không có lộ trình GPS.'), 404)
+        files = db.workout_files(start) or {}
+        text = WK.gpx(w, track, files.get("samples"), files.get("alt"), db.workout_minutes(w))
+        name = {"run": "run", "walk": "walk", "ride": "ride"}.get(WK.sport_kind(w), "workout")
+        return f"{name}-{dt.datetime.fromtimestamp(start):%Y%m%d-%H%M}.gpx", text
+
     def set_rpe(self, start: int, value) -> None:
         db = self.health_db()
         if db is None or db.workout(start) is None:
@@ -1763,6 +1784,15 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
             raise ApiError(tr('Không tìm thấy buổi tập này.'), 404) from e
         return ok(points=await S.workout_track(start))
 
+    async def gpx_get(req):
+        try:
+            start = int(req.match_info["start"])
+        except ValueError as e:
+            raise ApiError(tr('Không tìm thấy buổi tập này.'), 404) from e
+        filename, text = await S.workout_gpx(start)
+        return web.Response(text=text, content_type="application/gpx+xml",
+                            headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
     async def tracks_get(_):
         return ok(**S.all_tracks())
 
@@ -1971,6 +2001,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_get("/api/workouts/{start}", workout_get)
     r.add_post("/api/workouts/{start}/rpe", rpe_post)
     r.add_get("/api/workouts/{start}/track", track_get)
+    r.add_get("/api/workouts/{start}/gpx", gpx_get)
     r.add_get("/api/tracks", tracks_get)
     r.add_post("/api/weather", weather_post)
     r.add_post("/api/weather/sync", weather_sync)

@@ -35,6 +35,7 @@
   <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
   <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-4.5 3.5 3 3-2.5L20 17"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4L12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 11H6a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 18 11h-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
@@ -998,7 +999,7 @@
   </main>
 </div>
 
-<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" popover="manual" hidden></div>
 
 <dialog id="keyHelp" class="dialog">
   <h2>Cách lấy auth key</h2>
@@ -1021,6 +1022,7 @@
     <div><h2 id="woTitle">Buổi tập</h2><p class="card-sub" id="woWhen"></p></div>
     <div class="map-actions">
       <button id="woMapBtn" class="btn small" type="button" hidden><svg class="ic"><use href="#i-route"/></svg><span>Bản đồ</span></button>
+      <button id="woGpxBtn" class="btn small" type="button" hidden title="Lưu lộ trình thành tệp GPX để tải lên Strava, Garmin Connect…"><svg class="ic"><use href="#i-download"/></svg><span>Xuất GPX</span></button>
       <button id="woClose" class="btn ghost small" type="button">Đóng</button>
     </div>
   </header>
