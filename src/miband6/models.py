@@ -11,13 +11,18 @@ Mô hình nhịp tim khi ngủ (rhr_model)
 - Hồi quy ridge: hệ số chặn không bị phạt, phạt RIDGE trên đặc trưng đã chuẩn hóa (ít đêm, các yếu tố liên quan
   nhau: đi ngủ muộn thường cũng ngủ ngắn). Các đêm lệch quá OUTLIER_SD độ lệch chuẩn bền vững (thường là đêm ốm) không
   dùng để học.
-- Kiểm chứng chéo bỏ-một (LOO): mỗi đêm được dự đoán bằng mô hình học từ các đêm còn lại. Mô hình chỉ được dùng khi
-  có từ MIN_TRAIN đêm và sai số tuyệt đối trung bình LOO nhỏ hơn mô hình chỉ có hệ số chặn ít nhất MIN_GAIN; nếu
-  không, ứng dụng chỉ so với mức nền như trước. Mức ảnh hưởng của từng yếu tố chỉ được báo khi |t| >= EFFECT_T.
+- Kiểm chứng chéo bỏ-một (LOO): mỗi đêm được dự đoán bằng mô hình học từ các đêm còn lại (tính một lần qua đường chéo
+  ma trận mũ, nên học từ cả năm dữ liệu vẫn nhanh). Mô hình chỉ được dùng khi có từ MIN_TRAIN đêm và sai số tuyệt đối
+  trung bình LOO nhỏ hơn mô hình chỉ có hệ số chặn ít nhất MIN_GAIN; nếu không, ứng dụng chỉ so với mức nền như trước.
+  Mức ảnh hưởng của từng yếu tố chỉ được báo khi |t| >= EFFECT_T.
+- Học từ bao lâu (learning_curve): dữ liệu càng dài thì càng nhiều đêm để học. Để thấy điều đó có thật với từng người,
+  mỗi đêm trong CURVE_TESTS đêm gần nhất được dự đoán bằng mô hình chỉ học từ 1 tuần, 1 tháng, 3, 6 tháng hay 1 năm
+  dữ liệu trước nó (không nhìn trước), rồi so sai số.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 
 FEATURES = ("load", "evening", "late", "short")
@@ -27,6 +32,9 @@ MIN_GAIN = 0.05           # LOO MAE phải nhỏ hơn mô hình chỉ có hệ s
 OUTLIER_SD = 3.5          # bỏ khỏi dữ liệu học các đêm lệch quá ngần này độ lệch chuẩn bền vững
 RESID_SD_FLOOR = 1.5      # nhịp/phút: độ lệch chuẩn sai số dự đoán không nhỏ hơn
 EFFECT_T = 2.0            # chỉ báo mức ảnh hưởng của một yếu tố khi hệ số khác 0 rõ (|t| >= ngần này)
+CURVE_WINDOWS = (7, 30, 90, 180, 365)   # ngày dữ liệu học thử: 1 tuần, 1 tháng, 3 tháng, 6 tháng, 1 năm
+CURVE_TESTS = 30          # số đêm gần nhất dùng để đo sai số của từng độ dài
+CURVE_MIN_TESTS = 5       # cần dự đoán được ít nhất ngần này đêm thì mới báo sai số
 
 
 def median(values: list[float]) -> float:
@@ -73,8 +81,8 @@ def ridge_fit(xs: list[list[float]], ys: list[float], lam: float = RIDGE) -> dic
     a = [[gram[j][k] + ((lam if sd[j] > 1e-9 else 1.0) if j == k else 0.0) for k in range(p)] for j in range(p)]
     beta = _solve(a, [sum(z[i][j] * (ys[i] - ym) for i in range(n)) for j in range(p)])
     coef = [beta[j] / sd[j] if sd[j] > 1e-9 else 0.0 for j in range(p)]
-    return {"intercept": ym - sum(coef[j] * mean[j] for j in range(p)), "coef": coef, "sd": sd, "gram": gram, "a": a,
-            "beta": beta}
+    return {"intercept": ym - sum(coef[j] * mean[j] for j in range(p)), "coef": coef, "sd": sd, "mean": mean,
+            "gram": gram, "a": a, "beta": beta}
 
 
 def predict(fit: dict, x: list[float]) -> float:
@@ -101,6 +109,59 @@ def _row(x: dict) -> list[float]:
     return [float(x.get(k) or 0.0) for k in FEATURES]
 
 
+def _clean(rows: list[dict]) -> list[dict]:
+    """Bỏ các đêm lệch quá OUTLIER_SD độ lệch chuẩn bền vững (thường là đêm ốm, say rượu) khỏi dữ liệu học."""
+    ys = [r["y"] for r in rows]
+    if not ys:
+        return []
+    centre, spread = median(ys), max(robust_sd(ys), 1.0)
+    return [r for r in rows if abs(r["y"] - centre) <= OUTLIER_SD * spread]
+
+
+def loo_residuals(xs: list[list[float]], ys: list[float], lam: float = RIDGE) -> list[float]:
+    """Sai số kiểm chứng chéo bỏ-một của ridge, tính bằng một lần học: e_i / (1 - h_ii), với h_ii = 1/n + z_i' A^-1 z_i
+    (chuẩn hóa theo cả dữ liệu, như cách tính GCV thường dùng)."""
+    fit = ridge_fit(xs, ys, lam)
+    n, p = len(xs), len(xs[0])
+    inv = [_solve(fit["a"], [1.0 if i == k else 0.0 for i in range(p)]) for k in range(p)]   # A^-1 (đối xứng)
+    out = []
+    for x, y in zip(xs, ys):
+        z = [(x[j] - fit["mean"][j]) / fit["sd"][j] if fit["sd"][j] > 1e-9 else 0.0 for j in range(p)]
+        h = 1 / n + sum(z[r] * inv[r][c] * z[c] for r in range(p) for c in range(p))
+        out.append((y - predict(fit, x)) / (1 - h))
+    return out
+
+
+def learning_curve(rows: list[dict], windows: tuple = CURVE_WINDOWS, tests: int = CURVE_TESTS) -> list[dict]:
+    """Sai số dự đoán khi chỉ học từ `days` ngày dữ liệu ngay trước mỗi đêm cần đoán, trên tối đa `tests` đêm gần
+    nhất. Mỗi độ dài: {"days", "status": "ok" | "need_more" (lịch sử chưa dài tới đó) | "too_few" (ít hơn MIN_TRAIN đêm
+    để học), "mae", "mae_null" (chỉ dùng mức nền), "nights" (số đêm học, trung vị), "tests"}."""
+    rows = [r for r in rows if r.get("y") is not None]
+    dates = [dt.date.fromisoformat(r["date"]) for r in rows]
+    span = (dates[-1] - dates[0]).days if dates else 0
+    out = []
+    for days in windows:
+        if span < days:
+            out.append({"days": days, "status": "need_more"})
+            continue
+        errors, nulls, sizes = [], [], []
+        for k in range(max(0, len(rows) - tests), len(rows)):
+            train = _clean([rows[i] for i in range(k) if 0 < (dates[k] - dates[i]).days <= days])
+            if len(train) < MIN_TRAIN:
+                continue
+            ys = [r["y"] for r in train]
+            fit = ridge_fit([_row(r["x"]) for r in train], ys)
+            errors.append(abs(rows[k]["y"] - predict(fit, _row(rows[k]["x"]))))
+            nulls.append(abs(rows[k]["y"] - sum(ys) / len(ys)))
+            sizes.append(len(train))
+        if len(errors) < CURVE_MIN_TESTS:
+            out.append({"days": days, "status": "too_few"})
+            continue
+        out.append({"days": days, "status": "ok", "mae": round(sum(errors) / len(errors), 2),
+                    "mae_null": round(sum(nulls) / len(nulls), 2), "nights": int(median(sizes)), "tests": len(errors)})
+    return out
+
+
 def rhr_model(train: list[dict], targets: list[dict] | None = None) -> dict:
     """Học mô hình nhịp tim khi ngủ từ `train` và giải thích các đêm `targets`.
 
@@ -112,18 +173,14 @@ def rhr_model(train: list[dict], targets: list[dict] | None = None) -> dict:
                  "predictions": {}}
     if len(rows) < MIN_TRAIN:
         return out
-    ys = [r["y"] for r in rows]
-    centre, spread = median(ys), max(robust_sd(ys), 1.0)
-    keep = [r for r in rows if abs(r["y"] - centre) <= OUTLIER_SD * spread]
+    keep = _clean(rows)
     out.update(nights=len(keep), excluded=len(rows) - len(keep))
     if len(keep) < MIN_TRAIN:
         return out
     xs, ys = [_row(r["x"]) for r in keep], [r["y"] for r in keep]
-    errors, null_errors = [], []
-    for i in range(len(keep)):   # kiểm chứng chéo bỏ-một
-        rest_x, rest_y = xs[:i] + xs[i + 1:], ys[:i] + ys[i + 1:]
-        errors.append(ys[i] - predict(ridge_fit(rest_x, rest_y), xs[i]))
-        null_errors.append(ys[i] - sum(rest_y) / len(rest_y))
+    errors = loo_residuals(xs, ys)   # kiểm chứng chéo bỏ-một
+    n, ym = len(ys), sum(ys) / len(ys)
+    null_errors = [(y - ym) * n / (n - 1) for y in ys]   # bỏ-một của mô hình chỉ có hệ số chặn
     mae = sum(abs(e) for e in errors) / len(errors)
     mae_null = sum(abs(e) for e in null_errors) / len(null_errors)
     total = sum((y - sum(ys) / len(ys)) ** 2 for y in ys)

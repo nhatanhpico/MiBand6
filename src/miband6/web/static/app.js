@@ -437,6 +437,7 @@ function render(kind, d) {
       if (live.hrHistory.length > 120) live.hrHistory.shift();
       $("#hr").textContent = d;
       drawSpark();
+      liveHrToHealth(Math.floor(Date.now() / 1000), d);
       break;
     case "device_info":
       $("#iName").textContent = d.name || "—";
@@ -562,6 +563,7 @@ function connectEvents() {
         if (!$("#page-health").hidden) quiet(loadHealth());
         if (!$("#page-overview").hidden) quiet(loadOverview());
         break;
+      case "hr_minute": liveHrToHealth(msg.data[0], msg.data[1], true); break;
       case "tracks":   // vừa tải xong thêm lộ trình: bản đồ tổng đang mở thì vẽ thêm; bảng buổi tập cập nhật nút Bản đồ
         if ($("#mapDialog").open && MAP.mode === "all") {
           clearTimeout(MAP.refresh);
@@ -2808,8 +2810,77 @@ function renderBody(b) {
     li.append(text);
   }
   for (const c of l.causes || []) mkEl("li", {}, $("#bsCauses")).textContent = c;
-  $("#bsModel").textContent = b.model?.text || "";
-  for (const e of b.model?.effects || []) mkEl("li", {}, $("#bsEffects")).textContent = e;
+  const m = b.model;
+  $("#bsModel").textContent = [m?.text, m?.since ? t("Dữ liệu học từ đêm {date}.", { date: longDate(m.since) }) : ""].filter(Boolean).join(" ");
+  for (const e of m?.effects || []) mkEl("li", {}, $("#bsEffects")).textContent = e;
+  renderCurve(m?.curve || []);
+}
+
+/** Sai số của mô hình cá nhân khi chỉ học từ 1 tuần, 1 tháng, 3 tháng, 6 tháng, 1 năm dữ liệu (models.learning_curve). */
+const CURVE_LABEL = { 7: () => t("1 tuần"), 30: () => t("1 tháng"), 90: () => t("3 tháng"), 180: () => t("6 tháng"), 365: () => t("1 năm") };
+function renderCurve(curve) {
+  const bpm = (v) => `${fmtDec(v, 1)} ${t("nhịp/phút")}`;
+  tableRows($("#bsCurve"), curve.map((c) => [
+    (CURVE_LABEL[c.days] || (() => t("{n} ngày", { n: c.days })))(),
+    c.status === "ok" ? `${bpm(c.mae)} · ${t("{n} đêm", { n: c.nights })}`
+      : c.status === "too_few" ? t("quá ít đêm để học (cần 21)") : t("cần thêm dữ liệu"),
+    c.status === "ok" ? bpm(c.mae_null) : "—",
+  ]), t("Cần ít nhất 21 đêm có nhịp tim khi ngủ."), 3);
+}
+
+/* ---------------- nguy cơ bệnh: mô hình máy học học từ NHANES (risk.py), hiệu chỉnh cho người châu Á */
+
+const RISK_INPUT_NAME = { pulse: () => t("nhịp tim lúc nghỉ"), sleep: () => t("giấc ngủ"), active: () => t("vận động") };
+
+function renderRisk(r) {
+  const list = $("#rkList");
+  list.textContent = "";
+  $("#rkInputs").hidden = true;
+  $("#rkModel").textContent = "";
+  if (!r?.available) {
+    const why = !r ? t("Chưa có dữ liệu")
+      : r.reason === "profile" ? t("Nhập ngày sinh, giới tính, chiều cao và cân nặng ở Cài đặt vòng tay → Hồ sơ để ước tính.")
+        : r.reason === "age" ? t("Mô hình chỉ dành cho người từ 18 tuổi.")
+          : t("Chưa có tệp mô hình: chạy tools/train_risk_models.py để tạo.");
+    mkEl("p", { class: "md-text" }, list).textContent = why;
+    return;
+  }
+  const i = r.inputs;
+  const bits = [t("{n} tuổi", { n: i.age }), i.sex === "male" ? t("Nam") : t("Nữ"), `${fmtInt(i.height)} cm`, `BMI ${fmtDec(i.bmi, 1)}`,
+    t("nhịp tim lúc nghỉ {n}", { n: i.pulse }), t("ngủ {h} giờ mỗi đêm", { h: fmtDec(i.sleep, 1) }), t("vận động {n} ngày mỗi tuần", { n: i.active })];
+  let text = t("Dựa trên: {list}.", { list: bits.join(" · ") });
+  if (i.days) text += ` ${t("Số đo của vòng tay: trung bình {n} ngày gần nhất.", { n: i.days })}`;
+  if (r.estimated.length) {
+    text += ` ${t("Chưa đủ số đo của vòng tay cho {list}: dùng mức trung bình cùng giới.", { list: r.estimated.map((k) => RISK_INPUT_NAME[k]()).join(", ") })}`;
+  }
+  $("#rkInputs").textContent = text;
+  $("#rkInputs").hidden = false;
+  for (const c of r.conditions) {
+    const item = mkEl("div", { class: `rk-item lv-${c.status}` }, list);
+    const head = mkEl("div", { class: "rk-head" }, item);
+    mkEl("h3", {}, head).textContent = c.title;
+    chip(mkEl("span", {}, head), c.status, c.level, "rd-level");
+    mkEl("b", { class: "rk-risk" }, item).textContent = c.risk_text;
+    // thang tương đối: vạch trắng là mức của người cùng tuổi, giới có các chỉ số lành mạnh
+    const top = Math.max(0.1, c.risk, c.reference) * 1.25;
+    const bar = mkEl("span", { class: "rk-bar", role: "img", "aria-label": `${c.title}: ${c.risk_text}`,
+      title: t("Thanh màu: nguy cơ của bạn. Vạch trắng: người cùng tuổi, giới có các chỉ số ở mức lành mạnh.") }, item);
+    mkEl("i", { style: `width:${(c.risk / top) * 100}%` }, bar);
+    mkEl("b", { style: `left:${(c.reference / top) * 100}%` }, bar);
+    mkEl("p", {}, item).textContent = c.what;
+    mkEl("p", { class: "rk-compare" }, item).textContent = c.compare;
+    if (c.factors.length) {
+      mkEl("p", {}, item).textContent = t("Yếu tố làm nguy cơ cao hơn:");
+      const ul = mkEl("ul", {}, item);
+      for (const f of c.factors) mkEl("li", {}, ul).textContent = f.text;
+    }
+    mkEl("p", {}, item).textContent = c.advice;
+    const m = c.metrics;
+    mkEl("p", { class: "rk-metric", title: t("AUC: khả năng mô hình xếp người mắc bệnh cao hơn người không mắc; 0,5 là đoán ngẫu nhiên, 1 là hoàn hảo.") }, item)
+      .textContent = t("Độ chính xác khi kiểm chứng: AUC {auc} (người châu Á {asian})", { auc: fmtDec(m.auc, 2), asian: fmtDec(m.asian_auc, 2) });
+  }
+  $("#rkModel").textContent = t("Mô hình: cây tăng cường độ dốc, học từ {n} người lớn trong {data} ({asian} người châu Á), kiểm chứng trên chu kỳ khảo sát sau và hiệu chỉnh cho người châu Á. Không cần mạng: mọi phép tính chạy trên máy này.",
+    { n: fmtInt(r.model.adults), data: r.model.data, asian: fmtInt(r.model.asian_adults) });
 }
 
 /* ---------------- giấc ngủ tối nay (insights.sleep_plan): chỉ khi xem hôm nay */
@@ -3220,6 +3291,49 @@ function renderActivityTab(H) {
   });
 }
 
+/** Số đo nhịp tim trực tiếp vào biểu đồ Tim mạch của hôm nay ngay lúc đo, không chờ lần đồng bộ vòng tay: phút đang đo
+    gộp tại chỗ từ từng số đo (exact = false), phút đã trọn do server gửi (hr_minute, exact = true). Điểm trực tiếp có
+    phần tử thứ ba = 1, như server trả về; phút đã có số của vòng tay thì giữ số của vòng tay. */
+const liveMinute = { ts: 0, sum: 0, n: 0 };
+let liveRedrawAt = 0;
+function liveHrToHealth(ts, bpm, exact = false) {
+  const day = healthData?.day;
+  if (!day || healthData.date !== todayISO() || !(bpm >= 30 && bpm <= 220)) return;
+  const minute = ts - (ts % 60);
+  let value = bpm;
+  if (!exact) {
+    if (liveMinute.ts !== minute) Object.assign(liveMinute, { ts: minute, sum: 0, n: 0 });
+    liveMinute.sum += bpm;
+    liveMinute.n += 1;
+    value = Math.round(liveMinute.sum / liveMinute.n);
+  }
+  const hr = day.hr || (day.hr = []);
+  const i = hr.findIndex((p) => p[0] >= minute);
+  if (i >= 0 && hr[i][0] === minute) {
+    if (hr[i][2] !== 1) return;   // phút đã có số của vòng tay
+    hr[i] = [minute, value, 1];
+  } else {
+    hr.splice(i < 0 ? hr.length : i, 0, [minute, value, 1]);
+    day.hr_live = (day.hr_live || 0) + 1;
+  }
+  if (!$("#page-health").hidden && healthTab === "heart" && Date.now() - liveRedrawAt > 3000) {
+    liveRedrawAt = Date.now();
+    renderHeartTab(healthData);
+  }
+}
+
+/** Trung bình theo thời gian: mỗi số đo đại diện cho khoảng tới số đo kế tiếp, tối đa 10 phút (như tải TRIMP), để một
+    lúc theo dõi trực tiếp (mỗi phút một số) không lấn át cả ngày đo 10 phút một lần. */
+function timeMean(points) {
+  let sum = 0, weight = 0;
+  points.forEach((p, i) => {
+    const w = Math.min(600, Math.max(60, (points[i + 1]?.[0] ?? p[0] + 60) - p[0]));
+    sum += p[1] * w;
+    weight += w;
+  });
+  return weight ? sum / weight : null;
+}
+
 function renderHeartTab(H) {
   const [t0, t1] = dayBounds();
   const day = H?.day || { hr: [], stress: [] };
@@ -3229,12 +3343,13 @@ function renderHeartTab(H) {
   $("#hrSub").textContent = dayLabelOf();
   const hrQuality = H?.quality?.hr?.counts;
   const hrFlagged = (hrQuality?.suspect || 0) + (hrQuality?.invalid || 0) > 0;
-  $("#hrBadge").textContent = hrFlagged ? t("Cần kiểm tra tín hiệu") : hr.length ? t("Dữ liệu đã đồng bộ") : t("Chưa có dữ liệu");
+  $("#hrBadge").textContent = hrFlagged ? t("Cần kiểm tra tín hiệu") : day.hr_live ? t("Gồm số đo trực tiếp")
+    : hr.length ? t("Dữ liệu đã đồng bộ") : t("Chưa có dữ liệu");
   $("#hrBadge").classList.toggle("quality-attention", hrFlagged);
   const stats = [];
   if (hr.length) {
     const v = hr.map((p) => p[1]);
-    stats.push([t("Thấp nhất"), fmtInt(Math.min(...v)), t("nhịp/phút")], [t("Trung bình"), fmtInt(Math.round(v.reduce((a, b) => a + b, 0) / v.length)), t("nhịp/phút")], [t("Cao nhất"), fmtInt(Math.max(...v)), t("nhịp/phút")]);
+    stats.push([t("Thấp nhất"), fmtInt(Math.min(...v)), t("nhịp/phút")], [t("Trung bình"), fmtInt(Math.round(timeMean(hr))), t("nhịp/phút")], [t("Cao nhất"), fmtInt(Math.max(...v)), t("nhịp/phút")]);
   }
   if (night?.hr) {
     const d = night.hr_baseline != null ? Math.round(night.hr - night.hr_baseline) : null;
@@ -3393,6 +3508,7 @@ function renderInsightsTab(H) {
   renderReadiness(ins?.readiness, ins?.readiness_history || [], ins?.readiness_progress, ins?.readiness_night);
   renderMind(ins?.mental, ins?.data_until);
   renderBody(ins?.body);
+  renderRisk(ins?.risk);
 }
 
 /* ---------------- nhật ký riêng: chu kỳ kinh nguyệt (hồ sơ nữ), xuất tinh (hồ sơ nam). Chỉ lưu trên máy này. */

@@ -152,6 +152,7 @@ class BandService:
         self.reconnect_delays = RECONNECT_DELAYS
         self._reconnect_task: asyncio.Task | None = None
         self.live_hr = False   # đang theo dõi nhịp tim liên tục (bật tay, hoặc tự bật khi kết nối: settings.live_hr_auto)
+        self._live_minute: list | None = None   # [đầu phút, tổng, số lần, thấp nhất, cao nhất] của số đo trực tiếp đang gộp
         # dữ liệu sức khỏe lấy từ vòng tay (SQLite theo từng vòng tay) và cài mặt đồng hồ
         self.auto_health = True
         self.auto_cloud = not demo   # tự đồng bộ Mi Fitness sau khi kết nối (tắt ở chế độ xem thử)
@@ -272,6 +273,7 @@ class BandService:
             self.music.stop()
             self._stop_beep = True
             self.live_hr = False
+            self._flush_live_hr()
             self._cancel_health()
             if self.busy:  # rớt giữa lúc đang kết nối: lỗi đã được báo qua kết quả của lần kết nối đó
                 return
@@ -281,6 +283,8 @@ class BandService:
             return
         self.live[kind] = data
         self.push({"type": kind, "data": data})
+        if kind == "heart_rate":
+            self._record_live_hr(int(time.time()), data)
         if kind == "device_event":
             self.log(tr('Sự kiện: {name}', name=tr(P.DEVICE_EVENTS[data]) if data in P.DEVICE_EVENTS else f"{data:#04x}"))
             if data == P.EVENT_FIND_PHONE_START:
@@ -1226,7 +1230,42 @@ class BandService:
         """Bật / tắt theo dõi nhịp tim liên tục (vòng tay đo liên tục, tốn pin hơn) và báo cho mọi giao diện."""
         await self.require().realtime_heart_rate(on)
         self.live_hr = on
+        if not on:
+            self._flush_live_hr()
         self.push_state()
+
+    def _record_live_hr(self, ts: int, bpm) -> None:
+        """Gộp số đo nhịp tim trực tiếp theo phút (theo dõi liên tục, hay một lần đo tay). Phút trước đã trọn thì lưu vào
+        HealthDB và báo giao diện, để thẻ Tim mạch của hôm nay vẽ thêm ngay thay vì chờ lần đồng bộ vòng tay sau."""
+        if not isinstance(bpm, int) or not H.valid_hr(bpm):
+            return
+        minute = ts - ts % 60
+        cur = self._live_minute
+        if cur and cur[0] != minute:
+            self._flush_live_hr()
+            cur = None
+        if cur is None:
+            self._live_minute = [minute, bpm, 1, bpm, bpm]
+            # không có số đo nào nữa (tắt trên vòng tay, rời khỏi tay…) thì vẫn lưu phút này sau khi nó qua
+            with contextlib.suppress(RuntimeError):
+                asyncio.get_running_loop().call_later(65, self._flush_live_hr, minute)
+        else:
+            cur[1] += bpm
+            cur[2] += 1
+            cur[3] = min(cur[3], bpm)
+            cur[4] = max(cur[4], bpm)
+
+    def _flush_live_hr(self, minute: int | None = None) -> None:
+        """Lưu phút số đo trực tiếp đang gộp (minute: chỉ khi vẫn là phút đó)."""
+        cur = self._live_minute
+        if not cur or (minute is not None and cur[0] != minute):
+            return
+        self._live_minute = None
+        db = self.health_db()
+        if db is None:
+            return
+        db.add_live_hr(*cur)
+        self.push({"type": "hr_minute", "data": [cur[0], round(cur[1] / cur[2])]})
 
     async def _live_hr_quiet(self, on: bool) -> None:
         try:
@@ -1241,6 +1280,7 @@ class BandService:
         self.want_connected = False
         self.reconnect_stopped = None
         self.live_hr = False
+        self._flush_live_hr()
         self.music.stop()
         self._cancel_reconnect()
         self._cancel_health()

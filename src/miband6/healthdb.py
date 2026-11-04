@@ -16,10 +16,23 @@ from pathlib import Path
 from . import health as H
 from . import models as M
 from . import personal as PS
+from . import risk as R
 from . import telemetry as T
 
 RECOVERY_MIN_HR_COVERAGE = 0.70  # phần số phút ngủ có số đo nhịp tim hợp lệ
 MIN_NIGHT_HR = 10                # số đo nhịp tim tối thiểu lúc ngủ để tính nhịp tim khi ngủ của một đêm
+RISK_DAYS = 30                   # mô hình nguy cơ (risk.py): số ngày gần nhất cho nhịp tim lúc nghỉ, giờ ngủ, vận động
+                                 # (dài hơn thì số "thường ngày" ổn định hơn, như câu hỏi "thường" của khảo sát)
+RISK_MIN_REST = 30               # ... cần số đo lúc ngồi yên ban ngày trong ít nhất ngần này khoảng 10 phút
+RISK_HOURS = (8, 22)             # ... chỉ số đo ban ngày (giờ địa phương), như mạch đo khi ngồi nghỉ của NHANES
+# Lịch sử gọn theo ngày (bảng daily) cho mô hình cá nhân: mỗi ngày đã trọn một dòng (đêm chính, tải vận động...), để mô
+# hình học từ nhiều tháng mà không phải tính lại từ dữ liệu từng phút. Đổi cách tính đêm / ngày thì tăng DAILY_VERSION
+# (lịch sử cũ được tính lại dần). Mỗi lần insights lấp thêm tối đa HISTORY_CHUNK ngày cũ hơn chưa lưu.
+DAILY_VERSION = 1
+HISTORY_DAYS = 365
+HISTORY_CHUNK = 45
+NIGHT_KEYS = ("date", "hr", "hr_n", "minutes", "awake", "start", "end", "mid", "evening")
+DAY_KEYS = ("date", "trimp", "wear", "hr_coverage", "light", "moderate", "vigorous", "steps")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS activity (ts INTEGER PRIMARY KEY, kind INTEGER, intensity INTEGER, steps INTEGER,
@@ -37,6 +50,8 @@ CREATE TABLE IF NOT EXISTS journal (date TEXT NOT NULL, kind TEXT NOT NULL, valu
 CREATE TABLE IF NOT EXISTS body (date TEXT PRIMARY KEY, height REAL, weight REAL, source TEXT);
 CREATE TABLE IF NOT EXISTS mf_sleep (start INTEGER PRIMARY KEY, end INTEGER, date TEXT, minutes INTEGER, deep INTEGER,
                                      light INTEGER, rem INTEGER, awake INTEGER, score INTEGER);
+CREATE TABLE IF NOT EXISTS live_hr (ts INTEGER PRIMARY KEY, total INTEGER, n INTEGER, lo INTEGER, hi INTEGER);
+CREATE TABLE IF NOT EXISTS daily (date TEXT PRIMARY KEY, version INTEGER, night TEXT, day TEXT);
 """
 
 JOURNAL_KINDS = ("period", "ejaculation")   # nhật ký người dùng tự ghi (personal.py); chỉ lưu trên máy
@@ -53,6 +68,7 @@ class HealthDB:
         self.path = path
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
+        self._model_cache: tuple | None = None   # (khóa dữ liệu học, mô hình): chỉ học lại khi có đêm mới
         try:
             path.chmod(0o600)   # dữ liệu sức khỏe: chỉ người dùng hiện tại đọc được
         except OSError:
@@ -276,9 +292,30 @@ class HealthDB:
         }.get(name)
         return self.db.execute(query).fetchone()[0] if query else None
 
+    # ------------------------------------------------------------ nhịp tim trực tiếp (theo dõi liên tục)
+    def add_live_hr(self, ts: int, total: int, n: int, lo: int, hi: int) -> None:
+        """Một phút số đo nhịp tim trực tiếp đã gộp (ts: đầu phút; tổng, số lần đo, thấp nhất, cao nhất); phút đã có thì
+        cộng thêm. Vòng tay gửi số đo này qua Bluetooth mỗi vài giây khi bật Theo dõi liên tục, trước khi nó vào dữ liệu
+        theo phút được đồng bộ sau."""
+        with self.db:
+            self.db.execute("INSERT INTO live_hr VALUES (?,?,?,?,?) ON CONFLICT(ts) DO UPDATE SET total = total + excluded.total,"
+                            " n = n + excluded.n, lo = MIN(lo, excluded.lo), hi = MAX(hi, excluded.hi)",
+                            (ts - ts % 60, total, n, lo, hi))
+
+    def live_hr(self, t0: int, t1: int) -> dict[int, int]:
+        """{đầu phút: nhịp tim trung bình} của số đo trực tiếp trong [t0, t1)."""
+        return {ts: round(total / n) for ts, total, n in
+                self.db.execute("SELECT ts, total, n FROM live_hr WHERE ts >= ? AND ts < ? AND n > 0", (t0, t1))}
+
     # ------------------------------------------------------------ đọc
     def samples(self, t0: int, t1: int) -> list[tuple]:
-        return self.db.execute("SELECT * FROM activity WHERE ts >= ? AND ts < ? ORDER BY ts", (t0, t1)).fetchall()
+        """Các phút vòng tay đã ghi. Phút không có nhịp tim (vòng tay đo theo chu kỳ) mà lúc đó đang theo dõi trực tiếp thì
+        lấy trung bình số đo trực tiếp của phút đó: cùng một cảm biến, chỉ là chưa vào dữ liệu theo phút."""
+        rows = self.db.execute("SELECT * FROM activity WHERE ts >= ? AND ts < ? ORDER BY ts", (t0, t1)).fetchall()
+        live = self.live_hr(t0, t1)
+        if live:
+            rows = [r if H.valid_hr(r[4]) or r[0] not in live else r[:4] + (live[r[0]],) + r[5:] for r in rows]
+        return rows
 
     def kind_before(self, ts: int) -> int | None:
         """Loại hoạt động (4 bit thấp) của mốc trạng thái gần nhất trước `ts`."""
@@ -364,18 +401,13 @@ class HealthDB:
 
     INSIGHT_DAYS = 60   # ngày dữ liệu dùng cho mức sẵn sàng, nhịp sinh học… (mức nền nhiều tuần)
 
-    def insights(self, date: str | None = None, profile: dict | None = None, rem: bool = True) -> dict:
-        """Mức sẵn sàng, trạng thái tinh thần, cường độ vận động và nhịp sinh học tính tới ngày `date` (insights.py).
-
-        Dựng từ dữ liệu từng phút: mỗi đêm (giấc dài nhất theo ngày thức dậy) và mỗi ngày (bước, phút vận động theo
-        cường độ, TRIMP, căng thẳng)."""
+    def _collect(self, first: dt.date, last: dt.date, profile: dict | None, rem: bool = True) -> dict:
+        """Mỗi đêm (giấc dài nhất theo ngày thức dậy) và mỗi ngày (bước, phút vận động theo cường độ, TRIMP, căng thẳng)
+        từ first tới last, dựng từ dữ liệu từng phút; cùng các thứ insights cần thêm (mẫu, giấc ngủ, phút tháo vòng...)."""
         from . import insights as I
 
-        date = date or dt.date.today().isoformat()
-        d0 = dt.date.fromisoformat(date)
-        first = d0 - dt.timedelta(days=self.INSIGHT_DAYS - 1)
         t0 = H.day_bounds((first - dt.timedelta(days=1)).isoformat())[0] + 12 * 3600
-        _, t1 = H.day_bounds(date)
+        _, t1 = H.day_bounds(last.isoformat())
         samples = self.samples(t0, t1)
         by_ts = {s[0]: s for s in samples}
         sessions = self.sleep_sessions(t0, t1, rem=rem, samples=samples)
@@ -384,7 +416,7 @@ class HealthDB:
         by_day: dict[str, list[dict]] = {}
         for sess in sessions:
             day = H.local_date(sess["end"])
-            if not sess["ongoing"] and first.isoformat() <= day <= date:
+            if not sess["ongoing"] and first.isoformat() <= day <= last.isoformat():
                 by_day.setdefault(day, []).append(sess)
         nights = []
         for day, finished in sorted(by_day.items()):
@@ -394,11 +426,7 @@ class HealthDB:
             night["naps"] = [(s["end"], s["minutes"]) for s in finished if s is not main]
             nights.append(night)
 
-        # ---- hồ sơ: tuổi, giới tính (nhịp tim tối đa, nhu cầu ngủ) và nhật ký chu kỳ (nhịp tim nghỉ pha hoàng thể)
-        age, sex = PS.age_of(profile, d0), PS.sex_of(profile)
-        need = I.sleep_need(age)
-        period_days = list(self.journal("period")) if sex == PS.SEX_FEMALE else []
-        PS.adjust_luteal_hr(nights, period_days)
+        age, sex = PS.age_of(profile, last), PS.sex_of(profile)
 
         # ---- mỗi ngày
         hrmax = PS.max_hr_override((profile or {}).get("max_hr_override")) or I.hr_max(age, sex)
@@ -458,12 +486,44 @@ class HealthDB:
             d["stress_n"] += 1
             d["stress_high"] += value >= 80
         day_list = []
-        for i in range(self.INSIGHT_DAYS):
+        for i in range((last - first).days + 1):
             day = (first + dt.timedelta(days=i)).isoformat()
             d = days.get(day, self._blank_day(day))
             d["stress"] = d["stress_sum"] / d["stress_n"] if d["stress_n"] else None
             d["hr_coverage"] = round(min(1.0, d["hr_minutes"] / d["wear"]), 3) if d["wear"] else 0.0
             day_list.append(d)
+
+        for n in nights:   # tải vận động trong 4 giờ trước khi ngủ (đặc trưng của mô hình nhịp tim khi ngủ)
+            n["evening"] = round(sum(load for ts, load in hourly.items() if n["start"] - 4 * 3600 <= ts < n["start"]), 1)
+        return {"t0": t0, "t1": t1, "samples": samples, "by_ts": by_ts, "sessions": sessions, "nights": nights,
+                "days": day_list, "hourly": hourly, "off_wrist": off_wrist, "workouts": workouts, "hrmax": hrmax}
+
+    def insights(self, date: str | None = None, profile: dict | None = None, rem: bool = True) -> dict:
+        """Mức sẵn sàng, trạng thái tinh thần, cường độ vận động và nhịp sinh học tính tới ngày `date` (insights.py).
+
+        Dựng từ dữ liệu từng phút của INSIGHT_DAYS ngày (_collect). Mô hình cá nhân còn học từ lịch sử dài hơn (tới
+        HISTORY_DAYS ngày) đã lưu gọn theo ngày trong bảng daily."""
+        from . import insights as I
+
+        date = date or dt.date.today().isoformat()
+        d0 = dt.date.fromisoformat(date)
+        first = d0 - dt.timedelta(days=self.INSIGHT_DAYS - 1)
+        w = self._collect(first, d0, profile, rem)
+        t0, t1, samples, by_ts, sessions = w["t0"], w["t1"], w["samples"], w["by_ts"], w["sessions"]
+        nights, day_list, hourly, off_wrist, workouts, hrmax = (w["nights"], w["days"], w["hourly"], w["off_wrist"],
+                                                                 w["workouts"], w["hrmax"])
+        data_until = self.db.execute("SELECT MAX(ts) FROM activity WHERE ts < ?", (t1,)).fetchone()[0]
+        if data_until:   # ngày đã trọn (đã có dữ liệu của ngày sau): lưu gọn để mô hình cá nhân học lâu dài
+            self._store_daily(nights, day_list, H.local_date(data_until))
+        self._extend_history(first, profile, rem)
+        past_nights, past_days = self._history(first)
+
+        # ---- hồ sơ: tuổi, giới tính (nhịp tim tối đa, nhu cầu ngủ) và nhật ký chu kỳ (nhịp tim nghỉ pha hoàng thể)
+        age, sex = PS.age_of(profile, d0), PS.sex_of(profile)
+        need = I.sleep_need(age)
+        period_days = list(self.journal("period")) if sex == PS.SEX_FEMALE else []
+        all_nights = past_nights + nights
+        PS.adjust_luteal_hr(all_nights, period_days)
 
         # ---- chỉ số đều đặn giấc ngủ: 14 ngày gần nhất, chỉ các phút có đeo vòng (vòng tay ghi cả khi tháo ra)
         s0 = H.day_bounds((d0 - dt.timedelta(days=13)).isoformat())[0]
@@ -475,15 +535,15 @@ class HealthDB:
         hours = sorted(hourly.items())
         today = dt.date.today().isoformat()
 
-        # ---- mô hình nhịp tim khi ngủ của riêng bạn (models.py): học từ các đêm trước RECENT_NIGHTS đêm gần nhất
-        self._night_features(nights, day_list, hours)
+        # ---- mô hình nhịp tim khi ngủ của riêng bạn (models.py): học từ mọi đêm đã lưu (tới HISTORY_DAYS ngày) trừ
+        # RECENT_NIGHTS đêm gần nhất; dữ liệu càng dài thì mô hình càng có nhiều đêm để học
+        self._night_features(all_nights, past_days + day_list)
         rows = []
-        for k, n in enumerate(nights):
-            base = I.rhr_baseline(nights[:k])
+        for k, n in enumerate(all_nights):
+            base = I.rhr_baseline(all_nights[:k])
             rows.append({"date": n["date"], "x": n["features"],
                          "y": I._hr(n) - base["median"] if n.get("hr") and base else None})
-        is_recent = [(d0 - dt.date.fromisoformat(r["date"])).days < I.RECENT_NIGHTS for r in rows]
-        model = M.rhr_model([r for r, new in zip(rows, is_recent) if not new], [r for r, new in zip(rows, is_recent) if new])
+        model = self._personal_model(rows, d0)
         last_k = len(nights) - 1 if nights and (d0 - dt.date.fromisoformat(nights[-1]["date"])).days <= 1 else None
         rhr = I.night_rhr(nights, last_k, model) if last_k is not None else None
 
@@ -492,7 +552,8 @@ class HealthDB:
         readings = [r for r in self.db.execute("SELECT ts, value, auto FROM stress WHERE ts > ? AND ts <= ?",
                                                (as_of - I.STRESS_WINDOW, as_of)) if T.assess("stress", r[1])["usable"]]
         stress = I.stress_evidence(readings, as_of, date, day_list)
-        data_until = self.db.execute("SELECT MAX(ts) FROM activity WHERE ts < ?", (t1,)).fetchone()[0]
+        risk = R.assess(self._risk_inputs(profile or {}, age, sex, samples, by_ts, sessions, off_wrist, workouts,
+                                          nights, day_list, d0, t1, date == today))
 
         def ready_on(k: int) -> dict | None:
             """Điểm sẵn sàng của đêm thứ k: hôm nay tính tới lúc này (buổi tập trong ngày làm điểm giảm), ngày trước
@@ -519,6 +580,7 @@ class HealthDB:
             "body": I.body_signals(nights, date, model),
             "sleep_plan": I.sleep_plan(nights, date, need, as_of) if date == today else None,
             "data_until": data_until,
+            "risk": risk,
             "profile": {"age": None if age is None else int(age), "sex": sex, "hr_max": round(hrmax),
                         "sleep_need": need},
             "cycle": PS.cycle_status(period_days, d0, nights) if sex == PS.SEX_FEMALE else None,
@@ -690,8 +752,117 @@ class HealthDB:
         return {"date": night["date"], "score": int(round(score)), "notes": notes, "hr": night.get("hr"),
                 "hr_baseline": round(base["median"]) if base else None}
 
+    # ------------------------------------------------------------ lịch sử dài cho mô hình cá nhân (bảng daily)
+    def _store_daily(self, nights: list[dict], day_list: list[dict], complete_before: str) -> None:
+        """Lưu gọn các ngày đã trọn (trước complete_before): đêm chính kết thúc trong ngày (nếu có) và số liệu của ngày."""
+        by_date = {n["date"]: n for n in nights}
+        rows = []
+        for d in day_list:
+            if d["date"] >= complete_before:
+                continue
+            n = by_date.get(d["date"])
+            night = json.dumps({k: n.get(k) for k in NIGHT_KEYS}) if n else None
+            rows.append((d["date"], DAILY_VERSION, night, json.dumps({k: d.get(k) for k in DAY_KEYS})))
+        if rows:
+            with self.db:
+                self.db.executemany("INSERT OR REPLACE INTO daily VALUES (?,?,?,?)", rows)
+
+    def _history(self, first: dt.date) -> tuple[list[dict], list[dict]]:
+        """Các đêm và ngày đã lưu trước `first` (tối đa HISTORY_DAYS ngày tính tới `first`), cũ tới mới; ngày không có
+        dòng nào thì là ngày trống (không đeo vòng), để danh sách ngày liền nhau."""
+        since = first - dt.timedelta(days=HISTORY_DAYS - self.INSIGHT_DAYS)
+        rows = self.db.execute("SELECT date, night, day FROM daily WHERE version = ? AND date >= ? AND date < ? ORDER BY date",
+                               (DAILY_VERSION, since.isoformat(), first.isoformat())).fetchall()
+        if not rows:
+            return [], []
+        nights = [json.loads(n) for _d, n, _day in rows if n]
+        stored = {d: json.loads(day) for d, _n, day in rows}
+        start = dt.date.fromisoformat(rows[0][0])
+        days = []
+        for i in range((first - start).days):
+            key = (start + dt.timedelta(days=i)).isoformat()
+            days.append({**self._blank_day(key), "hr_coverage": 0.0, **stored.get(key, {})})
+        return nights, days
+
+    def _extend_history(self, first: dt.date, profile: dict | None, rem: bool) -> None:
+        """Lấp tối đa HISTORY_CHUNK ngày chưa lưu trước cửa sổ insights: trước hết khoảng trống ngay trước cửa sổ (ứng
+        dụng không mở một thời gian), rồi các ngày cũ hơn, tới ngày có dữ liệu đầu tiên hoặc HISTORY_DAYS ngày."""
+        oldest = self.db.execute("SELECT MIN(ts) FROM activity").fetchone()[0]
+        if oldest is None:
+            return
+        floor = max(dt.date.fromisoformat(H.local_date(oldest)), first - dt.timedelta(days=HISTORY_DAYS - self.INSIGHT_DAYS))
+        newest = self.db.execute("SELECT MAX(date) FROM daily WHERE version = ? AND date < ?",
+                                 (DAILY_VERSION, first.isoformat())).fetchone()[0]
+        if newest and dt.date.fromisoformat(newest) < first - dt.timedelta(days=1):
+            start = max(floor, dt.date.fromisoformat(newest) + dt.timedelta(days=1))
+            end = min(first - dt.timedelta(days=1), start + dt.timedelta(days=HISTORY_CHUNK - 1))
+        else:
+            have = self.db.execute("SELECT MIN(date) FROM daily WHERE version = ?", (DAILY_VERSION,)).fetchone()[0]
+            end = min(dt.date.fromisoformat(have), first) - dt.timedelta(days=1) if have else first - dt.timedelta(days=1)
+            start = max(floor, end - dt.timedelta(days=HISTORY_CHUNK - 1))
+        if end < start:
+            return
+        w = self._collect(start, end, profile, rem)
+        self._store_daily(w["nights"], w["days"], (end + dt.timedelta(days=1)).isoformat())
+
+    def _personal_model(self, rows: list[dict], d0: dt.date) -> dict:
+        """Mô hình nhịp tim khi ngủ (models.rhr_model) học từ mọi đêm trừ RECENT_NIGHTS đêm gần nhất, kèm đường học
+        (models.learning_curve: sai số khi chỉ có 1 tuần, 1 tháng, 3, 6 tháng, 1 năm dữ liệu). Chỉ học lại khi dữ liệu
+        học đổi (thường là mỗi ngày một đêm mới)."""
+        from . import insights as I
+
+        recent = [(d0 - dt.date.fromisoformat(r["date"])).days < I.RECENT_NIGHTS for r in rows]
+        train = [r for r, new in zip(rows, recent) if not new]
+        targets = [r for r, new in zip(rows, recent) if new]
+        key = tuple((r["date"], None if r["y"] is None else round(r["y"], 3), tuple(sorted(r["x"].items())))
+                    for r in rows) + (tuple(new for new in recent),)
+        if self._model_cache and self._model_cache[0] == key:
+            return self._model_cache[1]
+        model = M.rhr_model(train, targets)
+        model["curve"] = M.learning_curve(train)
+        dated = [r["date"] for r in train if r["y"] is not None]
+        model["since"] = dated[0] if dated else None
+        self._model_cache = (key, model)
+        return model
+
     @staticmethod
-    def _night_features(nights: list[dict], day_list: list[dict], hours: list[tuple[int, float]]) -> None:
+    def _risk_inputs(profile: dict, age: float | None, sex: str | None, samples: list[tuple], by_ts: dict,
+                     sessions: list[dict], off_wrist: set[int], workouts: list[dict], nights: list[dict],
+                     day_list: list[dict], d0: dt.date, t1: int, partial: bool) -> dict:
+        """Đầu vào cho risk.assess: hồ sơ, và từ vòng tay (None khi chưa đủ dữ liệu):
+        - pulse: nhịp tim lúc ngồi yên ban ngày RISK_DAYS ngày qua (lúc thức, đeo vòng, tối đa REST_STEPS bước trong phút
+          đó và REST_STILL phút trước, không trong buổi tập hay ngay sau đó), gần với mạch đo khi ngồi nghỉ của NHANES.
+          Lấy trung vị từng khoảng 10 phút rồi trung vị các khoảng: một lúc theo dõi trực tiếp bên máy tính (mỗi phút
+          một số đo) chỉ được tính theo thời gian của nó, không lấn át những giờ vòng tay đo 10-30 phút một lần;
+        - sleep: số giờ trung bình của giấc chính (cả lúc thức giữa giấc) trong RISK_DAYS ngày, cần 3 đêm;
+        - active: số ngày trung bình mỗi tuần có từ 10 phút vận động vừa/mạnh, trong 4 tuần đã trọn (các ngày đeo vòng
+          từ 10 giờ; cần 3 ngày, quy về 7 ngày);
+        - days: số ngày dữ liệu thật sự có trong khoảng đó."""
+        since = t1 - RISK_DAYS * 86400
+        asleep = {ts for s in sessions if s["end"] > since for ts in range(s["start"], s["end"], 60)}
+        busy: set[int] = set()
+        for w in workouts:
+            busy.update(range(w["start"] - w["start"] % 60, int(w.get("end") or w["start"]) + H.REST_AFTER_WORKOUT * 60, 60))
+        rest: dict[int, list[int]] = {}   # khoảng 10 phút -> các số đo lúc ngồi yên
+        for s in samples:
+            ts = s[0]
+            if ts < since or not H.valid_hr(s[4]) or ts in asleep or ts in busy or ts in off_wrist:
+                continue
+            if sum(by_ts[t][3] for t in range(ts - 60 * H.REST_STILL, ts + 60, 60) if t in by_ts) > H.REST_STEPS:
+                continue
+            if RISK_HOURS[0] <= dt.datetime.fromtimestamp(ts).hour < RISK_HOURS[1]:
+                rest.setdefault(ts // 600, []).append(s[4])
+        recent = [n for n in nights if (d0 - dt.date.fromisoformat(n["date"])).days < RISK_DAYS]
+        week = [d for d in (day_list[-29:-1] if partial else day_list[-28:]) if d["wear"] >= 600]
+        active = sum(1 for d in week if d["moderate"] + d["vigorous"] >= 10)
+        return {"age": age, "sex": sex, "height": profile.get("height"), "weight": profile.get("weight"),
+                "pulse": M.median([M.median(v) for v in rest.values()]) if len(rest) >= RISK_MIN_REST else None,
+                "sleep": sum(n["minutes"] + n.get("awake", 0) for n in recent) / 60 / len(recent) if len(recent) >= 3 else None,
+                "active": round(active * 7 / len(week)) if len(week) >= 3 else None,
+                "days": sum(1 for d in day_list[-RISK_DAYS:] if d["wear"] >= 600)}
+
+    @staticmethod
+    def _night_features(nights: list[dict], day_list: list[dict]) -> None:
         """Đặt n["features"] cho mô hình nhịp tim khi ngủ (models.rhr_model); 0 hoặc thiếu = như thường lệ.
 
         load: TRIMP hôm trước trừ trung bình 28 ngày đủ dữ liệu tải trước đó (/ 100); evening: TRIMP trong 4 giờ trước
@@ -707,7 +878,7 @@ class HealthDB:
                 month = [d["trimp"] for d in day_list[max(0, i - 28):i] if I._load_day(d)]
                 if len(month) >= I.MIN_BASELINE:
                     x["load"] = (day_list[i]["trimp"] - sum(month) / len(month)) / 100
-            x["evening"] = sum(load for ts, load in hours if n["start"] - 4 * 3600 <= ts < n["start"]) / 100
+            x["evening"] = (n.get("evening") or 0) / 100
             prior = nights[max(0, k - 14):k]
             if len(prior) >= 5:
                 usual_start = M.median([(m["start"] - midnight[m["date"]]) / 60 for m in prior])
@@ -751,6 +922,10 @@ class HealthDB:
         t0, t1 = H.day_bounds(date)
         day = self.samples(t0, t1)
         hr = [[s[0], s[4]] for s in day if H.valid_hr(s[4])]
+        # số đo trực tiếp của các phút vòng tay chưa đồng bộ (đang theo dõi liên tục): hiện ngay, đánh dấu 1 ở cuối
+        have = {s[0] for s in day}
+        live = [[ts, v, 1] for ts, v in sorted(self.live_hr(t0, t1).items()) if ts not in have]
+        hr = sorted(hr + live)
         hourly = [0] * 24
         for s in day:
             hourly[dt.datetime.fromtimestamp(s[0]).hour] += s[3]
@@ -816,6 +991,7 @@ class HealthDB:
                 "steps": sum(s[3] for s in day),
                 "steps_hourly": hourly,
                 "hr": hr,
+                "hr_live": len(live),
                 "stress": [list(r) for r in stress],
                 "spo2": [list(r) for r in spo2_day],
                 "sleep": main,

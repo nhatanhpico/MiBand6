@@ -751,9 +751,9 @@ def estimate_rem(sess: dict, by_ts: dict) -> bool:
 # ---------------------------------------------------------------- nhịp tim bất thường khi nghỉ
 # Như thông báo nhịp tim cao / thấp của Apple Watch: nhịp tim từ REST_HR_HIGH (mức mặc định của Apple) hoặc dưới
 # REST_HR_LOW kéo dài ít nhất REST_MINUTES phút khi không vận động. Chỉ xét lúc thức (ngoài giấc ngủ), không đi lại
-# (không có bước nào trong REST_STILL phút trước mỗi số đo, cả đợt tối đa REST_STEPS bước do tay cử động), không trong
-# buổi tập hay REST_AFTER_WORKOUT phút sau. Một đợt gồm các số đo liền nhau (cách nhau tối đa REST_GAP giây) cùng vượt
-# ngưỡng, ít nhất 2 số đo.
+# (tối đa REST_STEPS bước trong phút đo và REST_STILL phút trước đó, cả đợt cũng vậy: gõ phím, cử động tay khi ngồi
+# máy tính có thể bị đếm thành vài bước), không trong buổi tập hay REST_AFTER_WORKOUT phút sau. Một đợt gồm các số đo
+# liền nhau (cách nhau tối đa REST_GAP giây) cùng vượt ngưỡng, ít nhất 2 số đo.
 REST_HR_HIGH = 120
 REST_HR_LOW = 40
 REST_MINUTES = 10
@@ -788,7 +788,8 @@ def rest_hr_events(samples: list[tuple], asleep: set[int], busy: set[int], since
         ts, hr = s[0], s[4]
         if ts < since or not valid_hr(hr):
             continue
-        rest = ts not in asleep and ts not in busy and all(steps.get(ts - 60 * k, 0) == 0 for k in range(REST_STILL + 1))
+        rest = ts not in asleep and ts not in busy \
+            and sum(steps.get(ts - 60 * k, 0) for k in range(REST_STILL + 1)) <= REST_STEPS
         if rest and prev_ts is not None and ts - prev_ts <= REST_GAP:
             checked += 1
         prev_ts = ts

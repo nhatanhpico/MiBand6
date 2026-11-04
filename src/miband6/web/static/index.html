@@ -482,7 +482,17 @@
           <h3 class="card-h3">Mô hình cá nhân</h3>
           <p class="card-sub" id="bsModel"></p>
           <ul class="ci-notes" id="bsEffects"></ul>
+          <h3 class="card-h3">Học từ dữ liệu của bạn</h3>
+          <p class="card-sub" id="bsCurveSub">Mỗi đêm gần đây được dự đoán bằng mô hình chỉ học từ dữ liệu trước nó, với độ dài khác nhau. Dữ liệu càng dài, mô hình càng có nhiều đêm để học; bảng cho thấy điều đó có giúp dự đoán chính xác hơn với bạn hay không.</p>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>Dữ liệu học</th><th>Sai số dự đoán</th><th>Chỉ dùng mức nền</th></tr></thead><tbody id="bsCurve"></tbody></table></div>
           <p class="md-note">Không phải chẩn đoán. Nhịp tim khi ngủ cao hơn mức thường vài nhịp/phút nhiều đêm liền thường gặp khi sắp ốm hoặc tập quá sức; một đêm cao thường do nguyên nhân tạm thời.</p>
+        </article>
+        <article class="card" id="health-risk">
+          <header class="card-head"><h2>Nguy cơ bệnh</h2><p class="card-sub">Ước tính bằng mô hình máy học từ hồ sơ của bạn và số đo của vòng tay.</p></header>
+          <p class="md-band" id="rkInputs" hidden></p>
+          <div class="rk-list" id="rkList"></div>
+          <p class="card-sub rk-model" id="rkModel"></p>
+          <p class="md-note">Không phải chẩn đoán. Mô hình học các liên hệ thống kê trong dữ liệu dân số (khảo sát sức khỏe NHANES của Hoa Kỳ, có nhóm người châu Á), không phải quan hệ nhân quả. Nó không biết tiền sử gia đình, chế độ ăn, hút thuốc hay thuốc đang dùng. Chỉ xét nghiệm đường huyết, HbA1c và đo huyết áp mới cho biết chắc chắn.</p>
         </article>
       </div>
       <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>
