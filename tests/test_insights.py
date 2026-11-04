@@ -162,15 +162,150 @@ def test_activity_intensity_ratio():
     assert I.activity_intensity(lazy)["level"] == "low"
 
 
+def _at(date: str, hour: float) -> float:
+    d = dt.date.fromisoformat(date)
+    return dt.datetime.combine(d, dt.time()).timestamp() + hour * 3600
+
+
+def _readings(value, end="2026-11-03", hours=72, every=0.5, auto=True):
+    """Số đo căng thẳng đều đặn trong `hours` giờ trước 12 giờ trưa ngày `end`."""
+    as_of = _at(end, 12)
+    return [(int(as_of - h * 3600), value, auto) for h in [i * every for i in range(int(hours / every))]], as_of
+
+
+def _mind(nights, readings, as_of, date="2026-11-03", circ=None, days=None):
+    days = days or _days(end=date)
+    stress = I.stress_evidence(readings, as_of, date, days)
+    k = len(nights) - 1
+    return I.mental_state(nights, days, circ, stress=stress, rhr=I.night_rhr(nights, k), date=date)
+
+
 def test_mental_state():
-    calm = I.mental_state(_nights([240] * 30, minutes=480), _days(stress=20), None)
-    assert calm["state"] in ("calm", "balanced") and calm["strain"] < 30
-    worn = _nights([240] * 30, minutes=300)
+    nights = _nights([240] * 30, start_date="2026-10-05", minutes=480)   # đêm cuối thức dậy 3/11
+    calm = _mind(nights, *_readings(20))
+    assert calm["state"] == "calm" and calm["strain"] < 30 and calm["confidence"] == "high"
+    assert calm["stress"]["avg"] == 20 and calm["stress"]["label"] == "Thư giãn"
+    worn = _nights([240] * 30, start_date="2026-10-05", minutes=300)
     worn[-1]["hr"] = 70
-    tense = I.mental_state(worn, _days(stress=75), {"cpd": 2.5, "sjl": 150, "strain": 80})
-    assert tense["state"] == "overloaded" and tense["strain"] > 60
+    tense = _mind(worn, *_readings(75), circ={"cpd": 2.5, "sjl": 150, "strain": 80})
+    assert tense["state"] == "overloaded" and tense["strain"] > 60 and tense["tension"] == 100
     assert tense["factors"][0]["level"] >= tense["factors"][-1]["level"]   # yếu tố nặng nhất lên đầu
     assert I.mental_state([], [], None) is None
+
+
+def test_relaxed_band_stress_is_not_reported_as_stress():
+    """Người dùng đo trên vòng tay thấy thư giãn (2 số đo hôm nay: 34 đo tay, 18 tự đo) nhưng nhịp tim khi ngủ đêm qua
+    +8: trước đây chỉ có nhịp tim nghỉ trong nhóm "căng" (vì ít hơn 6 số đo tự động mỗi ngày) nên báo "Căng thẳng",
+    mức căng 100. Giờ mức căng theo đúng số đo của vòng tay; nhịp tim tăng được báo riêng là dấu hiệu thể chất."""
+    nights = _nights([240] * 30, start_date="2026-10-06", minutes=402)   # ngủ 6 giờ 42 phút, đêm cuối thức dậy 4/11
+    for n in nights:
+        n["hr"] = 58
+    nights[-1]["hr"] = 66
+    date = "2026-11-04"
+    readings = [(int(_at(date, 11)), 34, False), (int(_at(date, 12)), 18, True)]
+    m = _mind(nights, readings, _at(date, 12.5), date=date, circ={"cpd": 1.6, "sjl": 70, "strain": 52})
+    assert m["state"] not in ("tense", "overloaded") and m["tension"] < 25
+    assert m["stress"]["avg"] == 26 and m["stress"]["today_n"] == 2 and m["stress"]["manual"] == 1
+    assert m["confidence"] == "medium"
+    rhr = next(f for f in m["factors"] if f["key"] == "rhr")
+    assert rhr["level"] == 100 and "+8" in rhr["text"]
+    assert any("dấu hiệu thể chất" in n for n in m["notes"])
+    assert any("Theo dõi căng thẳng" in n for n in m["notes"]) is False   # đã có số đo tự động
+    only_manual = _mind(nights, readings[:1], _at(date, 12.5), date=date)
+    assert any("Chỉ có số đo căng thẳng đo tay" in n for n in only_manual["notes"])
+
+
+def test_resting_hr_alone_never_means_stress():
+    nights = _nights([240] * 30, start_date="2026-10-05", minutes=460)
+    for n in nights:
+        n["hr"] = 58
+    nights[-1]["hr"] = 70
+    m = _mind(nights, [], _at("2026-11-03", 12))
+    assert m["state"] not in ("tense", "overloaded") and m["tension"] <= 45 and m["confidence"] == "low"
+    assert any("chưa có số đo căng thẳng" in n.lower() for n in m["notes"])
+    # vòng tay đo thấy căng (trung bình 70) và nhịp tim nghỉ cũng tăng: củng cố
+    tense = _mind(nights, *_readings(70))
+    assert tense["state"] == "tense" and tense["tension"] > round(100 * tense["stress"]["risk"])
+
+
+def test_mental_state_ignores_old_nights_and_weights_recent_readings():
+    nights = _nights([240] * 20, start_date="2026-10-05", minutes=240)   # đêm cuối 24/10: quá cũ để nói về hôm nay
+    readings, as_of = _readings(20, hours=24)
+    old = [(ts - 48 * 3600, 90, True) for ts, _v, _a in readings]       # 2-3 ngày trước rất căng, hôm qua thư giãn
+    m = _mind(nights, readings + old, as_of, circ={"cpd": 0.5, "sjl": 0, "strain": 10})
+    assert not any(f["key"] in ("sleep", "rhr") for f in m["factors"])
+    assert 20 < m["stress"]["avg"] < 55                                   # số đo gần đây nặng hơn: không phải 55
+    assert I.stress_evidence(old, as_of + 30 * 3600, "2026-11-04") is None   # ngoài cửa sổ 72 giờ
+
+
+def test_stress_relative_to_personal_baseline():
+    days = _days(stress=25, end="2026-11-03")
+    readings, as_of = _readings(45)
+    base = I.stress_evidence(readings, as_of, "2026-11-03", days)
+    alone = I.stress_evidence(readings, as_of, "2026-11-03")
+    assert base["usual"] == 25 and base["risk"] > alone["risk"]          # cao hơn hẳn mức thường của chính bạn
+    assert alone["usual"] is None and alone["label"] == "Bình thường"
+
+
+# ---------------------------------------------------------------- tín hiệu cơ thể, kế hoạch ngủ
+
+
+def _hr_nights(hrs, start_date="2026-10-01"):
+    nights = _nights([240] * len(hrs), start_date=start_date)
+    for n, hr in zip(nights, hrs):
+        n["hr"] = hr
+    return nights
+
+
+def test_body_signals_flag_multi_night_rise():
+    base = [58, 59, 57, 58, 60, 58, 57, 59, 58, 58]
+    date = lambda nights: nights[-1]["date"]   # noqa: E731
+    good = _hr_nights(base + [58, 59, 58])
+    assert I.body_signals(good, date(good))["status"] == "good"
+    one = _hr_nights(base + [58, 58, 65])
+    b = I.body_signals(one, date(one))
+    assert b["status"] == "ok" and b["last"]["high"] and b["last"]["dev"] == 7
+    two = _hr_nights(base + [65, 58, 64])
+    assert I.body_signals(two, date(two))["status"] == "watch"
+    three = _hr_nights(base + [64, 65, 66])
+    alert = I.body_signals(three, date(three))
+    assert alert["status"] == "alert" and alert["streak"] == 3
+    gap = _hr_nights(base + [64, 65, 66])
+    del gap[-2]                                   # thiếu một đêm ở giữa: không phải "liền"
+    assert I.body_signals(gap, date(gap))["streak"] == 1
+    assert I.body_signals(_hr_nights(base[:5]), "2026-10-05") is None   # chưa đủ mức nền
+
+
+def test_body_signals_use_personal_model_explanation():
+    nights = _hr_nights([58] * 12 + [64])
+    nights[-1]["features"] = {"late": 3.0}
+    model = {"active": True, "resid_sd": 1.5, "nights": 30, "need": 21, "excluded": 0, "mae": 1.0, "mae_null": 1.5,
+             "gain": 0.33, "r2": 0.4, "effects": [{"key": "late", "per_unit": 1.8, "t": 4.2}],
+             "predictions": {nights[-1]["date"]: {"expected": 5.4, "contrib": {"late": 5.4}}}}
+    b = I.body_signals(nights, nights[-1]["date"], model)
+    last = b["last"]
+    assert last["dev"] == 6 and last["unexplained"] == 0.6 and not last["high"] and b["status"] == "good"
+    assert last["causes"] == ["đi ngủ muộn hơn thường lệ 3 giờ 0 phút: +5,4 nhịp/phút"]
+    assert b["model"]["effects"] == ["Đi ngủ muộn hơn 1 giờ: +1,8 nhịp/phút"]
+
+
+def test_sleep_plan_counts_back_from_usual_wake_time():
+    d0 = dt.date(2026, 10, 5)   # thứ Hai
+    nights = _nights([240] * 28, start_date="2026-10-05", minutes=450)
+    for n in nights:   # ngày làm: 22:50-06:30 (ngủ 7 giờ 30 phút, thức 10 phút); ngày nghỉ (ngủ 510 phút) dậy 09:00
+        n["awake"] = 10
+        n["mid"] = 6.5 * 60 - (n["minutes"] + 10) / 2 if dt.date.fromisoformat(n["date"]).weekday() < 5 else 9 * 60 - 260
+    date = (d0 + dt.timedelta(days=24)).isoformat()   # thứ Năm 29/10: mai là ngày làm việc
+    plan = I.sleep_plan(nights[:25], date)
+    assert plan["wake"] == "06:30" and plan["extra"] == 0 and plan["sleep"] == 450 and not plan["free"]
+    assert plan["bedtime"] == "22:35"   # 06:30 - 7 giờ 30 phút - 10 phút thức - 15 phút thiếp đi
+    short = [dict(n) for n in nights[:25]]
+    for n in short[-4:]:
+        n["minutes"] = 330   # thiếu 2 giờ mỗi đêm 4 đêm: nợ 480 phút, bù 1/3 tối đa 60 phút
+    plan = I.sleep_plan(short, date)
+    assert plan["debt"] == 480 and plan["extra"] == 60 and plan["sleep"] == 510
+    assert plan["capped"]   # lên giường trước 22:00 sớm hơn giờ ngủ quen thuộc quá 1 giờ: giữ ở mức đó
+    assert I.sleep_plan(nights[:3], date) is None
 
 
 def test_sleep_balance_counts_completed_naps_once_without_changing_main_sleep(tmp_path):
@@ -218,3 +353,46 @@ def test_edwards_trimp_includes_the_exact_lower_edge_of_each_zone():
     for zone, boundary in enumerate((100, 120, 140, 160, 180), start=1):
         assert I.edwards_trimp(boundary - 1, 200) == zone - 1
         assert I.edwards_trimp(boundary, 200) == zone
+
+
+def _sleep_rows(start, minutes, hr_of):
+    rows = [(start + k * 60, H.KIND_LIGHT_SLEEP, 0, 0, hr_of(k), 0, 0, 0) for k in range(minutes)]
+    rows.append((start + minutes * 60, H.KIND_ACTIVITY, 0, 0, 70, 0, 0, 0))
+    return rows
+
+
+def test_personal_model_learns_bedtime_effect_from_band_data(tmp_path):
+    """Dữ liệu vòng tay 40 đêm: đi ngủ muộn hơn mỗi giờ thì nhịp tim khi ngủ cao hơn 2 nhịp/phút. Mô hình cá nhân
+    phải học được điều đó (qua cả đường healthdb -> đặc trưng -> mô hình), và giải thích đêm cuối đi ngủ muộn."""
+    import random
+
+    from miband6.healthdb import HealthDB
+
+    db = HealthDB(tmp_path / "h.sqlite3")
+    rnd = random.Random(7)
+    d0 = dt.date(2026, 9, 1)
+    for i in range(40):
+        late = 2.5 if i == 39 else rnd.uniform(-1.5, 1.5)   # giờ, so với 23:00
+        start = H.day_bounds((d0 + dt.timedelta(days=i)).isoformat())[0] - 3600 + int(late * 3600)
+        hr = round(55 + 2.0 * late + rnd.gauss(0, 0.5))
+        db.add_activity(_sleep_rows(start, 420, lambda k, hr=hr: hr))
+    ins = db.insights((d0 + dt.timedelta(days=39)).isoformat())
+    model, last = ins["body"]["model"], ins["body"]["last"]
+    assert model["active"] and model["nights"] >= 21 and model["gain"] >= 30
+    assert any(e.startswith("Đi ngủ muộn hơn 1 giờ: +") for e in model["effects"])
+    assert last["dev"] >= 4 and abs(last["unexplained"]) < 2.5 and not last["high"]   # giải thích được: không báo
+    assert last["causes"] and last["causes"][0].startswith("đi ngủ muộn hơn thường lệ")
+    db.close()
+
+
+def test_night_heart_rate_needs_enough_readings(tmp_path):
+    from miband6.healthdb import HealthDB, MIN_NIGHT_HR
+
+    db = HealthDB(tmp_path / "h.sqlite3")
+    day = "2026-01-05"
+    start = H.day_bounds(day)[0]
+    db.add_activity(_sleep_rows(start, 420, lambda k: 58 if k % 60 == 0 else 255))   # đo mỗi giờ: 7 số đo
+    assert 420 // 60 < MIN_NIGHT_HR and db.insights(day)["last_night"]["hr"] is None
+    db.add_activity(_sleep_rows(start, 420, lambda k: 58 if k % 30 == 0 else 255))   # mỗi 30 phút: 14 số đo
+    assert db.insights(day)["last_night"]["hr"] == 58
+    db.close()

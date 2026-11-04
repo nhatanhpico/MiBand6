@@ -917,8 +917,11 @@ class BandService:
         summary = db.summary(date, rem=rem)
         summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000), rem=rem, profile=self.profile)
         body = tuple(self.profile.get(k) for k in ("birth", "gender", "height", "weight", "max_hr_override"))
+        # hôm nay: tính lại mỗi giờ dù không có dữ liệu mới (đi ra ngoài, vòng tay không kết nối): thời gian hồi phục,
+        # trọng số các số đo căng thẳng và kế hoạch ngủ tối nay đổi theo giờ
+        hour = int(time.time() // 3600) if date == dt.date.today().isoformat() else None
         key = (date, db.last("last_sync"), db.last("cloud_workouts"), db.last("mf_sleep"), db.last("journal"), rem,
-               get_lang(), body)
+               get_lang(), body, hour)
         if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, ngôn ngữ, hồ sơ, nhật ký…
             insights = db.insights(date, self.profile, rem=rem)
             self._insight_cache = {"key": key, "value": insights,

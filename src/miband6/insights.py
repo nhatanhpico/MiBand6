@@ -21,7 +21,14 @@ Phương pháp
 - Trạng thái tinh thần: ước tính có giải thích, không phải chẩn đoán. Dựa trên các yếu tố nghiên cứu cho thấy liên quan
   tới tâm trạng: căng thẳng (HRV), thiếu ngủ / thời gian thức dài và lệch nhịp sinh học (nghiên cứu 2.602 bác sĩ nội trú,
   PLOS Digital Health 2024; dịch pha nhịp sinh học dự báo giai đoạn khí sắc, npj Digital Medicine 2024), nhịp tim nghỉ
-  tăng, ít vận động.
+  tăng, ít vận động. Mức "căng" lấy từ chính các số đo căng thẳng của vòng tay (tự đo và đo tay, số đo gần đây nặng
+  hơn): vòng tay tính chỉ số này từ HRV, nên nó đo trực tiếp hơn. Nhịp tim khi ngủ tăng có nhiều nguyên nhân thể chất
+  (tập nặng, rượu bia, ăn khuya, sắp ốm), nên một mình nó không bao giờ làm trạng thái thành "Căng thẳng"; khi vòng tay
+  đo thấy thư giãn thì nó được báo riêng là tín hiệu cơ thể.
+- Tín hiệu cơ thể: nhịp tim khi ngủ so với mức nền bền vững (trung vị, độ lệch chuẩn từ MAD) và với mức mô hình cá nhân
+  (models.rhr_model) dự đoán; cao nhiều đêm liền là dấu hiệu cơ thể đang chịu tải (sắp ốm, tập quá sức...), như các
+  nghiên cứu phát hiện bệnh sớm từ nhịp tim nghỉ của thiết bị đeo (Mishra 2020, Quer 2021).
+- Kế hoạch ngủ tối nay: nhu cầu ngủ theo tuổi cộng phần bù dần nợ ngủ 7 ngày, tính ngược từ giờ dậy quen thuộc.
 """
 
 from __future__ import annotations
@@ -29,12 +36,17 @@ from __future__ import annotations
 import datetime as dt
 import math
 
+from . import models as M
+from .health import group_dec
 from .i18n import tr
 
 SLEEP_NEED = 450          # phút: 7,5 giờ, giữa khoảng khuyến nghị 7-9 giờ
 BASELINE_NIGHTS = 30      # số đêm làm mức nền nhịp tim nghỉ
 MIN_BASELINE = 7          # cần ít nhất chừng này đêm / ngày để so với mức nền
 FREE_WEEKDAYS = (5, 6)    # thức dậy thứ Bảy, Chủ nhật: đêm trước ngày nghỉ (đêm thứ Sáu, thứ Bảy)
+RHR_SD_FLOOR = 2.0        # nhịp/phút: độ lệch chuẩn mức nền không nhỏ hơn (nhịp tim khi ngủ thường dao động 2-3 giữa các đêm)
+RHR_HIGH_Z = 2.0          # đêm có nhịp tim khi ngủ cao: lệch từ ngần này độ lệch chuẩn...
+RHR_HIGH_BPM = 3.0        # ... và từ ngần này nhịp/phút
 
 # trọng số các thành phần của mức sẵn sàng (chuẩn hóa lại theo thành phần có dữ liệu)
 READINESS_WEIGHTS = {"rhr": 0.18, "recovery": 0.08, "sleep": 0.20, "sleep_balance": 0.14,
@@ -108,15 +120,26 @@ def _hr(n: dict) -> float:
     return n.get("hr_adj", n["hr"])
 
 
-def _rhr_part(nights: list[dict], night: dict) -> dict | None:
-    base = [_hr(n) for n in nights[-BASELINE_NIGHTS - 1:-1] if n.get("hr")]
-    if not night.get("hr") or len(base) < MIN_BASELINE:
+def rhr_baseline(nights: list[dict], adjusted: bool = True) -> dict | None:
+    """Mức nền nhịp tim khi ngủ từ tối đa BASELINE_NIGHTS đêm gần nhất có nhịp tim trong `nights` (các đêm trước đêm
+    cần so): trung vị và độ lệch chuẩn bền vững (1,4826 x MAD, tối thiểu RHR_SD_FLOOR), để vài đêm ốm hay uống rượu
+    trong mức nền không kéo lệch nó. adjusted: dùng nhịp tim đã trừ phần tăng của pha hoàng thể (_hr)."""
+    vals = [(_hr(n) if adjusted else n["hr"]) for n in nights if n.get("hr")][-BASELINE_NIGHTS:]
+    if len(vals) < MIN_BASELINE:
         return None
-    mean, sd = _mean(base), max(_sd(base) or 0, 1.5)
+    return {"median": M.median(vals), "sd": max(M.robust_sd(vals), RHR_SD_FLOOR), "nights": len(vals)}
+
+
+def _rhr_part(nights: list[dict], night: dict) -> dict | None:
+    base = rhr_baseline(nights[:-1])
+    if not night.get("hr") or base is None:
+        return None
+    mean, sd = base["median"], base["sd"]
     z = (_hr(night) - mean) / sd
     score = _interp(z, [(0.5, 100), (1.5, 75), (2.5, 50), (3.5, 25), (5, 10)])
     diff = _hr(night) - mean
-    detail = tr('Nhịp tim khi ngủ đêm qua so với mức nền {n} đêm ({base} nhịp/phút).', n=len(base), base=int(round(mean)))
+    detail = tr('Nhịp tim khi ngủ đêm qua so với mức nền {n} đêm ({base} nhịp/phút).', n=base["nights"],
+                base=int(round(mean)))
     if "hr_adj" in night:
         detail += " " + tr('Đang ở pha hoàng thể của chu kỳ: đã trừ {d} nhịp/phút nhịp tim tăng theo chu kỳ trước khi so.',
                            d=f"{night['hr'] - night['hr_adj']:.1f}".rstrip("0").rstrip("."))
@@ -458,60 +481,256 @@ def circadian(nights: list[dict], sri: float | None = None) -> dict | None:
     return out
 
 
+# ---------------------------------------------------------------- tín hiệu cơ thể: nhịp tim khi ngủ
+
+RECENT_NIGHTS = 3         # số đêm gần nhất xét tín hiệu cơ thể (mô hình cá nhân học từ các đêm trước đó)
+
+
+def _days_between(later: str, earlier: str) -> int:
+    return (dt.date.fromisoformat(later) - dt.date.fromisoformat(earlier)).days
+
+
+def _signed(v: float, digits: int = 1) -> str:
+    """+2,1 / −0,8 theo ngôn ngữ giao diện."""
+    return ("+" if v > 0 else "−" if v < 0 else "±") + group_dec(abs(v), digits)
+
+
+def night_rhr(nights: list[dict], k: int, model: dict | None = None) -> dict | None:
+    """Nhịp tim khi ngủ của đêm thứ k so với mức nền của các đêm trước nó. Nếu mô hình cá nhân đang dùng và có dự đoán
+    cho đêm này (models.rhr_model): phần dự đoán được từ các yếu tố đã biết và phần không giải thích được; khi đó mức
+    "cao" xét theo phần không giải thích được."""
+    n = nights[k]
+    base = rhr_baseline(nights[:k])
+    if not n.get("hr") or base is None:
+        return None
+    dev = _hr(n) - base["median"]
+    out = {"date": n["date"], "hr": n["hr"], "baseline": round(base["median"], 1), "sd": round(base["sd"], 1),
+           "dev": round(dev, 1), "z": round(dev / base["sd"], 2), "nights": base["nights"]}
+    pred = (model or {}).get("predictions", {}).get(n["date"]) if (model or {}).get("active") else None
+    if pred is not None:
+        rest = dev - pred["expected"]
+        out.update(expected=pred["expected"], unexplained=round(rest, 1),
+                   z_unexplained=round(rest / model["resid_sd"], 2), contrib=pred["contrib"],
+                   causes=_causes(pred["contrib"], n.get("features") or {}))
+    level, z = out.get("unexplained", dev), out.get("z_unexplained", out["z"])
+    out["high"] = level >= RHR_HIGH_BPM and z >= RHR_HIGH_Z
+    out["risk"] = round(min(1.0, max(0.0, z / 2.5)), 3)   # trạng thái tinh thần: 0 ở mức nền, 1 từ 2,5 độ lệch chuẩn
+    return out
+
+
+def _causes(contrib: dict, x: dict) -> list[str]:
+    """Các yếu tố đã biết làm nhịp tim khi ngủ đêm này lệch đi, mỗi yếu tố từ 0,5 nhịp/phút, nặng nhất trước."""
+    out = []
+    for key, c in sorted(contrib.items(), key=lambda kv: -abs(kv[1])):
+        if abs(c) < 0.5:
+            continue
+        v = x.get(key) or 0
+        if key == "late":
+            what = (tr('đi ngủ muộn hơn thường lệ {t}', t=_hm(v * 60)) if v > 0
+                    else tr('đi ngủ sớm hơn thường lệ {t}', t=_hm(v * 60)))
+        elif key == "short":
+            what = (tr('ngủ ngắn hơn thường lệ {t}', t=_hm(v * 60)) if v > 0
+                    else tr('ngủ dài hơn thường lệ {t}', t=_hm(v * 60)))
+        elif key == "load":
+            what = tr('tải vận động hôm trước cao hơn thường lệ') if v > 0 else tr('tải vận động hôm trước thấp hơn thường lệ')
+        else:
+            what = tr('tập trong 4 giờ trước khi ngủ')
+        out.append(tr('{what}: {d} nhịp/phút', what=what, d=_signed(c)))
+    return out
+
+
+def _effect_text(e: dict) -> str:
+    d = _signed(e["per_unit"])
+    return {"load": tr('Tải vận động hôm trước cao hơn thường lệ 100 TRIMP: {d} nhịp/phút', d=d),
+            "evening": tr('Mỗi 100 TRIMP tập trong 4 giờ trước khi ngủ: {d} nhịp/phút', d=d),
+            "late": tr('Đi ngủ muộn hơn 1 giờ: {d} nhịp/phút', d=d),
+            "short": tr('Ngủ ngắn hơn 1 giờ: {d} nhịp/phút', d=d)}[e["key"]]
+
+
+def _model_info(model: dict | None) -> dict | None:
+    """Tóm tắt mô hình cá nhân cho giao diện: đã dùng chưa, học từ bao nhiêu đêm, sai số so với chỉ dùng mức nền."""
+    if not model:
+        return None
+    info = {k: model.get(k) for k in ("active", "nights", "need", "excluded", "mae", "mae_null")}
+    info["gain"] = round(100 * model["gain"]) if "gain" in model else None
+    info["r2"] = round(100 * model["r2"]) if "r2" in model else None
+    info["effects"] = [_effect_text(e) for e in model.get("effects", [])] if model["active"] else []
+    if model["nights"] < model["need"]:
+        info["text"] = tr('Mô hình cá nhân: cần {need} đêm có nhịp tim khi ngủ để học, đang có {n}.', need=model["need"],
+                          n=model["nights"])
+    elif not model["active"]:
+        info["text"] = tr('Mô hình cá nhân đã thử học {n} đêm nhưng chưa dự đoán tốt hơn mức nền, nên chưa dùng.',
+                          n=model["nights"])
+    else:
+        info["text"] = tr('Mô hình cá nhân học từ {n} đêm của bạn: sai số dự đoán {mae} nhịp/phút, so với {base} nếu chỉ dùng mức nền (kiểm chứng chéo).',
+                          n=model["nights"], mae=group_dec(model["mae"]), base=group_dec(model["mae_null"]))
+    return info
+
+
+def body_signals(nights: list[dict], date: str, model: dict | None = None) -> dict | None:
+    """Tín hiệu cơ thể từ nhịp tim khi ngủ RECENT_NIGHTS đêm gần nhất (tới ngày `date`): một đêm cao thường do nguyên
+    nhân tạm thời; cao từ 2 trong 3 đêm là nên chú ý; 3 đêm liền là cần lưu ý (như các nghiên cứu phát hiện sớm bệnh từ
+    nhịp tim nghỉ của thiết bị đeo: nhịp tim nghỉ tăng vài ngày trước và trong khi ốm)."""
+    checks = []
+    for k, n in enumerate(nights):
+        if 0 <= _days_between(date, n["date"]) < RECENT_NIGHTS:
+            c = night_rhr(nights, k, model)
+            if c:
+                checks.append(c)
+    if not checks:
+        return None
+    last = checks[-1]
+    high = [c for c in checks if c["high"]]
+    streak, prev = 0, None
+    for c in reversed(checks):   # các đêm cao liền nhau tính tới đêm gần nhất
+        if not c["high"] or (prev is not None and _days_between(prev, c["date"]) != 1):
+            break
+        streak, prev = streak + 1, c["date"]
+    dev = last.get("unexplained", last["dev"])
+    if streak >= 3:
+        status, label = "alert", tr('Cao {n} đêm liền', n=streak)
+        text = tr('Nhịp tim khi ngủ cao hơn mức thường của bạn {n} đêm liền. Đây thường là dấu hiệu cơ thể đang chống lại bệnh hoặc quá sức. Nghỉ ngơi, ngủ đủ, uống đủ nước; nếu sốt, ho, đau họng, khó thở, đau ngực hoặc mệt bất thường, hãy đi khám.',
+                  n=streak)
+    elif len(high) >= 2:
+        status, label = "watch", tr('Cao {n}/{of} đêm', n=len(high), of=len(checks))
+        text = tr('Nhịp tim khi ngủ cao hơn mức thường của bạn {n} trong {of} đêm gần nhất. Cơ thể có thể đang chịu tải: sắp ốm, tập quá sức, thiếu ngủ hoặc rượu bia. Ưu tiên nghỉ ngơi và tránh tập nặng tới khi nhịp tim về mức thường.',
+                  n=len(high), of=len(checks))
+    elif last["high"]:
+        status, label = "ok", tr('Cao 1 đêm')
+        text = tr('Đêm gần nhất nhịp tim khi ngủ cao hơn mức thường của bạn {d} nhịp/phút. Một đêm cao thường do nguyên nhân tạm thời (tập nặng, ngủ muộn, rượu bia, ăn khuya, căng thẳng); theo dõi thêm vài đêm.',
+                  d=_signed(dev, 0))
+    else:
+        status, label = "good", tr('Bình thường')
+        text = tr('Nhịp tim khi ngủ đêm gần nhất trong mức thường của bạn.')
+    series = []   # 14 đêm gần nhất cho biểu đồ (mức nền của từng đêm)
+    for k, n in enumerate(nights):
+        if 0 <= _days_between(date, n["date"]) < 14:
+            c = night_rhr(nights, k, model)
+            if c:
+                series.append({key: c[key] for key in ("date", "hr", "baseline", "sd", "high")})
+    return {"status": status, "label": label, "text": text, "date": last["date"], "last": last, "nights": checks,
+            "streak": streak, "high": len(high), "series": series, "model": _model_info(model)}
+
+
+# ---------------------------------------------------------------- căng thẳng đo bởi vòng tay
+
+STRESS_WINDOW = 72 * 3600     # giây: số đo căng thẳng dùng cho trạng thái tinh thần
+STRESS_HALF_LIFE = 24 * 3600  # số đo cũ hơn ngần này tính nửa trọng số (số đo gần đây nói nhiều hơn về lúc này)
+STRESS_FULL_N = 6             # số đo hiệu dụng để coi mức căng thẳng là đủ tin cậy
+STRESS_CALM = 35              # trung bình có trọng số tới ngần này: mức "căng" 0...
+STRESS_SPAN = 50              # ... tăng đều tới 1 ở 85; 60 (mức "trung bình" của vòng tay) cho 0,5, ngưỡng "Căng thẳng"
+STRESS_HIGH = 80              # mức "cao" của vòng tay
+
+
+def stress_label(v: float) -> str:
+    """Nhãn theo thang của vòng tay: 0-39 thư giãn, 40-59 bình thường, 60-79 trung bình, 80-100 cao."""
+    return tr('Thư giãn') if v < 40 else tr('Bình thường') if v < 60 else tr('Trung bình') if v < 80 else tr('Cao')
+
+
+def stress_evidence(readings: list[tuple], as_of: float, date: str, days: list[dict] | None = None) -> dict | None:
+    """Mức căng thẳng hiện tại từ các số đo của vòng tay (tự đo và đo tay) trong STRESS_WINDOW trước `as_of`.
+
+    readings: [(ts, mức 0-100, tự đo?)]; mỗi số đo có trọng số giảm một nửa sau mỗi STRESS_HALF_LIFE. days: các ngày
+    (healthdb.insights) để biết mức thường của bạn (trung vị các ngày có >= 6 số đo tự động trước cửa sổ, cần 7 ngày):
+    cao hơn hẳn mức thường cũng làm mức "căng" tăng thêm tối đa 0,25."""
+    rows = sorted((ts, v, bool(auto)) for ts, v, auto in readings if as_of - STRESS_WINDOW < ts <= as_of)
+    if not rows:
+        return None
+    w = [0.5 ** ((as_of - ts) / STRESS_HALF_LIFE) for ts, _v, _a in rows]
+    total = sum(w)
+    avg = sum(x * v for x, (_t, v, _a) in zip(w, rows)) / total
+    high = sum(x for x, (_t, v, _a) in zip(w, rows) if v >= STRESS_HIGH) / total
+    risk = max(0.0, (avg - STRESS_CALM) / STRESS_SPAN) + 0.5 * high
+    first = (dt.date.fromisoformat(date) - dt.timedelta(days=STRESS_WINDOW // 86400 - 1)).isoformat()
+    base = [d["stress"] for d in days or [] if d["date"] < first and d.get("stress_n", 0) >= 6][-28:]
+    usual = None
+    if len(base) >= MIN_BASELINE:
+        usual = M.median(base)
+        z = (avg - _mean(base)) / max(_sd(base) or 0, 4)
+        risk += 0.1 * min(2.5, max(0.0, z - 1))
+    today = [v for ts, v, _a in rows if dt.datetime.fromtimestamp(ts).date().isoformat() == date]
+    return {"avg": int(round(avg)), "label": stress_label(avg), "risk": round(min(1.0, risk), 3),
+            "high": round(high, 3), "n": len(rows), "n_eff": round(total * total / sum(x * x for x in w), 1),
+            "auto": sum(1 for r in rows if r[2]), "manual": sum(1 for r in rows if not r[2]),
+            "today_avg": int(round(sum(today) / len(today))) if today else None, "today_n": len(today),
+            "usual": None if usual is None else int(round(usual)), "last": [rows[-1][0], rows[-1][1]]}
+
+
 # ---------------------------------------------------------------- trạng thái tinh thần (ước tính)
 
+RHR_ONLY_TENSION = 0.45   # chưa có số đo căng thẳng: mức "căng" từ nhịp tim nghỉ tối đa ngần này (dưới ngưỡng 0,5)
 
-def mental_state(nights: list[dict], days: list[dict], circ: dict | None, need: int = SLEEP_NEED) -> dict | None:
-    """Ước tính trạng thái tinh thần hiện tại từ các yếu tố sinh lý liên quan tới tâm trạng. Không phải chẩn đoán."""
-    factors = []   # (khóa, mức rủi ro 0-1, trọng số, nhóm "tension" | "fatigue", mô tả)
-    stress_days = [d for d in days[-3:] if d.get("stress_n", 0) >= 6]
-    if stress_days:
-        avg = _mean([d["stress"] for d in stress_days])
-        high = sum(d.get("stress_high", 0) for d in stress_days) / max(1, sum(d["stress_n"] for d in stress_days))
-        risk = min(1.0, max(0.0, (avg - 25) / 50) + high * 0.5)
-        factors.append(("stress", risk, 0.35, "tension",
-                        tr('căng thẳng trung bình {v} trong {n} ngày, {p}% số đo ở mức cao', v=int(round(avg)),
-                           n=len(stress_days), p=int(round(high * 100)))))
-    recent = nights[-3:]
+
+def mental_state(nights: list[dict], days: list[dict], circ: dict | None, need: int = SLEEP_NEED,
+                 stress: dict | None = None, rhr: dict | None = None, date: str | None = None,
+                 partial: bool = False) -> dict | None:
+    """Ước tính trạng thái tinh thần hiện tại từ các yếu tố sinh lý liên quan tới tâm trạng. Không phải chẩn đoán.
+
+    stress: stress_evidence (số đo căng thẳng của vòng tay 72 giờ qua); rhr: night_rhr của đêm gần nhất; date: ngày
+    đang xem (mặc định ngày cuối của `days`); partial: ngày đó chưa hết (hôm nay), nên vận động tính 7 ngày đã trọn.
+
+    Mức "căng" là mức căng thẳng vòng tay đo được (vòng tay tính nó từ HRV); nhịp tim nghỉ chỉ củng cố khi vòng tay
+    cũng đo thấy căng. Chưa có số đo căng thẳng nào thì nhịp tim nghỉ thay thế nhưng tối đa RHR_ONLY_TENSION: nó tăng vì
+    nhiều nguyên nhân thể chất, một mình nó không đủ để nói là đang căng thẳng."""
+    date = date or (days[-1]["date"] if days else nights[-1]["date"] if nights else None)
+    if date is None:
+        return None
+    if rhr and _days_between(date, rhr["date"]) > 1:   # đêm đã cũ không nói gì về hôm nay
+        rhr = None
+    factors = []   # (khóa, mức rủi ro 0-1, trọng số, mô tả)
+    if stress:
+        text = tr('vòng tay đo căng thẳng trung bình {v} ({label}) từ {n} số đo trong 3 ngày', v=stress["avg"],
+                  label=stress["label"].lower(), n=stress["n"])
+        if stress["high"] >= 0.05:
+            text += ", " + tr('{p}% ở mức cao', p=int(round(stress["high"] * 100)))
+        factors.append(("stress", stress["risk"], 0.35, text))
+    recent = [n for n in nights if 0 <= _days_between(date, n["date"]) <= 2]
     if recent:
         avg = _mean([n["minutes"] for n in recent])
-        debt = _weekly_sleep_debt(nights, need, days[-1]["date"] if days else recent[-1]["date"])
+        debt = _weekly_sleep_debt(nights, need, date)
         risk = min(1.0, max(0.0, (need - avg) / 150) + min(0.4, debt / 900))
-        factors.append(("sleep", risk, 0.25, "fatigue",
+        factors.append(("sleep", risk, 0.25,
                         tr('ngủ trung bình {t} mỗi đêm ({n} đêm), còn thiếu {d} trong 7 ngày sau khi tính cả giấc ngủ ngắn', t=_hm(avg), n=len(recent), d=_hm(debt))))
     if circ and (circ.get("cpd") is not None or circ.get("sjl") is not None):
         cpd = circ.get("cpd") or 0
         sjl = (circ.get("sjl") or 0) / 60
         risk = min(1.0, max(cpd - 0.5, 0) / 2.0 * 0.6 + min(sjl / 2, 1) * 0.4)
-        factors.append(("circadian", risk, 0.15, "fatigue",
-                        tr('áp lực nhịp sinh học {s}/100', s=circ.get("strain", 0))))
-    base = [_hr(n) for n in nights[-BASELINE_NIGHTS - 1:-1] if n.get("hr")]
-    if len(base) >= MIN_BASELINE and nights and nights[-1].get("hr"):
-        z = (_hr(nights[-1]) - _mean(base)) / max(_sd(base) or 0, 1.5)
-        factors.append(("rhr", min(1.0, max(0.0, z / 2.5)), 0.15, "tension",
-                        tr('nhịp tim nghỉ {d} nhịp/phút so với thường lệ', d=f"{_hr(nights[-1]) - _mean(base):+.0f}")))
-    week = days[-7:]
+        factors.append(("circadian", risk, 0.15, tr('áp lực nhịp sinh học {s}/100', s=circ.get("strain", 0))))
+    if rhr:
+        text = tr('nhịp tim nghỉ {d} nhịp/phút so với thường lệ', d=f"{rhr['dev']:+.0f}")
+        if rhr.get("expected") is not None and abs(rhr["expected"]) >= 0.5:
+            text += " " + tr('(mô hình cá nhân giải thích {e}, còn lại {u})', e=_signed(rhr["expected"]),
+                             u=_signed(rhr["unexplained"]))
+        factors.append(("rhr", rhr["risk"], 0.15, text))
+    week = days[-8:-1] if partial else days[-7:]
     if week:
         mvpa = sum(d.get("moderate", 0) + 2 * d.get("vigorous", 0) for d in week)
-        factors.append(("activity", min(1.0, max(0.0, (150 - mvpa) / 150)), 0.10, "fatigue",
+        factors.append(("activity", min(1.0, max(0.0, (150 - mvpa) / 150)), 0.10,
                         tr('{n} phút vận động vừa/mạnh 7 ngày qua (vận động giúp cải thiện tâm trạng)', n=mvpa)))
     keys = {f[0] for f in factors}
     if len(factors) < 3 or not ({"stress", "sleep"} & keys):
         return None
-    strain = int(round(100 * sum(r * w for _k, r, w, _g, _d in factors) / sum(w for _k, _r, w, _g, _d in factors)))
+    risk_of = {k: r for k, r, _w, _d in factors}
+    if "stress" in risk_of:
+        tension = risk_of["stress"]
+        if tension >= 0.3 and "rhr" in risk_of:   # vòng tay đo thấy căng và nhịp tim nghỉ cũng tăng: củng cố
+            tension = min(1.0, tension + 0.15 * risk_of["rhr"])
+    else:
+        tension = min(RHR_ONLY_TENSION, 0.8 * risk_of.get("rhr", 0.0))
+    tired = [(r, w) for k, r, w, _d in factors if k in ("sleep", "circadian")]
+    fatigue = sum(r * w for r, w in tired) / sum(w for _r, w in tired) if tired else 0.0
+    # áp lực tổng: số đo căng thẳng ít thì góp ít hơn (tối thiểu 40% trọng số)
+    reliability = min(1.0, max(0.4, stress["n_eff"] / STRESS_FULL_N)) if stress else 1.0
+    weights = [(r, w * (reliability if k == "stress" else 1.0)) for k, r, w, _d in factors]
+    strain = int(round(100 * sum(r * w for r, w in weights) / sum(w for _r, w in weights)))
 
-    def group(name: str) -> float:
-        rows = [(r, w) for _k, r, w, g, _d in factors if g == name]
-        return sum(r * w for r, w in rows) / sum(w for _r, w in rows) if rows else 0.0
-
-    tension, fatigue = group("tension"), group("fatigue")
     if tension >= 0.5 and fatigue >= 0.5:
         state = "overloaded"
     elif tension >= 0.5:
         state = "tense"
     elif fatigue >= 0.5:
         state = "fatigued"
-    elif tension < 0.25 and fatigue < 0.3:
+    elif tension < 0.25 and fatigue < 0.3 and not (rhr and rhr["high"]):   # còn tín hiệu cơ thể thì chưa "thư thái"
         state = "calm"
     else:
         state = "balanced"
@@ -520,14 +739,71 @@ def mental_state(nights: list[dict], days: list[dict], circ: dict | None, need: 
     texts = {
         "calm": tr('Ít căng thẳng, ngủ đủ: thời điểm tốt cho việc cần tập trung hoặc sáng tạo.'),
         "balanced": tr('Không có dấu hiệu đáng lo; giữ nhịp ngủ, vận động như hiện tại.'),
-        "tense": tr('Cơ thể đang ở trạng thái căng (căng thẳng hoặc nhịp tim nghỉ cao): nghỉ ngắn, hít thở chậm, đi bộ nhẹ có thể giúp.'),
+        "tense": tr('Vòng tay đo thấy mức căng thẳng cao hơn lúc thư giãn: nghỉ ngắn, hít thở chậm, đi bộ nhẹ có thể giúp.'),
         "fatigued": tr('Dấu hiệu mệt mỏi do thiếu ngủ hoặc lệch giờ ngủ: ưu tiên ngủ đủ và đều giờ vài ngày tới.'),
         "overloaded": tr('Vừa căng thẳng vừa thiếu ngủ: dễ cáu gắt, khó tập trung. Giảm bớt việc nếu được, ngủ sớm, và nói chuyện với người thân nếu kéo dài.'),
     }
-    stress_n = sum(d.get("stress_n", 0) for d in stress_days)
-    confidence = "high" if stress_n >= 40 and len(recent) >= 3 else "medium" if len(factors) >= 4 else "low"
+    notes = []
+    if rhr and rhr["high"] and tension < 0.5:
+        notes.append(tr('Nhịp tim khi ngủ cao hơn thường lệ trong khi vòng tay không đo thấy căng thẳng: thường là dấu hiệu thể chất (tập nặng, ngủ muộn, rượu bia, ăn khuya, sắp ốm) hơn là căng thẳng tinh thần. Xem thẻ Tín hiệu cơ thể.')
+                     if stress else
+                     tr('Nhịp tim khi ngủ cao hơn thường lệ, nhưng chưa có số đo căng thẳng để biết có phải do căng thẳng tinh thần hay không.'))
+    if not stress:
+        notes.append(tr('Chưa có số đo căng thẳng trong 3 ngày qua: bật Theo dõi căng thẳng (Cài đặt vòng tay → Sức khỏe) hoặc đo trên vòng tay để ước tính chính xác hơn.'))
+    elif not stress["auto"]:
+        notes.append(tr('Chỉ có số đo căng thẳng đo tay: bật Theo dõi căng thẳng (Cài đặt vòng tay → Sức khỏe) để vòng tay tự đo cả ngày.'))
+    if stress and stress["n_eff"] >= STRESS_FULL_N and len(recent) >= 3:
+        confidence = "high"
+    elif stress and stress["n"] >= 2 and recent:
+        confidence = "medium"
+    else:
+        confidence = "low"
     top = sorted(factors, key=lambda f: f[1] * f[2], reverse=True)
     return {"state": state, "label": labels[state], "text": texts[state], "strain": strain,
             "tension": round(tension * 100), "fatigue": round(fatigue * 100), "confidence": confidence,
             "confidence_label": {"high": tr('cao'), "medium": tr('trung bình'), "low": tr('thấp')}[confidence],
-            "factors": [{"key": k, "level": round(r * 100), "text": d} for k, r, _w, _g, d in top]}
+            "factors": [{"key": k, "level": round(r * 100), "text": d} for k, r, _w, d in top],
+            "stress": stress, "notes": notes, "date": date}
+
+
+# ---------------------------------------------------------------- kế hoạch ngủ tối nay
+
+SLEEP_LATENCY = 15        # phút để thiếp đi sau khi lên giường (10-20 phút là bình thường)
+REPAY_SHARE = 1 / 3       # mỗi đêm bù chừng này phần nợ ngủ 7 ngày...
+REPAY_MAX = 60            # ... tối đa ngần này phút
+EARLIEST_SHIFT = 60       # không khuyên lên giường sớm hơn giờ ngủ quen thuộc quá ngần này phút
+
+
+def sleep_plan(nights: list[dict], date: str, need: int = SLEEP_NEED, as_of: float | None = None) -> dict | None:
+    """Tối nay nên ngủ bao lâu và lên giường lúc nào: nhu cầu ngủ theo tuổi cộng phần bù dần nợ ngủ 7 ngày (REPAY_SHARE,
+    tối đa REPAY_MAX phút), tính ngược từ giờ dậy quen thuộc của ngày mai (ngày làm việc hay ngày nghỉ, trung vị 28
+    đêm), trừ thời gian thức giữa đêm thường gặp và SLEEP_LATENCY phút để thiếp đi. Không khuyên lên giường sớm hơn giờ
+    ngủ quen thuộc quá EARLIEST_SHIFT phút: đi ngủ quá sớm so với nhịp sinh học thường chỉ nằm trằn trọc."""
+    d0 = dt.date.fromisoformat(date)
+    recent = [n for n in nights if 0 <= _days_between(date, n["date"]) < 28]
+    if len(recent) < 5:
+        return None
+    tomorrow = d0 + dt.timedelta(days=1)
+    free = tomorrow.weekday() in FREE_WEEKDAYS
+    same = [n for n in recent if (dt.date.fromisoformat(n["date"]).weekday() in FREE_WEEKDAYS) == free]
+    pool = same if len(same) >= 3 else recent
+    wake = M.median([n["mid"] + (n["minutes"] + n.get("awake", 0)) / 2 for n in pool])
+    usual_bed = M.median([n["mid"] - (n["minutes"] + n.get("awake", 0)) / 2 for n in pool])
+    awake = M.median([n.get("awake", 0) for n in pool])
+    debt = _weekly_sleep_debt(nights, need, date, as_of)
+    extra = min(REPAY_MAX, int(round(debt * REPAY_SHARE / 5)) * 5)
+    sleep = need + extra
+    bed = wake - sleep - awake - SLEEP_LATENCY
+    capped = bed < usual_bed - EARLIEST_SHIFT
+    if capped:
+        bed = usual_bed - EARLIEST_SHIFT
+    text = tr('Tối nay nên lên giường lúc {bed} để ngủ đủ {t} trước giờ dậy quen thuộc {wake}.', bed=_clock(bed),
+              t=_hm(sleep), wake=_clock(wake))
+    if extra:
+        text += " " + tr('Đã cộng {e} để bù dần {d} ngủ thiếu trong 7 ngày qua.', e=_hm(extra), d=_hm(debt))
+    if capped:
+        text += " " + tr('Lên giường sớm hơn nữa thường khó ngủ: giữ giờ dậy cố định và bù dần trong vài đêm.')
+    midnight = dt.datetime.combine(tomorrow, dt.time()).astimezone().timestamp()
+    return {"for": tomorrow.isoformat(), "free": free, "need": need, "debt": debt, "extra": extra, "sleep": sleep,
+            "bedtime": _clock(bed), "wake": _clock(wake), "bedtime_ts": int(midnight + bed * 60),
+            "wake_ts": int(midnight + wake * 60), "capped": capped, "text": text}

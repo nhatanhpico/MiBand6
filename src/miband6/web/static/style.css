@@ -764,7 +764,8 @@ select:invalid, select.unknown { color: var(--muted); }
 .table-wrap summary { cursor: pointer; color: var(--amber); font-size: 14px; }
 .table-wrap .data-table { max-height: 320px; }
 /* bảng rộng: cuộn ngang trong khung bọc, còn bảng luôn rộng hết thẻ (display: block làm bảng co lại về bên trái) */
-.table-scroll { width: 100%; overflow-x: auto; }
+/* position: phần tử định vị tuyệt đối bên trong (.sr-only ở cột Bản đồ) bị cắt theo khung cuộn, không kéo rộng cả trang */
+.table-scroll { position: relative; width: 100%; overflow-x: auto; }
 .wo-table td { height: 52px; vertical-align: middle; }
 .wo-table td:nth-child(n+3) { white-space: nowrap; }   /* tên và giờ bắt đầu được xuống dòng khi cửa sổ hẹp */
 .wo-table th.wo-map-col, .wo-table td:last-child { width: 1%; text-align: right; }
@@ -969,6 +970,12 @@ select:invalid, select.unknown { color: var(--muted); }
 .hero-num b { font-size: 34px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .hero-num span { color: var(--muted); font-size: 13.5px; }
 .ci-notes { margin: 12px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.ci-notes:empty { display: none; }
+.md-band { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13.5px; line-height: 1.45; }
+#health-signals .chart { margin-top: 12px; }
+.legend i.k-zone { background: rgba(255, 255, 255, .16); }
+.legend i.k-high { border-radius: 50%; background: var(--c-hr); }
+#plText { margin-top: 12px; }
 .ci-chart .bar-work { fill: var(--c-deep); } .ci-chart .bar-free { fill: var(--c-steps); }
 .ci-chart .mid { fill: var(--text); stroke: var(--surface); stroke-width: 2; }
 .ci-chart .ref-work { stroke: var(--c-deep); stroke-dasharray: 4 4; }

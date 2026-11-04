@@ -17,7 +17,7 @@ Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng d�
 
 | Thẻ | Nội dung |
 | --- | --- |
-| **Giấc ngủ** | Đêm của ngày đang xem: giờ ngủ, giờ dậy, tổng thời gian, phần ngủ sâu, độ liền mạch, nhịp tim khi ngủ, **điểm ngủ**; sơ đồ các giai đoạn (thức, ngủ nông, ngủ sâu, REM ước tính) theo giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ và mức trung bình của bạn; **nhịp sinh học** (lệch múi giờ xã hội, chronotype, SRI, CPD, giờ ngủ từng đêm) |
+| **Giấc ngủ** | Đêm của ngày đang xem: giờ ngủ, giờ dậy, tổng thời gian, phần ngủ sâu, độ liền mạch, nhịp tim khi ngủ, **điểm ngủ**; sơ đồ các giai đoạn (thức, ngủ nông, ngủ sâu, REM ước tính) theo giờ; **giấc ngủ tối nay** (khi xem hôm nay: nên lên giường lúc nào); 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ và mức trung bình của bạn; **nhịp sinh học** (lệch múi giờ xã hội, chronotype, SRI, CPD, giờ ngủ từng đêm) |
 | **Vận động** | Bước theo giờ trong ngày; mọi ngày vòng tay đã ghi so với mục tiêu (**Xem dạng bảng** để xem số liệu từng ngày); **cường độ vận động** 7 ngày (phút nhẹ / vừa / mạnh); **PAI** 7 ngày so với mốc 100 |
 | **Tim mạch** | Nhịp tim cả ngày (vùng tô là lúc ngủ), thấp nhất, trung bình, cao nhất và nhịp tim nghỉ (khi ngủ) so với mức nền; **căng thẳng** tự đo (đường) và đo tay (chấm); **SpO2** các lần đo; cách vòng tay đang đo tự động |
 | **Cơ thể** | Cân nặng, chiều cao, BMI mới nhất; thay đổi 30 / 90 ngày, xu hướng kg/tuần, biểu đồ cân nặng; ghi cân nặng và danh sách các lần ghi (xem [Hồ sơ](#hồ-sơ-tuổi-giới-tính-chiều-cao-cân-nặng)) |
@@ -25,7 +25,7 @@ Trang chia theo nhóm, mỗi nhóm một thẻ ở dưới tiêu đề (ứng d�
 | **Chu kỳ** (hồ sơ nữ) | Nhật ký kỳ kinh và dự đoán, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Sinh lý** (hồ sơ nam) | Nhật ký xuất tinh và so sánh giấc ngủ, xem [Nhật ký riêng](#nhật-ký-riêng-chu-kỳ-kinh-nguyệt-và-xuất-tinh) |
 | **Xu hướng** | Như **Tóm tắt sức khỏe** của Mi Fitness: các chỉ số vừa **thay đổi rõ** (30 ngày / 26 tuần), **7 ngày qua** so với tuần trước, **hôm nay so với thường lệ** (xem [Xu hướng](#xu-hướng)) |
-| **Phân tích** | **Điểm sẵn sàng** (điểm 0–100, lời khuyên, các thành phần, thời gian hồi phục, xu hướng 14 ngày), **phân tích sức khỏe** từng mặt và **trạng thái tinh thần** ước tính (xem bên dưới) |
+| **Phân tích** | **Điểm sẵn sàng** (điểm 0–100, lời khuyên, các thành phần, thời gian hồi phục, xu hướng 14 ngày), **phân tích sức khỏe** từng mặt, **trạng thái tinh thần** ước tính và **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường, mô hình cá nhân; xem bên dưới) |
 
 Rê chuột (hoặc chọn bằng phím Tab) lên cột, đoạn hay đường trong biểu đồ để xem số liệu chi tiết.
 
@@ -56,7 +56,7 @@ Mi Band 6 không có GPS: khi bạn tập chạy hoặc đạp xe ngoài trời 
 
 ### Đo tự động
 
-- **Nhịp tim** và **căng thẳng**: vòng tay tự đo theo **Cài đặt vòng tay → Sức khỏe** (chu kỳ đo nhịp tim, Theo dõi căng thẳng). Không bật thì thẻ Căng thẳng trống. Cách đo hiện tại ghi ở cuối thẻ **Tim mạch**.
+- **Nhịp tim** và **căng thẳng**: vòng tay tự đo theo **Cài đặt vòng tay → Sức khỏe** (chu kỳ đo nhịp tim, Theo dõi căng thẳng). Không bật thì thẻ Căng thẳng chỉ có các lần đo tay (chấm). Các lần đo tay cũng được tính vào phân tích căng thẳng và trạng thái tinh thần. Cách đo hiện tại ghi ở cuối thẻ **Tim mạch**.
 - **Theo dõi nhịp tim liên tục** (số đo theo thời gian thực ở trang Hôm nay) bật tay ở thẻ **Đo nhịp tim**, hoặc tự bật mỗi lần kết nối nếu bật **Cài đặt ứng dụng → Nhịp tim trực tiếp**. Vòng tay đo liên tục tốn pin hơn.
 - **SpO2**: Mi Band 6 chỉ đo khi bạn mở mục SpO2 trên vòng tay và bấm đo; ứng dụng không bật đo từ xa được (giao thức không có lệnh này). Kết quả hiện sau lần đồng bộ kế tiếp.
 
@@ -107,7 +107,7 @@ Thẻ **Xu hướng** làm như **Tóm tắt sức khỏe** của Mi Fitness, t�
 | Thời gian ngủ chính | giấc dài nhất mỗi ngày thức dậy (≥ 3 giờ) | 20 phút | tăng (giảm mà vẫn đủ nhu cầu, hay tăng khi đã ngủ quá nhu cầu 2 giờ: bình thường) |
 | Giờ đi ngủ | giờ thiếp đi của giấc đó | 20 phút | sớm hơn |
 | Tỉ lệ ngủ sâu | phút ngủ sâu / phút ngủ | 2 điểm % | tăng |
-| Nhịp tim khi ngủ | trung vị nhịp tim lúc ngủ (≥ 60 số đo) | 2 nhịp/phút | giảm |
+| Nhịp tim khi ngủ | trung vị nhịp tim lúc ngủ (≥ 10 số đo, như mọi chỗ khác: đo mỗi 30 phút vẫn đủ) | 2 nhịp/phút | giảm |
 | Bước chân | ngày đã trọn, đeo vòng ≥ 10 giờ | 500 bước | tăng |
 | Năng lượng vận động | như trên | 20 kcal | tăng |
 | Vận động vừa và mạnh | phút nhịp bước ≥ 100 bước/phút cộng phút trong buổi tập | 5 phút | tăng |
@@ -127,13 +127,16 @@ Thẻ đầu trang nhận xét tình trạng hiện tại từ dữ liệu 7–3
 | Thời gian ngủ | Trung bình 7 đêm gần nhất có dữ liệu | 7–9,5 giờ | Nên chú ý: 6–7 giờ hoặc trên 9,5 giờ; Cần lưu ý: dưới 6 giờ |
 | Ngủ sâu | Phần trăm ngủ sâu trong giấc ngủ | Từ 13% | Ổn: 10–13%; Nên chú ý: dưới 10% |
 | Giờ đi ngủ đều đặn | Độ lệch giờ đi ngủ giữa các đêm | ±45 phút | Ổn: tới ±90 phút; Nên chú ý: hơn nữa |
-| Nhịp tim nghỉ | Trung vị nhịp tim khi ngủ, trung bình 7 đêm | 40–75 nhịp/phút | Ổn: tới 80; Nên chú ý: trên 80, hoặc cao hơn tuần trước từ 5 nhịp/phút |
+| Nhịp tim nghỉ | Trung vị nhịp tim các phút đang ngủ (không gồm các lần thức giữa đêm, cần ≥ 10 số đo), trung bình 7 đêm | 40–75 nhịp/phút | Ổn: tới 80; Nên chú ý: trên 80, hoặc cao hơn tuần trước từ 5 nhịp/phút |
 | Bước chân | Trung bình 7 ngày đã trọn (ngày đeo vòng ít nhất 10 giờ; vòng tay vẫn ghi mỗi phút khi tháo ra, nên đếm phút đeo, không đếm bản ghi) | Đạt mục tiêu bước | Ổn: từ 60% mục tiêu; Nên chú ý: thấp hơn |
 | Vận động | Phút đi bộ nhanh (từ 100 bước/phút) và tập luyện trong 7 ngày | Từ 150 phút | Ổn: 75–150; Nên chú ý: dưới 75 |
 | PAI | Tổng PAI mới nhất | Từ 100 | Ổn: 50–100; Nên chú ý: dưới 50 |
 | SpO2 | Các lần đo 30 ngày | Thấp nhất từ 95% | Ổn: 92–94%; Nên chú ý: 90–91%; Cần lưu ý: dưới 90% |
-| Căng thẳng | Trung bình số đo tự động 7 ngày | Dưới 40 | Ổn: 40–59; Nên chú ý: từ 60 |
+| Căng thẳng | Trung bình mọi số đo 7 ngày, tự đo và đo tay (ghi kèm số số đo) | Dưới 40 | Ổn: 40–59; Nên chú ý: từ 60 |
+| Nhịp tim lúc nghỉ | Các đợt nhịp tim từ 120 hoặc dưới 40 nhịp/phút kéo dài ≥ 10 phút khi không vận động, 7 ngày (xem dưới) | Không có đợt nào (chỉ kết luận khi đo đủ dày: ≥ 144 số đo lúc nghỉ cách nhau ≤ 10 phút) | Nên chú ý: có đợt; Cần lưu ý: đợt cao tới 150 |
 | Dữ liệu | Thời điểm của dữ liệu mới nhất | | Nên chú ý: cũ hơn 2 ngày |
+
+**Nhịp tim lúc nghỉ** làm như thông báo nhịp tim cao / thấp của Apple Watch (mức mặc định 120, thấp 40 nhịp/phút, 10 phút khi không vận động): chỉ xét lúc thức (ngoài giấc ngủ), không đi lại (không có bước nào trong 5 phút trước mỗi số đo, cả đợt tối đa 5 bước do tay cử động), không trong buổi tập hay 30 phút sau. Một đợt là các số đo liền nhau (cách nhau tối đa 10 phút) cùng vượt ngưỡng, ít nhất 2 số đo, kéo dài từ 10 phút. Nhịp tim cao khi nghỉ có thể do cà phê, lo âu, sốt, mất nước, thuốc, hoặc vòng tay đo sai khi tay cử động; thấp lúc thức có thể bình thường ở người tập luyện nhiều. Lặp lại hoặc kèm hồi hộp, chóng mặt, khó thở, đau ngực, ngất thì nên đi khám.
 
 Mục nào chưa có dữ liệu thì không hiện (hoặc hiện **Chưa đủ dữ liệu**). Các ngưỡng lấy từ khuyến nghị phổ biến: ngủ 7–9 giờ mỗi đêm, 150 phút vận động vừa mỗi tuần (WHO), PAI từ 100, SpO2 bình thường từ 95%.
 
@@ -145,7 +148,7 @@ Mục nào chưa có dữ liệu thì không hiện (hoặc hiện **Chưa đủ
 
 | Thành phần (trọng số) | Tính từ | 100 điểm khi |
 | --- | --- | --- |
-| Nhịp tim nghỉ (18%) | Trung vị nhịp tim khi ngủ đêm qua so với 30 đêm trước (cần ít nhất 7) | Không cao hơn mức nền quá 0,5 độ lệch chuẩn; mỗi độ lệch chuẩn thêm trừ khoảng 25 điểm |
+| Nhịp tim nghỉ (18%) | Trung vị nhịp tim khi ngủ đêm qua (cần ≥ 10 số đo) so với mức nền: trung vị tối đa 30 đêm trước (cần ít nhất 7), độ lệch chuẩn bền vững 1,4826 × MAD, tối thiểu 2 nhịp/phút (vài đêm ốm hay uống rượu trong mức nền không kéo lệch nó) | Không cao hơn mức nền quá 0,5 độ lệch chuẩn; mỗi độ lệch chuẩn thêm trừ khoảng 25 điểm |
 | Chỉ số hồi phục (8%) | Thời điểm có trung bình nhịp tim thấp nhất trong 5 phút liên tiếp. Chỉ tính khi có số đo hợp lệ ở ít nhất 70% số phút ngủ và ít nhất 30 phút ngủ có số đo | Thấp nhất trong nửa đầu đêm (75% đêm: 60 điểm) |
 | Giấc ngủ đêm qua (20%) | Thời lượng (50%), tỉ lệ thời gian trên giường là ngủ (15%), phần ngủ sâu (15%), giờ ngủ so với chronotype (20%) | Ngủ 7,5–9 giờ, liền mạch từ 95%, ngủ sâu từ 16%, giữa giấc lệch chronotype dưới 30 phút |
 | Cân bằng giấc ngủ (14%) | Tổng phút ngủ trong 14 ngày so với nhu cầu theo tuổi (ngày gần nặng hơn), kèm số phút còn thiếu trong 7 ngày. Mỗi giấc đã kết thúc từ 20 phút được tính một lần theo ngày thức dậy. Ngày thiếu dữ liệu được bỏ qua | Đạt 100% nhu cầu |
@@ -203,15 +206,47 @@ Vòng tay không đo được những điều này, nên bạn tự ghi: bấm m
 
 Ước tính có giải thích, **không phải chẩn đoán**. Dựa trên các yếu tố mà nghiên cứu cho thấy liên quan tới tâm trạng: căng thẳng (HRV), thiếu ngủ và thời gian thức dài (nghiên cứu 2.602 bác sĩ nội trú, *PLOS Digital Health* 2024), lệch nhịp sinh học (dịch pha nhịp sinh học là yếu tố dự báo mạnh nhất cho giai đoạn khí sắc, *npj Digital Medicine* 2024), nhịp tim nghỉ tăng và ít vận động.
 
-| Yếu tố (trọng số) | Nhóm | Mức 0 → 1 |
-| --- | --- | --- |
-| Căng thẳng trung bình 3 ngày (35%) | Căng | 25 → 75, cộng thêm nửa tỉ lệ số đo ở mức cao |
-| Giấc ngủ chính 3 đêm và nợ ngủ 7 ngày (tính cả giấc ngủ ngắn) (25%) | Mệt | 7,5 giờ → 5 giờ, cộng tối đa 0,4 cho nợ ngủ (15 giờ) |
-| Áp lực nhịp sinh học (15%) | Mệt | Từ CPD (0,5 → 2,5 giờ) và lệch múi giờ xã hội (0 → 2 giờ) |
-| Nhịp tim nghỉ so với mức nền (15%) | Căng | 0 → 2,5 độ lệch chuẩn |
-| Vận động vừa/mạnh 7 ngày (10%) | Mệt | 150 → 0 phút |
+**Căng thẳng đo bởi vòng tay** là nguồn chính của mức "căng": vòng tay tính chỉ số này từ HRV, nên nó đo trực tiếp hơn mọi thứ ứng dụng suy ra. Ứng dụng dùng **mọi số đo 72 giờ qua, cả tự đo lẫn đo tay** (nhiều người không bật tự đo và chỉ đo tay), số đo càng mới càng nặng (trọng số giảm một nửa sau mỗi 24 giờ). Thẻ hiện đúng các con số đó (trung bình, số số đo, hôm nay, mức thường ngày) để đối chiếu với thẻ Căng thẳng.
 
-**Áp lực tổng** là trung bình có trọng số (0–100). Trạng thái theo hai nhóm: cả "căng" và "mệt" từ 50 là **Quá tải**; chỉ căng là **Căng thẳng**; chỉ mệt là **Mệt mỏi**; căng dưới 25 và mệt dưới 30 là **Thư thái**; còn lại **Cân bằng**. Độ tin cậy cao khi có từ 40 số đo căng thẳng trong 3 ngày và 3 đêm dữ liệu.
+| Yếu tố (trọng số trong áp lực tổng) | Nhóm | Mức 0 → 1 |
+| --- | --- | --- |
+| Căng thẳng vòng tay đo, 72 giờ (35%; ít số đo thì góp ít hơn, tối thiểu 40% trọng số khi dưới 6 số đo hiệu dụng) | Căng | Trung bình có trọng số 35 → 85 (60, mức "trung bình" của vòng tay, cho 0,5), cộng nửa tỉ lệ số đo ở mức cao (≥ 80); cao hơn hẳn mức thường của bạn (trung vị các ngày có ≥ 6 số đo tự động, cần 7 ngày) cộng thêm tối đa 0,25 |
+| Giấc ngủ chính 3 đêm gần nhất (tới ngày đang xem) và nợ ngủ 7 ngày, tính cả giấc ngủ ngắn (25%) | Mệt | 7,5 giờ → 5 giờ, cộng tối đa 0,4 cho nợ ngủ (15 giờ) |
+| Áp lực nhịp sinh học (15%) | Mệt | Từ CPD (0,5 → 2,5 giờ) và lệch múi giờ xã hội (0 → 2 giờ) |
+| Nhịp tim khi ngủ đêm qua so với mức nền (15%) | Cơ thể | 0 → 2,5 độ lệch chuẩn; khi mô hình cá nhân đang dùng: phần không giải thích được (xem [Tín hiệu cơ thể](#tín-hiệu-cơ-thể-và-mô-hình-cá-nhân)) |
+| Vận động vừa/mạnh 7 ngày đã trọn (10%) | Lối sống | 150 → 0 phút |
+
+- **Căng** = mức căng thẳng vòng tay đo được. Nhịp tim nghỉ chỉ củng cố khi vòng tay cũng đo thấy căng (mức căng ≥ 0,3: cộng 0,15 × mức của nhịp tim nghỉ). Nhịp tim khi ngủ tăng vì nhiều nguyên nhân thể chất (tập nặng, đi ngủ muộn, rượu bia, ăn khuya, sắp ốm), nên **một mình nó không bao giờ làm trạng thái thành "Căng thẳng"**: chưa có số đo căng thẳng nào thì nó thay thế nhưng tối đa 0,45, dưới ngưỡng 0,5. Khi nhịp tim khi ngủ cao mà vòng tay đo thấy thư giãn, thẻ ghi riêng đó là dấu hiệu thể chất. Trước đây (khi chỉ dùng số đo tự động và cần ≥ 6 số đo mỗi ngày), người chỉ đo tay bị báo "Căng thẳng", mức căng 100, chỉ vì nhịp tim khi ngủ +8 trong khi vòng tay đo 26 (thư giãn).
+- **Mệt** = trung bình có trọng số của giấc ngủ và nhịp sinh học. Chỉ dùng các đêm trong 3 ngày tới ngày đang xem: đêm cũ hơn (chưa đồng bộ đêm qua) không nói gì về hôm nay.
+- **Áp lực tổng** là trung bình có trọng số của mọi yếu tố (0–100).
+- Trạng thái: cả "căng" và "mệt" từ 50 là **Quá tải**; chỉ căng là **Căng thẳng**; chỉ mệt là **Mệt mỏi**; căng dưới 25, mệt dưới 30 và nhịp tim khi ngủ không cao là **Thư thái**; còn lại **Cân bằng**.
+- **Độ tin cậy**: cao khi có từ 6 số đo căng thẳng hiệu dụng và 3 đêm gần đây; trung bình khi có từ 2 số đo căng thẳng và ít nhất 1 đêm gần đây; còn lại thấp. Không có số đo căng thẳng, hoặc chỉ có đo tay, thì thẻ nhắc bật **Theo dõi căng thẳng**.
+- Xem hôm nay thì phụ đề ghi dữ liệu tới lúc nào: khi vòng tay không kết nối (ra ngoài, đi tập), số liệu dừng ở lần đồng bộ trước. Kết quả của hôm nay được tính lại mỗi giờ dù chưa có dữ liệu mới.
+
+## Tín hiệu cơ thể và mô hình cá nhân
+
+Thẻ **Tín hiệu cơ thể** (thẻ **Phân tích**) so nhịp tim khi ngủ 3 đêm gần nhất với mức nền của bạn (như thành phần nhịp tim nghỉ của điểm sẵn sàng: trung vị, độ lệch chuẩn bền vững) và vẽ 14 đêm gần đây trên dải mức thường (± 2 độ lệch chuẩn).
+
+- Một đêm **cao** khi lệch từ 3 nhịp/phút **và** từ 2 độ lệch chuẩn (dùng phần không giải thích được nếu mô hình cá nhân đang dùng).
+- **Bình thường**: đêm gần nhất không cao. **Cao 1 đêm** (Ổn): thường do nguyên nhân tạm thời. **Cao 2/3 đêm** (Nên chú ý): cơ thể có thể đang chịu tải (sắp ốm, tập quá sức, thiếu ngủ, rượu bia). **Cao 3 đêm liền** (Cần lưu ý): thường là dấu hiệu đang chống lại bệnh hoặc quá sức; có sốt, ho, đau họng, khó thở, đau ngực hay mệt bất thường thì nên đi khám. Nhịp tim nghỉ tăng vài ngày trước và trong khi ốm là điều các nghiên cứu phát hiện bệnh sớm bằng thiết bị đeo đã ghi nhận (Mishra và cộng sự 2020, *Nature Biomedical Engineering*; Quer và cộng sự 2021, *Nature Medicine*).
+
+**Mô hình cá nhân** (`models.py`, học trên máy, không cần mạng hay thư viện ngoài): nhịp tim khi ngủ tăng vì nhiều lý do đã biết; mô hình học xem **với riêng bạn** mỗi lý do làm tăng bao nhiêu, để chỉ phần còn lại mới bị coi là tín hiệu.
+
+- Mục tiêu: độ lệch nhịp tim khi ngủ của mỗi đêm so với mức nền của chính đêm đó.
+- Yếu tố (0 = đêm bình thường của bạn): tải vận động hôm trước so với trung bình 28 ngày đủ dữ liệu tải (mỗi 100 TRIMP), tải trong 4 giờ trước khi ngủ (mỗi 100 TRIMP), giờ đi ngủ muộn hơn trung vị 14 đêm trước (giờ), ngủ ngắn hơn trung vị đó (giờ).
+- Hồi quy ridge (hệ số phạt 4 trên yếu tố đã chuẩn hóa; ít đêm, các yếu tố liên quan nhau). Các đêm lệch quá 3,5 độ lệch chuẩn bền vững (thường là đêm ốm) không dùng để học; 3 đêm gần nhất cũng không (đó là các đêm cần đánh giá).
+- **Chỉ dùng khi tốt hơn mức nền**: cần từ 21 đêm, và sai số tuyệt đối trung bình khi kiểm chứng chéo bỏ-một (mỗi đêm được dự đoán bằng mô hình học từ các đêm còn lại) phải nhỏ hơn mô hình chỉ có hệ số chặn ít nhất 5%. Nếu không, thẻ ghi rõ và ứng dụng chỉ so với mức nền. Độ lệch chuẩn của phần không giải thích được là độ lệch chuẩn bền vững của sai số kiểm chứng chéo (tối thiểu 1,5 nhịp/phút).
+- Thẻ hiện mức dự đoán, phần chưa giải thích được, các yếu tố của đêm gần nhất (mỗi yếu tố từ 0,5 nhịp/phút) và những gì mô hình học được về bạn (chỉ yếu tố có hệ số khác 0 rõ: |t| ≥ 2), ví dụ "Đi ngủ muộn hơn 1 giờ: +1,8 nhịp/phút".
+- Điểm sẵn sàng vẫn dùng độ lệch thật của nhịp tim nghỉ: cơ thể sau một đêm ngủ muộn vẫn chưa hồi phục hẳn, dù biết nguyên nhân.
+
+## Giấc ngủ tối nay
+
+Khi xem hôm nay, thẻ **Giấc ngủ** (và ô giấc ngủ ở trang **Hôm nay**) gợi ý giờ lên giường tối nay:
+
+- Thời gian ngủ cần = nhu cầu ngủ theo tuổi + phần bù nợ ngủ: 1/3 số phút còn thiếu trong 7 ngày (tính cả giấc ngủ ngắn), làm tròn 5 phút, tối đa 60 phút mỗi đêm. Nợ ngủ nên được bù dần qua vài đêm.
+- Giờ dậy: trung vị giờ dậy 28 đêm gần nhất cùng loại với ngày mai (ngày làm việc hoặc ngày nghỉ; ít hơn 3 đêm cùng loại thì dùng mọi đêm). Cần ít nhất 5 đêm.
+- Giờ lên giường = giờ dậy − thời gian ngủ cần − thời gian thức giữa đêm thường gặp (trung vị) − 15 phút để thiếp đi (10–20 phút là bình thường).
+- Không khuyên lên giường sớm hơn giờ ngủ quen thuộc quá 60 phút: đi ngủ quá sớm so với nhịp sinh học thường chỉ nằm trằn trọc; khi đó thẻ khuyên giữ giờ dậy cố định và bù dần.
 
 ## Cường độ vận động
 

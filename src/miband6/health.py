@@ -748,6 +748,65 @@ def estimate_rem(sess: dict, by_ts: dict) -> bool:
     return True
 
 
+# ---------------------------------------------------------------- nhịp tim bất thường khi nghỉ
+# Như thông báo nhịp tim cao / thấp của Apple Watch: nhịp tim từ REST_HR_HIGH (mức mặc định của Apple) hoặc dưới
+# REST_HR_LOW kéo dài ít nhất REST_MINUTES phút khi không vận động. Chỉ xét lúc thức (ngoài giấc ngủ), không đi lại
+# (không có bước nào trong REST_STILL phút trước mỗi số đo, cả đợt tối đa REST_STEPS bước do tay cử động), không trong
+# buổi tập hay REST_AFTER_WORKOUT phút sau. Một đợt gồm các số đo liền nhau (cách nhau tối đa REST_GAP giây) cùng vượt
+# ngưỡng, ít nhất 2 số đo.
+REST_HR_HIGH = 120
+REST_HR_LOW = 40
+REST_MINUTES = 10
+REST_STILL = 5
+REST_STEPS = 5
+REST_AFTER_WORKOUT = 30
+REST_GAP = 600
+REST_PEAK_ALERT = 150    # đợt cao tới ngần này nhịp/phút khi nghỉ: Cần lưu ý
+REST_CHECKED = 144       # số đo lúc nghỉ đủ dày (cách số đo trước <= REST_GAP) để nói "không có bất thường"
+
+
+def rest_hr_events(samples: list[tuple], asleep: set[int], busy: set[int], since: int = 0) -> dict:
+    """Các đợt nhịp tim cao / thấp khi nghỉ từ `since` (xem chú thích ở trên).
+
+    asleep: các phút trong giấc ngủ; busy: các phút trong buổi tập và ngay sau đó. Trả {"events": [{"kind": "high" |
+    "low", "start", "end", "minutes", "extreme" (cao nhất / thấp nhất), "readings"}], "checked": số số đo lúc nghỉ
+    cách số đo trước không quá REST_GAP, tức đo đủ dày để thấy một đợt REST_MINUTES phút}."""
+    steps = {s[0]: s[3] for s in samples}
+    events: list[dict] = []
+    cur: dict | None = None
+    checked, prev_ts = 0, None
+
+    def close(ev: dict | None) -> None:
+        if ev is None:
+            return
+        ev["minutes"] = (ev["end"] - ev["start"]) // 60 + 1
+        moved = sum(steps.get(t, 0) for t in range(ev["start"] - REST_STILL * 60, ev["end"] + 60, 60))
+        if ev["readings"] >= 2 and ev["minutes"] >= REST_MINUTES and moved <= REST_STEPS:
+            events.append(ev)
+
+    for s in samples:
+        ts, hr = s[0], s[4]
+        if ts < since or not valid_hr(hr):
+            continue
+        rest = ts not in asleep and ts not in busy and all(steps.get(ts - 60 * k, 0) == 0 for k in range(REST_STILL + 1))
+        if rest and prev_ts is not None and ts - prev_ts <= REST_GAP:
+            checked += 1
+        prev_ts = ts
+        kind = ("high" if hr >= REST_HR_HIGH else "low" if hr < REST_HR_LOW else None) if rest else None
+        if cur is not None and (kind != cur["kind"] or ts - cur["end"] > REST_GAP):
+            close(cur)
+            cur = None
+        if kind is None:
+            continue
+        if cur is None:
+            cur = {"kind": kind, "start": ts, "end": ts, "extreme": hr, "readings": 1}
+        else:
+            cur.update(end=ts, readings=cur["readings"] + 1,
+                       extreme=max(cur["extreme"], hr) if kind == "high" else min(cur["extreme"], hr))
+    close(cur)
+    return {"events": events, "checked": checked}
+
+
 def local_date(ts: int) -> str:
     return dt.datetime.fromtimestamp(ts).date().isoformat()
 
@@ -827,15 +886,25 @@ def group_int(n: float) -> str:
     return text if get_lang() == "en" else text.replace(",", ".")
 
 
+def _when(ts: int) -> str:
+    """Giờ và ngày ngắn gọn theo ngôn ngữ giao diện: "14:05 3/11" hoặc "Nov 3, 14:05"."""
+    from .i18n import get_lang
+
+    t = dt.datetime.fromtimestamp(ts)
+    return f"{t:%b} {t.day}, {t:%H:%M}" if get_lang() == "en" else f"{t:%H:%M} {t.day}/{t.month}"
+
+
 def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | None,
             spo2: list[tuple], stress: list[int], active_minutes: int, workouts: int, last_data: int | None,
-            now: float | None = None, sleep_need: int = 450, body: dict | None = None) -> dict:
+            now: float | None = None, sleep_need: int = 450, body: dict | None = None,
+            hr_events: dict | None = None) -> dict:
     """Nhận xét sức khỏe từ dữ liệu gần đây, theo khuyến nghị chung cho người lớn (không phải chẩn đoán).
 
     nights: các đêm gần nhất (cũ tới mới) {date, minutes, deep, awake, start, hr};
-    steps_days: tổng bước các ngày đã trọn (cũ tới mới); spo2: [(ts, %)] 30 ngày; stress: các số đo 7 ngày;
-    active_minutes: phút vận động vừa/mạnh 7 ngày; workouts: số buổi tập 7 ngày; sleep_need: nhu cầu ngủ theo tuổi
-    (phút, insights.sleep_need); body: {age, height (cm), weight (kg)} từ hồ sơ, cho BMI."""
+    steps_days: tổng bước các ngày đã trọn (cũ tới mới); spo2: [(ts, %)] 30 ngày; stress: các số đo 7 ngày (tự đo và
+    đo tay); active_minutes: phút vận động vừa/mạnh 7 ngày; workouts: số buổi tập 7 ngày; sleep_need: nhu cầu ngủ theo
+    tuổi (phút, insights.sleep_need); body: {age, height (cm), weight (kg)} từ hồ sơ, cho BMI; hr_events:
+    rest_hr_events của 7 ngày qua."""
     from .i18n import tr
 
     now = now or dt.datetime.now().timestamp()
@@ -927,8 +996,34 @@ def analyze(nights: list[dict], steps_days: list[dict], goal: int, pai: dict | N
         high = sum(1 for v in stress if v >= 80) * 100 / len(stress)
         status = GOOD if avg < 40 else OK if avg < 60 else WATCH
         add("stress", status, tr('Căng thẳng'), f"{avg:.0f}",
-            tr('Trung bình 7 ngày (0–39 thư giãn, 40–59 bình thường, 60–79 trung bình, 80+ cao); {p}% số đo ở mức cao.',
-               p=int(round(high))))
+            tr('Trung bình {n} số đo trong 7 ngày (0–39 thư giãn, 40–59 bình thường, 60–79 trung bình, 80+ cao); {p}% số đo ở mức cao.',
+               n=len(stress), p=int(round(high))))
+
+    if hr_events is not None:
+        events = hr_events["events"]
+        high = [e for e in events if e["kind"] == "high"]
+        low = [e for e in events if e["kind"] == "low"]
+        if events:
+            parts, advice = [], []
+            if high:
+                last = max(high, key=lambda e: e["start"])
+                parts.append(tr('{n} lần nhịp tim từ {hr} nhịp/phút kéo dài từ {m} phút khi không vận động (cao nhất {peak}, gần nhất {when})',
+                                n=len(high), hr=REST_HR_HIGH, m=REST_MINUTES, peak=max(e["extreme"] for e in high),
+                                when=_when(last["start"])))
+                advice.append(tr('Nhịp tim cao khi nghỉ có thể do cà phê, lo âu, sốt, mất nước hay thuốc; vòng tay cũng có thể đo sai khi tay cử động mà không bước. Nếu lặp lại hoặc kèm hồi hộp, chóng mặt, khó thở, đau ngực, hãy đi khám.'))
+            if low:
+                last = max(low, key=lambda e: e["start"])
+                parts.append(tr('{n} lần nhịp tim dưới {hr} nhịp/phút kéo dài từ {m} phút lúc thức (thấp nhất {low}, gần nhất {when})',
+                                n=len(low), hr=REST_HR_LOW, m=REST_MINUTES, low=min(e["extreme"] for e in low),
+                                when=_when(last["start"])))
+                advice.append(tr('Nhịp tim thấp lúc thức có thể bình thường ở người tập luyện nhiều; nếu kèm chóng mặt, mệt lả hay ngất, hãy đi khám.'))
+            status = ALERT if any(e["extreme"] >= REST_PEAK_ALERT for e in high) else WATCH
+            add("rest_hr", status, tr('Nhịp tim lúc nghỉ'), tr('{n} lần bất thường', n=len(events)),
+                tr('Trong 7 ngày qua: {what}.', what="; ".join(parts)) + " " + " ".join(advice))
+        elif hr_events["checked"] >= REST_CHECKED:
+            add("rest_hr", GOOD, tr('Nhịp tim lúc nghỉ'), tr('Không có bất thường'),
+                tr('Trong 7 ngày qua không có lần nào nhịp tim từ {hi} hay dưới {lo} nhịp/phút kéo dài từ {m} phút khi không vận động.',
+                   hi=REST_HR_HIGH, lo=REST_HR_LOW, m=REST_MINUTES))
 
     bmi = body_mass_index((body or {}).get("height"), (body or {}).get("weight"))
     if bmi is not None and ((body or {}).get("age") or 18) >= 18:   # dưới 18 tuổi BMI phải so theo bách phân vị tuổi

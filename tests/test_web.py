@@ -82,8 +82,10 @@ async def test_connect_flow_and_settings(client):
 
     r = await post(client, "/api/notify", {"title": "Chào", "body": "Thử", "app": "Mac", "icon": 13})
     assert r.status == 200 and band.chunked_payloads[-1] == (0, P.notification_payload("Chào", "Thử", "Mac", 13))
+    before = len(band.writes)
     r = await post(client, "/api/find", {"on": True})
-    assert band.writes[-1] == (P.CHAR_NEW_ALERT, P.incoming_call("Tìm vòng tay"))
+    # lượt lấy dữ liệu sức khỏe sau khi kết nối có thể còn chạy và ghi vào kênh lấy dữ liệu xen giữa
+    assert (P.CHAR_NEW_ALERT, P.incoming_call("Tìm vòng tay")) in band.writes[before:]
     r = await post(client, "/api/disconnect")
     assert not (await r.json())["state"]["connected"]
 

@@ -31,7 +31,7 @@
 
 **Sức khỏe** (trang **Sức khỏe**, giống Mi Fitness, chia thẻ **Giấc ngủ / Vận động / Tim mạch / Tập luyện / Phân tích**; hướng dẫn chi tiết: [docs/suc-khoe.md](docs/suc-khoe.md))
 - **Phân tích sức khỏe** từ mọi số liệu (giấc ngủ, bước chân, vận động, nhịp tim nghỉ, PAI, SpO2, căng thẳng): mỗi mục có nhãn Tốt / Ổn / Nên chú ý / Cần lưu ý kèm giải thích, theo khuyến nghị chung cho người lớn
-- **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Con số của hôm nay cũng nằm ở đầu trang **Tổng quan** (trang mở ra khi khởi động), hiện cả khi vòng tay chưa kết nối; bấm vào để xem chi tiết. Thêm **trạng thái tinh thần** ước tính, **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
+- **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Con số của hôm nay cũng nằm ở đầu trang **Tổng quan** (trang mở ra khi khởi động), hiện cả khi vòng tay chưa kết nối; bấm vào để xem chi tiết. Thêm **trạng thái tinh thần** ước tính (mức căng lấy từ chính các số đo căng thẳng của vòng tay, cả đo tay), **tín hiệu cơ thể** (nhịp tim khi ngủ so với mức thường của bạn, báo khi cao nhiều đêm liền, kèm **mô hình cá nhân** học từ các đêm trước để biết phần nào do đi ngủ muộn, ngủ ngắn hay tập nặng), **nhịp tim cao / thấp bất thường khi nghỉ**, **giấc ngủ tối nay** (nên lên giường lúc nào), **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
 - Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức và **REM ước tính từ nhịp tim** (chưa xác minh được REM của hãng qua bộ giải mã Bluetooth hiện tại; tắt được) theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); bấm ô **Bước chân** ở trang Hôm nay để mở thẻ Vận động
 - Theo **hồ sơ** (Cài đặt vòng tay → Hồ sơ): nhịp tim tối đa nhập tay hoặc ước tính theo tuổi và giới tính, nhu cầu ngủ theo tuổi, **BMI** (ngưỡng cho người châu Á)
@@ -307,6 +307,8 @@ src/miband6/
   xiaomi_cloud.py  Đăng nhập Xiaomi (QR) và API Mi Fitness: danh sách thiết bị, hồ sơ người dùng
   health.py     Giải mã dữ liệu sức khỏe lấy từ vòng tay (hoạt động, giấc ngủ, PAI, SpO2, căng thẳng, buổi tập)
   healthdb.py   Lưu dữ liệu sức khỏe (SQLite) và tổng hợp cho trang Sức khỏe
+  insights.py   Mức sẵn sàng, trạng thái tinh thần, tín hiệu cơ thể, nhịp sinh học, kế hoạch ngủ (hàm thuần)
+  models.py     Mô hình cá nhân học từ dữ liệu cũ (hồi quy ridge, kiểm chứng chéo; Python thuần)
   watchface.py  Dựng tệp mặt đồng hồ Mi Band 6 từ ảnh nền tùy chỉnh
   cli.py        Công cụ dòng lệnh
   web/server.py Server web (aiohttp): REST API + WebSocket, dùng chung vòng lặp với Bluetooth

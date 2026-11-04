@@ -1975,6 +1975,8 @@ function renderOverview() {
   $("#ovSleepRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) })
     : t("Chưa có giấc ngủ kết thúc hôm nay. Đeo vòng khi ngủ rồi đồng bộ.");
   sleepStages(sl, $("#ovSleepStages"), $("#ovSleepLegend"));
+  const plan = H?.insights?.sleep_plan;
+  $("#ovSleepPlan").textContent = plan ? t("Tối nay: lên giường lúc {bed} để ngủ đủ {t}", { bed: plan.bedtime, t: fmtMinutes(plan.sleep) }) : "";
 
   // bước chân
   $("#ovSteps").textContent = fmtInt(v.steps);
@@ -2506,6 +2508,8 @@ function lineChart(el, points, o) {
     sv("path", { d, fill: "none", style: `stroke:${o.color}`, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
   }
   const dot = (ts, v, r = 4) => sv("circle", { cx: X(ts), cy: Y(v), r, style: `fill:${o.color}`, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+  // số đo đứng riêng (không có số đo nào gần nó): đường một điểm gần như không thấy, vẽ thành chấm nhỏ
+  for (const seg of segs) if (seg.length === 1) dot(seg[0][0], seg[0][1], 3);
   for (const [ts, v] of o.dots || []) dot(ts, v);
   if (o.extremes && points.length > 2) {
     const hiP = points.reduce((a, p) => (p[1] > a[1] ? p : a));
@@ -2715,11 +2719,17 @@ const READY_LABEL = {
   train_hard: () => t("Sẵn sàng tập nặng"), train: () => t("Sẵn sàng tập luyện"), easy: () => t("Nên tập nhẹ"), rest: () => t("Nên nghỉ ngơi"),
 };
 
-function renderMind(m) {
+function renderMind(m, dataUntil) {
   const box = $("#mdState");
   box.textContent = "";
   $("#mdMeters").textContent = "";
   $("#mdFactors").textContent = "";
+  $("#mdNotes").textContent = "";
+  $("#mdBand").hidden = true;
+  // hôm nay: ghi rõ dữ liệu tới lúc nào (vòng tay không kết nối khi ra ngoài, tập luyện…)
+  $("#mdSub").textContent = healthDate === todayISO() && dataUntil
+    ? t("Ước tính từ dữ liệu cơ thể tới {time}, không phải chẩn đoán.", { time: dateTime(dataUntil) })
+    : t("Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.");
   if (!m) {
     mkEl("p", { class: "md-text" }, box).textContent = t("Cần vài ngày dữ liệu giấc ngủ, căng thẳng và nhịp tim để ước tính.");
     return;
@@ -2727,6 +2737,15 @@ function renderMind(m) {
   const status = MIND_STATUS[m.state];
   chip(mkEl("span", {}, box), status, m.label, "md-chip");
   mkEl("p", { class: "md-text" }, box).textContent = m.text;
+  const s = m.stress;
+  if (s) {   // đúng những gì vòng tay đo được, để đối chiếu với thẻ Căng thẳng
+    const bits = [t("Vòng tay đo: trung bình {v} ({label}) từ {n} số đo trong 3 ngày", { v: s.avg, label: stressLabel(s.avg), n: s.n })];
+    if (s.today_n) bits.push(t("hôm nay {v} ({n} số đo)", { v: s.today_avg, n: s.today_n }));
+    if (s.usual != null) bits.push(t("thường ngày {v}", { v: s.usual }));
+    $("#mdBand").textContent = bits.join(" · ");
+    $("#mdBand").hidden = false;
+  }
+  for (const note of m.notes || []) mkEl("li", {}, $("#mdNotes")).textContent = note;
   const meter = (name, value, st) => {
     const row = mkEl("div", { class: `md-meter lv-${st}` }, $("#mdMeters"));
     mkEl("span", {}, row).textContent = name;
@@ -2742,6 +2761,71 @@ function renderMind(m) {
     mkEl("i", { style: `width:${Math.max(4, f.level)}%` }, mkEl("span", { class: "bar", "aria-hidden": "true" }, li));
   }
   mkEl("li", { class: "md-conf" }, $("#mdFactors")).textContent = t("Độ tin cậy: {c}", { c: m.confidence_label });
+}
+
+/* ---------------- tín hiệu cơ thể: nhịp tim khi ngủ so với mức nền và mô hình cá nhân (insights.body_signals) */
+
+const signedNum = (v, d = 1) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${fmtDec(Math.abs(v), d)}`;
+const noonTs = (iso) => new Date(`${iso}T12:00:00`).getTime() / 1000;
+
+function renderBody(b) {
+  const box = $("#bsState");
+  box.textContent = "";
+  $("#bsCauses").textContent = "";
+  $("#bsEffects").textContent = "";
+  $("#bsModel").textContent = "";
+  $("#bsLegend").textContent = "";
+  if (!b) {
+    mkEl("p", { class: "md-text" }, box).textContent = t("Cần ít nhất 8 đêm có nhịp tim khi ngủ để biết mức thường của bạn.");
+    statsList($("#bsStats"), []);
+    emptyChart($("#bsChart"), 80, t("Chưa có dữ liệu"));
+    return;
+  }
+  chip(mkEl("span", {}, box), b.status, b.label, "md-chip");
+  mkEl("p", { class: "md-text" }, box).textContent = b.text;
+  const l = b.last;
+  const stats = [[t("Đêm {day}", { day: shortDate(l.date) }), String(l.hr), t("nhịp/phút")],
+    [t("Mức thường của bạn"), fmtDec(l.baseline, 0), `± ${fmtDec(l.sd, 1)}`]];
+  if (l.expected != null) {
+    stats.push([t("Mô hình dự đoán"), fmtDec(l.baseline + l.expected, 0), t("nhịp/phút")],
+      [t("Chưa giải thích được"), signedNum(l.unexplained), t("nhịp/phút")]);
+  }
+  statsList($("#bsStats"), stats);
+  const pts = b.series.map((s) => [noonTs(s.date), s.hr]);
+  const vals = pts.map((p) => p[1]);
+  const lo = l.baseline - 2 * l.sd, hi = l.baseline + 2 * l.sd;
+  lineChart($("#bsChart"), pts, {
+    t0: pts[0][0] - 43200, t1: pts[pts.length - 1][0] + 43200, color: "var(--c-hr)", unit: t("nhịp/phút"), gap: 1.5 * 86400,
+    yMin: Math.floor(Math.min(lo, ...vals) - 3), yMax: Math.ceil(Math.max(hi, ...vals) + 3), height: 190,
+    dots: b.series.filter((s) => s.high).map((s) => [noonTs(s.date), s.hr]),
+    zones: [{ from: lo, to: hi, label: "", tint: true }],   // nhãn nằm ở chú giải, không đè lên đường
+    timeFmt: (ts) => longDate(isoOf(new Date(ts * 1000))), label: t("Nhịp tim khi ngủ các đêm gần đây"),
+    xTicks: [[pts[0][0], shortDate(b.series[0].date)], [pts[pts.length - 1][0], shortDate(l.date)]],
+  });
+  for (const [cls, text] of [["k-zone", t("Mức thường của bạn (± 2 độ lệch chuẩn)")], ["k-high", t("Đêm cao hơn mức thường")]]) {
+    const li = mkEl("li", {}, $("#bsLegend"));
+    mkEl("i", { class: cls }, li);
+    li.append(text);
+  }
+  for (const c of l.causes || []) mkEl("li", {}, $("#bsCauses")).textContent = c;
+  $("#bsModel").textContent = b.model?.text || "";
+  for (const e of b.model?.effects || []) mkEl("li", {}, $("#bsEffects")).textContent = e;
+}
+
+/* ---------------- giấc ngủ tối nay (insights.sleep_plan): chỉ khi xem hôm nay */
+
+function renderSleepPlan(p) {
+  const card = $("#health-plan");
+  card.hidden = !p || healthDate !== todayISO();
+  if (card.hidden) return;
+  const now = Date.now() / 1000;
+  const due = now >= p.bedtime_ts && now < p.wake_ts;
+  statsList($("#plStats"), [
+    [t("Lên giường"), p.bedtime, due ? t("đã tới giờ") : ""],
+    [t("Ngủ đủ"), fmtMinutes(p.sleep), p.extra ? t("gồm {m} bù", { m: fmtMinutes(p.extra) }) : ""],
+    [t("Dậy lúc"), p.wake, p.free ? t("ngày nghỉ") : t("ngày làm việc")],
+  ]);
+  $("#plText").textContent = p.text;
 }
 
 const INTENSITY = [
@@ -2877,6 +2961,7 @@ const dayBounds = () => { const t0 = new Date(`${healthDate}T00:00:00`).getTime(
 function renderSleepTab(H) {
   const sl = H?.day?.sleep;
   const night = H?.insights?.last_night;
+  renderSleepPlan(H?.insights?.sleep_plan);
   $("#health-sleep h2").textContent = healthDate === todayISO() ? t("Giấc ngủ đêm qua") : t("Giấc ngủ");
   $("#slRange").textContent = sl ? t("Ngủ lúc {start}, dậy lúc {end}", { start: hhmm(sl.start), end: hhmm(sl.end) })
     : t("Không có giấc ngủ kết thúc vào {day}.", { day: dayLabelOf().toLowerCase() });
@@ -3306,7 +3391,8 @@ function renderInsightsTab(H) {
   renderAnalysis(H?.analysis);
   const ins = H?.insights;
   renderReadiness(ins?.readiness, ins?.readiness_history || [], ins?.readiness_progress, ins?.readiness_night);
-  renderMind(ins?.mental);
+  renderMind(ins?.mental, ins?.data_until);
+  renderBody(ins?.body);
 }
 
 /* ---------------- nhật ký riêng: chu kỳ kinh nguyệt (hồ sơ nữ), xuất tinh (hồ sơ nam). Chỉ lưu trên máy này. */

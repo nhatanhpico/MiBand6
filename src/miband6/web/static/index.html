@@ -129,6 +129,7 @@
             <span class="hero-line" id="ovSleepRange"></span>
             <span class="sleep-segments" id="ovSleepStages" role="img" aria-label="Các giai đoạn giấc ngủ"></span>
             <ul class="legend compact" id="ovSleepLegend"></ul>
+            <span class="hero-meta" id="ovSleepPlan"></span>
           </a>
         </div>
 
@@ -250,6 +251,11 @@
           <p class="card-sub" id="slNotes"></p>
           <p class="card-sub sl-ref" id="slRef" hidden></p>
           <p class="card-sub sl-check" id="slCheck" hidden></p>
+        </article>
+        <article class="card" id="health-plan" hidden>
+          <header class="card-head"><h2>Giấc ngủ tối nay</h2><p class="card-sub">Tính ngược từ giờ dậy quen thuộc của bạn và số giờ ngủ còn thiếu 7 ngày qua.</p></header>
+          <dl class="stats" id="plStats"></dl>
+          <p class="card-sub" id="plText"></p>
         </article>
         <article class="card">
           <header class="card-head"><h2>14 đêm gần đây</h2><p class="card-sub">Bấm một cột để xem đêm đó.</p></header>
@@ -458,11 +464,25 @@
           <p class="card-sub disclaimer">Nhận xét dựa trên dữ liệu vòng tay và khuyến nghị chung cho người lớn (ngủ 7–9 giờ, 150 phút vận động mỗi tuần, PAI từ 100, SpO2 từ 95%); không thay thế chẩn đoán của bác sĩ.</p>
         </article>
         <article class="card" id="health-mind">
-          <header class="card-head"><h2>Trạng thái tinh thần</h2><p class="card-sub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header>
+          <header class="card-head"><h2>Trạng thái tinh thần</h2><p class="card-sub" id="mdSub">Ước tính từ dữ liệu cơ thể, không phải chẩn đoán.</p></header>
           <div class="md-state" id="mdState"></div>
+          <p class="md-band" id="mdBand" hidden></p>
           <div class="md-meters" id="mdMeters"></div>
           <ul class="md-factors" id="mdFactors"></ul>
-          <p class="md-note">Nếu buồn chán, lo âu hoặc mất ngủ kéo dài trên hai tuần, hãy trò chuyện với người thân hoặc chuyên gia sức khỏe tâm thần.</p>
+          <ul class="ci-notes" id="mdNotes"></ul>
+          <p class="md-note">Mức căng lấy từ chính các số đo căng thẳng của vòng tay (tự đo và đo tay). Nếu buồn chán, lo âu hoặc mất ngủ kéo dài trên hai tuần, hãy trò chuyện với người thân hoặc chuyên gia sức khỏe tâm thần.</p>
+        </article>
+        <article class="card" id="health-signals">
+          <header class="card-head"><h2>Tín hiệu cơ thể</h2><p class="card-sub">Nhịp tim khi ngủ so với mức thường của bạn và với mức mô hình cá nhân dự đoán.</p></header>
+          <div class="md-state" id="bsState"></div>
+          <dl class="stats" id="bsStats"></dl>
+          <div class="chart" id="bsChart"></div>
+          <ul class="legend" id="bsLegend"></ul>
+          <ul class="ci-notes" id="bsCauses"></ul>
+          <h3 class="card-h3">Mô hình cá nhân</h3>
+          <p class="card-sub" id="bsModel"></p>
+          <ul class="ci-notes" id="bsEffects"></ul>
+          <p class="md-note">Không phải chẩn đoán. Nhịp tim khi ngủ cao hơn mức thường vài nhịp/phút nhiều đêm liền thường gặp khi sắp ốm hoặc tập quá sức; một đêm cao thường do nguyên nhân tạm thời.</p>
         </article>
       </div>
       <p class="hnote">Ứng dụng chỉ sao chép dữ liệu: vòng tay vẫn giữ nguyên, nên Mi Fitness vẫn đồng bộ như thường.</p>

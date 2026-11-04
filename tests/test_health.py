@@ -514,12 +514,58 @@ def test_analysis_rules():
     assert status["fresh"] == "watch" and "pai" not in status   # dữ liệu cũ; chưa có PAI thì không nhận xét
 
 
+def _minutes(start, hrs, steps=0):
+    """Các mẫu theo phút từ `start`: nhịp tim theo danh sách (None = không đo), số bước mỗi phút."""
+    return [(start + 60 * i, 1, 0, steps, hr if hr is not None else 255, 0, 0, 0) for i, hr in enumerate(hrs)]
+
+
+def test_rest_hr_events():
+    t0 = BASE - BASE % 60
+    calm = _minutes(t0, [72] * 30)
+    high = _minutes(t0 + 1800, [125, 130, 128, 131, 127, 129, 126, 133, 130, 128, 124, 122])   # 12 phút từ 120
+    rows = calm + high + _minutes(t0 + 2520, [75] * 30)
+    ev = H.rest_hr_events(rows, set(), set())
+    assert [(e["kind"], e["minutes"], e["extreme"]) for e in ev["events"]] == [("high", 12, 133)]
+    assert ev["checked"] == len(rows) - 1   # mọi số đo lúc nghỉ có số đo trước đó trong vòng 10 phút
+    # đi bộ, trong buổi tập hay lúc ngủ: không tính
+    walking = calm + _minutes(t0 + 1800, [130] * 12, steps=90)
+    assert H.rest_hr_events(walking, set(), set())["events"] == []
+    assert H.rest_hr_events(rows, set(), {r[0] for r in high})["events"] == []
+    assert H.rest_hr_events(rows, {r[0] for r in high}, set())["events"] == []
+    # quá ngắn (5 phút) thì bỏ; đo mỗi 10 phút: 2 số đo cách nhau 10 phút đủ 11 phút
+    short = calm + _minutes(t0 + 1800, [130] * 5)
+    assert H.rest_hr_events(short, set(), set())["events"] == []
+    sparse = [r for r in calm if (r[0] - t0) % 600 == 0] + [r for r in _minutes(t0 + 1800, [131] + [None] * 9 + [127])]
+    low_hr = calm + _minutes(t0 + 1800, [38] * 15)
+    assert [e["minutes"] for e in H.rest_hr_events(sparse, set(), set())["events"]] == [11]
+    assert [(e["kind"], e["extreme"]) for e in H.rest_hr_events(low_hr, set(), set())["events"]] == [("low", 38)]
+    assert H.rest_hr_events(rows, set(), set(), since=t0 + 3000)["events"] == []
+
+
+def test_rest_hr_analysis_item():
+    now = BASE + 3 * 86400
+    ev = {"events": [{"kind": "high", "start": BASE, "end": BASE + 720, "minutes": 13, "extreme": 133, "readings": 13}],
+          "checked": 500}
+    items = {i["key"]: i for i in H.analyze([], [], 8000, None, [], [], 0, 0, now, now=now, hr_events=ev)["items"]}
+    assert items["rest_hr"]["status"] == "watch" and "133" in items["rest_hr"]["detail"]
+    ev["events"][0]["extreme"] = 160
+    items = {i["key"]: i for i in H.analyze([], [], 8000, None, [], [], 0, 0, now, now=now, hr_events=ev)["items"]}
+    assert items["rest_hr"]["status"] == "alert"
+    quiet = H.analyze([], [], 8000, None, [], [], 0, 0, now, now=now, hr_events={"events": [], "checked": 500})
+    assert next(i for i in quiet["items"] if i["key"] == "rest_hr")["status"] == "good"
+    # đo nhịp tim quá thưa để thấy một đợt 10 phút: không kết luận "không có bất thường"
+    sparse = H.analyze([], [], 8000, None, [], [], 0, 0, now, now=now, hr_events={"events": [], "checked": 20})
+    assert not any(i["key"] == "rest_hr" for i in sparse["items"])
+
+
 async def test_health_api_includes_analysis(client):
     await connected(client)
     await wait_sync(client.service)
     h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
     keys = {i["key"] for i in h["analysis"]["items"]}
-    assert {"sleep", "deep", "rhr", "steps", "active", "pai", "spo2", "stress"} <= keys
+    assert {"sleep", "deep", "rhr", "steps", "active", "pai", "spo2", "stress", "rest_hr"} <= keys
+    rest = next(i for i in h["analysis"]["items"] if i["key"] == "rest_hr")
+    assert rest["status"] == "good"   # giả lập: nhịp tim lúc ngồi yên 62-82, chỉ cao khi đi bộ
     sleep = next(i for i in h["analysis"]["items"] if i["key"] == "sleep")
     assert sleep["status"] == "good"   # giả lập ngủ 23:20–06:50 mỗi đêm
 
@@ -630,7 +676,9 @@ async def test_cloud_workouts_job_demo(client):
             break
         await asyncio.sleep(0.05)
     assert st["state"] == "done" and st["job"] == "workouts" and "4" in st["message"]
-    h = (await (await client.get(f"/api/health?date={dt.date.today().isoformat()}")).json())["health"]
+    # đêm giả lập kết thúc 06:50: trước giờ đó giấc đêm nay còn dở (chưa có báo cáo), xem đêm đã xong gần nhất
+    day = max(H.local_date(s["end"]) for s in client.service.health_db().sleep_sessions(0, 2**31) if not s["ongoing"])
+    h = (await (await client.get(f"/api/health?date={day}")).json())["health"]
     assert sum(1 for w in h["workouts"] if w["source"] == "mifitness") == 4
     # cùng lượt: báo cáo giấc ngủ của Mi Fitness, để so và hiệu chỉnh thuật toán giấc ngủ
     assert client.service.health_db().last("mf_sleep")
@@ -806,7 +854,13 @@ async def test_health_insights_and_settings(client):
     today = dt.date.today().isoformat()
     h = (await (await client.get(f"/api/health?date={today}")).json())["health"]
     ins = h["insights"]
-    assert set(ins) >= {"readiness", "readiness_history", "mental", "intensity", "circadian", "rem_estimated"}
+    assert set(ins) >= {"readiness", "readiness_history", "mental", "intensity", "circadian", "rem_estimated", "body",
+                        "sleep_plan", "data_until"}
+    # trạng thái tinh thần theo đúng số đo căng thẳng của vòng tay (tự đo mỗi 5 phút và lần đo tay 34)
+    stress = ins["mental"]["stress"]
+    assert stress["auto"] > 100 and stress["manual"] == 1 and 15 <= stress["avg"] <= 70 and ins["data_until"]
+    assert ins["body"]["last"]["nights"] >= 7 and ins["body"]["model"]["need"] == 21
+    assert ins["sleep_plan"]["wake"] == "06:50" and ins["sleep_plan"]["bedtime"].count(":") == 1
     assert ins["intensity"] and 0 <= ins["intensity"]["ratio"] <= 100 and len(ins["intensity"]["days"]) == 7
     assert ins["circadian"] and ins["circadian"]["chronotype_clock"].count(":") == 1
     assert h["rem_mode"] == "estimate"
