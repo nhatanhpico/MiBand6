@@ -34,7 +34,7 @@
 - **Điểm sẵn sàng hôm nay** (thẻ đầu trang, 0–100, như Readiness của Apple Watch / Huawei Watch GT 7): hôm nay nên tập nặng, tập vừa, tập nhẹ hay nghỉ, kèm vùng nhịp tim gợi ý và thời gian hồi phục; từ nhịp tim nghỉ, chỉ số hồi phục, giấc ngủ, cân bằng giấc ngủ, tải vận động, căng thẳng so với mức nền của bạn. Con số của hôm nay cũng nằm ở đầu trang **Tổng quan** (trang mở ra khi khởi động), hiện cả khi vòng tay chưa kết nối; bấm vào để xem chi tiết. Thêm **trạng thái tinh thần** ước tính, **tỉ lệ cường độ vận động**, **lệch múi giờ xã hội** và **áp lực nhịp sinh học** (CPD, SRI); công thức và nguồn trong [docs/suc-khoe.md](docs/suc-khoe.md)
 - Giấc ngủ: giờ ngủ, giờ dậy và tổng thời gian khớp với màn hình vòng tay; các giai đoạn ngủ sâu / nông / thức và **REM ước tính từ nhịp tim** (chưa xác minh được REM của hãng qua bộ giải mã Bluetooth hiện tại; tắt được) theo từng giờ; 14 đêm gần đây so với khoảng khuyến nghị 7–9 giờ
 - Bước chân theo giờ và lịch sử mọi ngày vòng tay đã ghi (có dạng bảng); bấm ô **Bước chân** ở trang Hôm nay để mở thẻ Vận động
-- Theo **hồ sơ** (Cài đặt vòng tay → Hồ sơ): nhịp tim tối đa theo tuổi và giới tính, nhu cầu ngủ theo tuổi, **BMI** (ngưỡng cho người châu Á)
+- Theo **hồ sơ** (Cài đặt vòng tay → Hồ sơ): nhịp tim tối đa nhập tay hoặc ước tính theo tuổi và giới tính, nhu cầu ngủ theo tuổi, **BMI** (ngưỡng cho người châu Á)
 - **Nhật ký riêng**, chỉ lưu trên máy: hồ sơ nữ có thẻ **Chu kỳ** (ghi ngày có kinh, dự đoán kỳ tiếp theo và ngày dễ thụ thai theo lịch; điểm sẵn sàng trừ phần nhịp tim nghỉ tăng ở pha hoàng thể), hồ sơ nam có thẻ **Sinh lý** (ghi ngày xuất tinh, tần suất, so sánh giấc ngủ đêm sau với các đêm khác). Mi Band 6 không cho đọc nhật ký chu kỳ của Mi Fitness qua Bluetooth nên phải ghi tay
 - Nhịp tim trong ngày, căng thẳng (tự động và đo tay), PAI, SpO2, các buổi tập (loại, thời gian, quãng đường, năng lượng, nhịp tim); **Lấy lịch sử từ Mi Fitness** để có cả các buổi tập cũ mà vòng tay không còn giữ, và xem **bản đồ lộ trình** của các buổi chạy, đạp xe ngoài trời có GPS
 - Tự đồng bộ khi kết nối và theo lịch ở **Cài đặt ứng dụng** (vòng tay: 15 phút–2 giờ; Mi Fitness: 1 giờ–1 ngày; hoặc chỉ khi bấm); bấm **Đồng bộ** để lấy ngay. Cùng trang đó có ngôn ngữ giao diện, trạng thái tài khoản Mi Fitness (gia hạn, đăng nhập lại, đăng xuất) và cách tự kết nối lại.
@@ -45,6 +45,8 @@
 **Hai trang cài đặt**
 - **Cài đặt vòng tay**: những gì được ghi vào vòng tay (hồ sơ, màn hình, mặt đồng hồ, ứng dụng trên vòng tay, đo sức khỏe)
 - **Cài đặt ứng dụng** (trong ứng dụng macOS: ⌘,): những gì chỉ thuộc ứng dụng trên máy tính (ngôn ngữ, lịch tự đồng bộ, tài khoản Mi Fitness, kết nối, **tự bật theo dõi nhịp tim liên tục mỗi lần kết nối**, thời tiết, ước tính REM)
+
+**Điều khiển nhạc trên Mac** — Trong **Cài đặt ứng dụng**, chọn Apple Music hoặc Spotify (mặc định tắt). Mở trình phát trên máy Mac rồi mở mục Nhạc trên vòng tay để xem tên bài hát, nghệ sĩ, phát hoặc tạm dừng, chuyển bài và chỉnh âm lượng. Nếu macOS hỏi, cho phép điều khiển trình phát.
 
 **Thời tiết** (**Cài đặt ứng dụng → Thời tiết**; chi tiết: [docs/thoi-tiet.md](docs/thoi-tiet.md))
 - Mỗi lần kết nối và mỗi giờ, gửi tới vòng tay thời tiết hiện tại, dự báo 7 ngày, chất lượng không khí, gió, độ ẩm, giờ mặt trời mọc và lặn (dữ liệu Open-Meteo, không cần tài khoản)
@@ -289,7 +291,7 @@ uv run miband6-cli info -v        # lấy địa chỉ và key từ .env
 
 - Đọc cài đặt hiện tại của vòng tay (ngôn ngữ, kiểu giờ, chế độ ban đêm…): Mi Band 6 chỉ cho ghi, không cho đọc qua Bluetooth, và Mi Fitness không lưu chúng trên máy chủ. Mục chưa từng được ứng dụng ghi hiện nhãn **Chưa đồng bộ** và để trống thay vì đoán; chọn đúng giá trị rồi bấm Lưu một lần.
 - Biết mặt đồng hồ đang dùng, bật đo SpO2 hay căng thẳng từ máy tính (giao thức không có lệnh này).
-- Cập nhật firmware, thời tiết, điều khiển nhạc, đường đi GPS của buổi tập.
+- Cập nhật firmware.
 
 ## Cấu trúc mã nguồn
 

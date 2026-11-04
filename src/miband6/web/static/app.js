@@ -806,10 +806,20 @@ function fillProfile() {
   setRadio("gender", known ? p.gender ?? 0 : null);
   $("#pHeight").value = p.height ?? "";
   $("#pWeight").value = p.weight ?? "";
+  $("#pMaxHr").value = p.max_hr_override ?? "";
   $("#pGoal").value = p.goal ?? "";
   setSwitch($("#pGoalNotify"), p.goal_notify ?? null);
   setRadio("wear", p.wear_left == null ? null : p.wear_left ? "left" : "right");
 }
+
+$("#maxHrForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = $("#pMaxHr");
+  quiet(run($("button", event.currentTarget), async () => {
+    const result = await api("/api/prefs", { max_hr_override: input.value === "" ? null : input.valueAsNumber });
+    applyState(result.state);
+  }, t("Đã lưu.")));
+});
 
 function fillForms() {
   const s = STATE.settings || {};
@@ -1589,6 +1599,8 @@ const SYNC_OPTIONS = {
 };
 
 function renderGeneral(st) {
+  $("#musicGroup").hidden = META?.platform !== "darwin" || !!st.demo;
+  $("#musicPlayer").value = st.settings?.music_player || "off";
   const sync = st.sync || {};
   for (const [id, [key, values, label]] of Object.entries(SYNC_OPTIONS)) {
     const sel = $(`#${id}`);
@@ -1637,6 +1649,13 @@ $("#acctLoginBtn").onclick = () => startCloud(true, "workouts");
 $("#acctLogoutBtn").onclick = () => quiet(run($("#acctLogoutBtn"), async () => {
   await api("/api/cloud/forget", {});
 }, t("Đã đăng xuất khỏi Mi Fitness.")));
+$("#musicPlayer").onchange = () => quiet(run($("#musicPlayer"), async () => {
+  try {
+    applyState((await api("/api/prefs", { music_player: $("#musicPlayer").value })).state);
+  } finally {
+    $("#musicPlayer").value = STATE.settings?.music_player || "off";
+  }
+}, t("Đã lưu.")));
 $("#liveHrAuto").onchange = () => quiet(run(null, async () => {
   applyState((await api("/api/prefs", { live_hr_auto: $("#liveHrAuto").checked })).state);
 }, $("#liveHrAuto").checked ? t("Vòng tay sẽ tự đo nhịp tim liên tục mỗi lần kết nối.") : t("Đã tắt tự đo nhịp tim liên tục.")));

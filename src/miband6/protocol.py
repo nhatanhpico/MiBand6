@@ -765,6 +765,27 @@ DEVICE_EVENTS = {
     0xFE: "Điều khiển nhạc",
 }
 
+CHUNKED_MUSIC = 3
+EVENT_MUSIC = 0xFE
+MUSIC_ACTIONS = {0x00: "play", 0x01: "pause", 0x03: "next", 0x04: "previous",
+                 0x05: "volume_up", 0x06: "volume_down", 0xE0: "open", 0xE1: "close"}
+
+
+def music_info(playing: bool, artist: str, title: str, volume: int | None = None) -> bytes:
+    """Huami music state (no seek bar): flags, state, reserved, position LE, tagged fields."""
+    flags = 0x01
+    data = bytearray((int(playing), 0, 0, 0))
+    for flag, name in ((0x02, artist), (0x08, title)):
+        if name:
+            text = _truncate_utf8(name.replace("\0", " ").encode("utf-8"), 80)
+            data.extend(text + b"\0")
+            flags |= flag
+    if volume is not None:
+        data.append(max(0, min(100, volume)))
+        flags |= 0x40
+    return bytes([flags]) + data
+
+
 EVENT_FIND_PHONE_START = 0x08
 EVENT_FIND_PHONE_STOP = 0x0F
 EVENT_CALL_REJECT = 0x07

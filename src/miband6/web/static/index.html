@@ -487,6 +487,13 @@
           </div>
           <div class="group-foot"><button class="btn primary" data-save="profile" data-conn>Lưu vào vòng tay</button></div>
         </div>
+        <form class="group" id="maxHrForm">
+          <div class="group-head"><h2>Vùng nhịp tim</h2><p>Nhập nhịp tim tối đa đã đo để tính tải tập và vùng nhịp tim trên máy này. Để trống để dùng ước tính theo tuổi và giới tính.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Nhịp tim tối đa</span><span class="with-unit"><input id="pMaxHr" type="number" min="30" max="220" step="1" inputmode="numeric"><span>nhịp/phút</span></span></label>
+          </div>
+          <div class="group-foot"><button type="submit" class="btn primary">Lưu trên máy</button></div>
+        </form>
         <div class="group">
           <div class="group-head"><h2>Mục tiêu hằng ngày</h2></div>
           <div class="rows">
@@ -794,6 +801,12 @@
           <div class="group-head"><h2>Nhịp tim trực tiếp</h2><p>Bật thì mỗi lần ứng dụng kết nối với vòng tay (kể cả tự kết nối lại), vòng tay đo nhịp tim liên tục và trang Hôm nay hiện nhịp tim theo thời gian thực. Vẫn tắt được ở thẻ Đo nhịp tim. Đo liên tục làm vòng tay tốn pin hơn.</p></div>
           <div class="rows">
             <label class="row"><span class="row-label">Tự bật theo dõi liên tục khi kết nối</span><input type="checkbox" class="switch" id="liveHrAuto"></label>
+          </div>
+        </div>
+        <div class="group" id="musicGroup" hidden>
+          <div class="group-head"><h2>Điều khiển nhạc trên Mac</h2><p>Mở trình phát đã chọn trên Mac, rồi mở mục Nhạc trên vòng tay để xem tên bài hát và điều khiển phát nhạc. Lần đầu sử dụng, macOS có thể yêu cầu quyền điều khiển ứng dụng.</p></div>
+          <div class="rows">
+            <label class="row"><span class="row-label">Trình phát nhạc</span><select id="musicPlayer"><option value="off">Tắt</option><option value="music">Apple Music</option><option value="spotify">Spotify</option></select></label>
           </div>
         </div>
         <div class="group" id="weatherGroup">

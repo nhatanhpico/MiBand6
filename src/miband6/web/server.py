@@ -34,6 +34,7 @@ from .. import protocol as P
 from .. import watchface as WF
 from .. import geo
 from .. import weather as W
+from ..music import MusicBridge
 from ..config import Store
 from ..envfile import env_settings, load_env
 from ..i18n import get_lang, set_lang, tr
@@ -143,6 +144,7 @@ class BandService:
         self.device_meta: dict = {}
         self._tasks: set[asyncio.Task] = set()
         self._stop_beep = True
+        self.music = MusicBridge(self._send_music, self._music_error)
         # Giữ kết nối: True sau khi kết nối thành công, False khi người dùng bấm Ngắt kết nối
         self.want_connected = False
         self.reconnect: dict | None = None      # {"attempt": n, "at": epoch, "error"?} khi đang chờ hoặc đang thử nối lại
@@ -252,8 +254,20 @@ class BandService:
         return self.band
 
     # ------------------------------------------------------------ sự kiện từ vòng tay
+    async def _send_music(self, packet: bytes) -> None:
+        await self.require().write_chunked(P.CHUNKED_MUSIC, packet)
+
+    def _music_error(self, error: str) -> None:
+        self.log(tr('Không điều khiển được nhạc: {e}', e=error))
+
     def on_event(self, kind: str, data) -> None:
+        if kind == "music":
+            player = self.settings.get("music_player")
+            if player in ("music", "spotify") and sys.platform == "darwin" and not self.demo and self.connected:
+                self.music.handle(data, player)
+            return
         if kind == "disconnected":
+            self.music.stop()
             self._stop_beep = True
             self.live_hr = False
             self._cancel_health()
@@ -340,6 +354,7 @@ class BandService:
         used = None
         try:
             if self.band:
+                self.music.stop()
                 await self.band.disconnect()
             client = None
             if self.demo:
@@ -891,7 +906,7 @@ class BandService:
         rem = self.rem_estimate()
         summary = db.summary(date, rem=rem)
         summary["analysis"] = db.analysis(goal=int(self.profile.get("goal") or 8000), rem=rem, profile=self.profile)
-        body = tuple(self.profile.get(k) for k in ("birth", "gender", "height", "weight"))
+        body = tuple(self.profile.get(k) for k in ("birth", "gender", "height", "weight", "max_hr_override"))
         key = (date, db.last("last_sync"), db.last("cloud_workouts"), db.last("journal"), rem, get_lang(), body)
         if self._insight_cache.get("key") != key:   # tính lại khi có dữ liệu mới, đổi ngày, ngôn ngữ, hồ sơ, nhật ký…
             self._insight_cache = {"key": key, "value": db.insights(date, self.profile, rem=rem)}
@@ -1206,6 +1221,7 @@ class BandService:
         self.want_connected = False
         self.reconnect_stopped = None
         self.live_hr = False
+        self.music.stop()
         self._cancel_reconnect()
         self._cancel_health()
         if self.band:
@@ -1632,6 +1648,24 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
 
     async def prefs_h(req):
         b = await body(req)
+        value = b.get("max_hr_override")
+        if value is not None and PS.max_hr_override(value) is None:
+            raise ApiError(tr('Nhịp tim tối đa phải là số nguyên từ 30 đến 220 nhịp/phút.'))
+        if "music_player" in b:
+            player = b["music_player"]
+            if player not in ("off", "music", "spotify"):
+                raise ApiError(tr('Trình phát nhạc không hợp lệ.'))
+            if player != "off" and (sys.platform != "darwin" or S.demo):
+                raise ApiError(tr('Điều khiển nhạc cần kết nối vòng tay thật trên macOS.'))
+            if player != S.settings.get("music_player", "off"):
+                S.music.stop()
+            S.settings["music_player"] = player
+        if "max_hr_override" in b:
+            if value is None:
+                S.profile.pop("max_hr_override", None)
+            else:
+                S.profile["max_hr_override"] = value
+            S.push({"type": "health_data"})
         if "find_sound" in b:
             S.settings["find_sound"] = bool(b["find_sound"])
         if b.get("lang") in ("vi", "en"):
@@ -1745,6 +1779,7 @@ def build_app(service: BandService, lan_token: str | None = None) -> web.Applica
     r.add_post("/api/cloud/renew", cloud_renew)
 
     async def on_shutdown(_app):
+        S.music.stop()
         S.want_connected = False
         S._cancel_reconnect()
         for ws in list(S.clients):

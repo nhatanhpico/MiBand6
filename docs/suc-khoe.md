@@ -106,16 +106,16 @@ Mục nào chưa có dữ liệu thì không hiện (hoặc hiện **Chưa đủ
 | Thành phần (trọng số) | Tính từ | 100 điểm khi |
 | --- | --- | --- |
 | Nhịp tim nghỉ (18%) | Trung vị nhịp tim khi ngủ đêm qua so với 30 đêm trước (cần ít nhất 7) | Không cao hơn mức nền quá 0,5 độ lệch chuẩn; mỗi độ lệch chuẩn thêm trừ khoảng 25 điểm |
-| Chỉ số hồi phục (8%) | Thời điểm trung bình 5 phút của nhịp tim thấp nhất, tính theo phần đêm đã qua (như Oura) | Thấp nhất trong nửa đầu đêm (75% đêm: 60 điểm) |
+| Chỉ số hồi phục (8%) | Thời điểm có trung bình nhịp tim thấp nhất trong 5 phút liên tiếp. Chỉ tính khi có số đo hợp lệ ở ít nhất 70% số phút ngủ và ít nhất 30 phút ngủ có số đo | Thấp nhất trong nửa đầu đêm (75% đêm: 60 điểm) |
 | Giấc ngủ đêm qua (20%) | Thời lượng (50%), tỉ lệ thời gian trên giường là ngủ (15%), phần ngủ sâu (15%), giờ ngủ so với chronotype (20%) | Ngủ 7,5–9 giờ, liền mạch từ 95%, ngủ sâu từ 16%, giữa giấc lệch chronotype dưới 30 phút |
-| Cân bằng giấc ngủ (14%) | Ngủ 14 đêm so với nhu cầu 7,5 giờ (đêm gần nặng hơn), kèm nợ ngủ 7 đêm | Đạt 100% nhu cầu |
+| Cân bằng giấc ngủ (14%) | Tổng phút ngủ trong 14 ngày so với nhu cầu theo tuổi (ngày gần nặng hơn), kèm số phút còn thiếu trong 7 ngày. Mỗi giấc đã kết thúc từ 20 phút được tính một lần theo ngày thức dậy. Ngày thiếu dữ liệu được bỏ qua | Đạt 100% nhu cầu |
 | Thời gian hồi phục (15%) | Mệt mỏi từ tải vận động các giờ gần đây (xem dưới), như "recovery time" của Garmin | Đã hồi phục (12 giờ: 80; 24 giờ: 60; 48 giờ: 35) |
 | Cân bằng vận động (10%) | Tỉ lệ tải cấp/tải mạn (ACWR, Gabbett): TRIMP trung bình 7 ngày / 28 ngày đủ dữ liệu tải (cần 14 ngày, xem dưới) | Trong khoảng 0,8–1,3 (1,5: 75; 2: 45) |
 | Cân bằng căng thẳng, thay cho HRV (15%) | Chỉ số căng thẳng của vòng tay 2 ngày gần nhất so với mức nền | Không cao hơn mức nền; từ 60 trở lên tối đa 70 điểm |
 
 **Thời gian hồi phục** dùng mô hình thể lực - mệt mỏi kiểu Banister, rút gọn: mỗi giờ có tải (TRIMP) cộng vào "mệt mỏi", mờ dần theo e^(−t/36 giờ). Với tải đều đặn C mỗi ngày (trung bình 28 ngày đủ dữ liệu tải, tối thiểu 30), mệt mỏi ổn định quanh C × 36/24; thời gian hồi phục còn lại = 36 × ln(mệt mỏi / mức ổn định) giờ, tối đa 96. Tải trong hôm nay cũng được tính, nên điểm hôm nay giảm ngay sau một buổi tập (như Apple Watch). Ví dụ: buổi tập TRIMP 450 với người thường có 100 mỗi ngày, 20 giờ sau còn khoảng 19,5 giờ hồi phục.
 
-**TRIMP** (tải vận động) theo Edwards: mỗi phút ở 50–60 / 60–70 / 70–80 / 80–90 / 90–100% nhịp tim tối đa tính 1 / 2 / 3 / 4 / 5 điểm; nhịp tim tối đa = 208 − 0,7 × tuổi (Tanaka 2001, tuổi lấy từ hồ sơ).
+**TRIMP** (tải vận động) theo Edwards: mỗi phút ở 50–60 / 60–70 / 70–80 / 80–90 / 90–100% nhịp tim tối đa tính 1 / 2 / 3 / 4 / 5 điểm; nhịp tim tối đa lấy từ hồ sơ như mô tả bên dưới.
 
 Vòng tay đo nhịp tim theo chu kỳ đã cài (mỗi phút, 5, 10 hay 30 phút), và chu kỳ có thể đổi giữa các ngày. Mỗi số đo được tính cho khoảng tới số đo kế tiếp, **tối đa 10 phút** và không kéo qua lúc tháo vòng, nên tải một ngày không phụ thuộc chu kỳ đo; nếu chỉ cộng các phút có số đo, ngày đo mỗi 10 phút trông nhẹ hơn chừng 10 lần, mức nền bị kéo thấp và một ngày bình thường bị coi là quá tải. Một ngày chỉ vào **mức nền tải** (thời gian hồi phục, cân bằng vận động) khi đeo vòng ít nhất 10 giờ và có nhịp tim ít nhất 60% thời gian đeo; ngày đo mỗi 30 phút hay tắt đo nhịp tim bị bỏ ra thay vì coi là ngày nghỉ. Phút đeo vòng: vòng tay không ghi "không đeo" / "đang sạc", hoặc có nhịp tim.
 
@@ -140,7 +140,7 @@ Vòng tay đo nhịp tim theo chu kỳ đã cài (mỗi phút, 5, 10 hay 30 phú
 
 Ứng dụng đọc hồ sơ ở **Cài đặt vòng tay → Hồ sơ** (nhập tay hoặc lấy từ Mi Fitness):
 
-- **Nhịp tim tối đa** (cho TRIMP, vùng nhịp tim gợi ý): nữ theo Gulati 2010, 206 − 0,88 × tuổi (đo trên 5.437 phụ nữ); còn lại theo Tanaka 2001, 208 − 0,7 × tuổi. Chưa có ngày sinh thì coi 30 tuổi.
+- **Nhịp tim tối đa** (cho TRIMP, cường độ buổi tập và vùng nhịp tim gợi ý): nhập số đã đo trong mục **Vùng nhịp tim** và chọn **Lưu trên máy**. Giá trị này áp dụng cả khi xem lại dữ liệu cũ. Để trống và lưu để dùng lại ước tính. Khi ước tính, nữ theo Gulati 2010, 206 − 0,88 × tuổi (đo trên 5.437 phụ nữ); còn lại theo Tanaka 2001, 208 − 0,7 × tuổi. Chưa có ngày sinh thì coi 30 tuổi.
 - **Nhu cầu ngủ** theo tuổi (National Sleep Foundation / AASM, lấy giữa khoảng): 6–13 tuổi 10 giờ (9–11), 14–17 tuổi 9 giờ (8–10), người lớn 7,5 giờ (7–9; từ 65 tuổi 7–8). Dùng cho điểm giấc ngủ, cân bằng giấc ngủ, trạng thái tinh thần và mục "Thời gian ngủ" của phân tích (Tốt khi trung bình từ nhu cầu − 30 phút tới nhu cầu + 2 giờ; dưới mức đó 1 giờ là Cần lưu ý).
 - **Lịch sử chiều cao, cân nặng** (thẻ **Cơ thể**): mỗi lần lưu hồ sơ, ghi cân nặng ở thẻ Cơ thể, hay Mi Fitness có số mới đều thêm một lần ghi (mỗi ngày một lần ghi; lần đầu lấy số trong hồ sơ). Lần ghi mới nhất thành hồ sơ và được ghi vào vòng tay. Đồng bộ ngầm với Mi Fitness (12 giờ một lần) chỉ nhận chiều cao, cân nặng khi số trong Mi Fitness đã đổi so với lần trước, nên số bạn ghi trong ứng dụng không bị số cũ đè; bấm **Đồng bộ** hồ sơ thì luôn nhận. Phân tích (mục **Cân nặng**): thay đổi so với lần ghi gần nhất trước 30 / 90 ngày; tốc độ kg/tuần là hồi quy tuyến tính các lần ghi trong 90 ngày (cần cách nhau từ 14 ngày); thay đổi 6 tháng so với lần ghi cũ nhất trong 183 ngày (cách từ 28 ngày). **Nên chú ý** khi thay đổi từ 5% trong 6 tháng (mốc sụt cân không chủ ý đáng kể; dùng cả cho tăng cân), giảm nhanh hơn 1 kg/tuần (khuyến nghị giảm cân an toàn 0,5–1 kg/tuần) hoặc tăng từ 0,5 kg/tuần; **Cần lưu ý** khi đang thiếu cân (BMI dưới 18,5) mà vẫn giảm.
 - **BMI** = cân nặng / chiều cao² (từ 18 tuổi; dưới 18 tuổi BMI phải so theo bách phân vị tuổi nên không hiện). Ngưỡng cho người châu Á của WHO (Lancet 2004), vì người Việt có nguy cơ tim mạch, tiểu đường ở BMI thấp hơn ngưỡng chung 25/30: dưới 18,5 thiếu cân (Nên chú ý), 18,5–22,9 bình thường (Tốt), 23–24,9 thừa cân (Ổn), 25–29,9 béo phì độ I (Nên chú ý), từ 30 béo phì độ II (Cần lưu ý). BMI không phân biệt cơ và mỡ.
@@ -166,7 +166,7 @@ Vòng tay không đo được những điều này, nên bạn tự ghi: bấm m
 | Yếu tố (trọng số) | Nhóm | Mức 0 → 1 |
 | --- | --- | --- |
 | Căng thẳng trung bình 3 ngày (35%) | Căng | 25 → 75, cộng thêm nửa tỉ lệ số đo ở mức cao |
-| Giấc ngủ 3 đêm và nợ ngủ 7 đêm (25%) | Mệt | 7,5 giờ → 5 giờ, cộng tối đa 0,4 cho nợ ngủ (15 giờ) |
+| Giấc ngủ chính 3 đêm và nợ ngủ 7 ngày (tính cả giấc ngủ ngắn) (25%) | Mệt | 7,5 giờ → 5 giờ, cộng tối đa 0,4 cho nợ ngủ (15 giờ) |
 | Áp lực nhịp sinh học (15%) | Mệt | Từ CPD (0,5 → 2,5 giờ) và lệch múi giờ xã hội (0 → 2 giờ) |
 | Nhịp tim nghỉ so với mức nền (15%) | Căng | 0 → 2,5 độ lệch chuẩn |
 | Vận động vừa/mạnh 7 ngày (10%) | Mệt | 150 → 0 phút |

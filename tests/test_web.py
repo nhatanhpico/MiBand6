@@ -3,6 +3,7 @@
 import asyncio
 import datetime as dt
 import json
+from unittest.mock import Mock
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -85,6 +86,56 @@ async def test_connect_flow_and_settings(client):
     assert band.writes[-1] == (P.CHAR_NEW_ALERT, P.incoming_call("Tìm vòng tay"))
     r = await post(client, "/api/disconnect")
     assert not (await r.json())["state"]["connected"]
+
+
+async def test_local_max_hr_refreshes_cached_insights_without_band(client):
+    service = client.service
+    service.store.data["last_device"] = "offline-test"
+
+    async def shown_max():
+        result = await (await client.get("/api/health?date=2026-01-10")).json()
+        return result["health"]["insights"]["profile"]["hr_max"]
+
+    assert await shown_max() == 187
+    r = await post(client, "/api/prefs", {"max_hr_override": 175})
+    assert r.status == 200 and Store(service.store.path).data["profile"]["max_hr_override"] == 175
+    assert await shown_max() == 175
+
+    for invalid in (29, 221, 170.5, True, "175"):
+        assert (await post(client, "/api/prefs", {"max_hr_override": invalid})).status == 400
+    assert await shown_max() == 175
+    r = await post(client, "/api/prefs", {"max_hr_override": None})
+    assert r.status == 200 and "max_hr_override" not in Store(service.store.path).data["profile"]
+    assert await shown_max() == 187
+
+
+async def test_music_is_opt_in_and_only_controls_the_selected_mac_player(client, monkeypatch):
+    from miband6.web import server
+
+    service = client.service
+    bridge = Mock()
+    monkeypatch.setattr(service, "music", bridge)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    await connect(client)
+    assert (await post(client, "/api/prefs", {"music_player": "music"})).status == 400
+    service.demo = False  # keep the already connected simulated band
+    service.on_event("music", "open")
+    bridge.handle.assert_not_called()
+    r = await post(client, "/api/prefs", {"music_player": "spotify"})
+    assert (await r.json())["state"]["settings"]["music_player"] == "spotify"
+    service.on_event("music", "next")
+    bridge.handle.assert_called_once_with("next", "spotify")
+    await service._send_music(b"fixture")
+    assert service.band._client.chunked_payloads[-1] == (P.CHUNKED_MUSIC, b"fixture")
+
+    bridge.reset_mock()
+    assert (await post(client, "/api/prefs", {"music_player": "off"})).status == 200
+    bridge.stop.assert_called_once()
+    service.on_event("music", "play")
+    bridge.handle.assert_not_called()
+    monkeypatch.setattr(server.sys, "platform", "linux")
+    assert (await post(client, "/api/prefs", {"music_player": "music"})).status == 400
+    assert (await post(client, "/api/prefs", {"music_player": "unknown"})).status == 400
 
 
 async def test_validation_errors(client):

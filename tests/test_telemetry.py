@@ -84,11 +84,25 @@ def test_recovery_minimum_requires_five_contiguous_minutes():
     t0, _ = H.day_bounds("2026-01-10")
     sess = {"start": t0, "end": t0 + 60 * 60, "minutes": 60, "deep": 0, "rem": 0,
             "awake": 0, "stages": [[t0, t0 + 60 * 60, "light"]]}
-    # Half the night is observed, but no five-minute contiguous window exists.
-    sparse = {t0 + i * 60: (t0 + i * 60, 9, 0, 0, 60, 0, 0, 0) for i in range(0, 60, 2)}
+    # Three out of every four minutes are observed, but a five-minute window never exists.
+    sparse = {t0 + i * 60: (t0 + i * 60, 9, 0, 0, 60, 0, 0, 0) for i in range(60) if i % 4}
     assert HealthDB._night(sess, sparse, "2026-01-10")["hr_low_at"] is None
-    dense = {t0 + i * 60: (t0 + i * 60, 9, 0, 0, 60, 0, 0, 0) for i in range(60)}
-    assert HealthDB._night(sess, dense, "2026-01-10")["hr_low_at"] == pytest.approx(2 / 60)
+
+
+@pytest.mark.parametrize(("valid_minutes", "eligible"), [(41, False), (42, True), (60, True)])
+def test_recovery_minimum_requires_seventy_percent_of_asleep_minutes(valid_minutes, eligible):
+    t0, _ = H.day_bounds("2026-01-10")
+    end = t0 + 65 * 60
+    sess = {"start": t0, "end": end, "minutes": 60, "deep": 0, "rem": 0, "awake": 5,
+            "stages": [[t0, t0 + 60 * 60, "light"], [t0 + 60 * 60, end, "awake"]]}
+    rows = {t0 + i * 60: (t0 + i * 60, 9, 0, 0, 60 if i < valid_minutes or i >= 60 else 255, 0, 0, 0)
+            for i in range(65)}
+    night = HealthDB._night(sess, rows, "2026-01-10")
+    assert night["hr"] == 60
+    if eligible:
+        assert night["hr_low_at"] == pytest.approx(2 / 65)
+    else:
+        assert night["hr_low_at"] is None
 
 
 @pytest.mark.parametrize(("minutes", "weights"), [
@@ -110,6 +124,11 @@ def test_training_load_is_time_weighted_and_capped(tmp_path, monkeypatch, minute
     assert day["hr_minutes"] == sum(weights)
     assert result["sampling"]["load_method"] == "time_weighted"
     assert result["sampling"]["hr_hold_seconds"] == I.HR_HOLD == 600
+
+    captured.clear()
+    db.insights(date, profile={"max_hr_override": 175})
+    day = next(d for d in captured if d["date"] == date)
+    assert day["trimp"] == sum(weights) * 5  # 160 bpm now exceeds 90% of maximum
     db.close()
 
 

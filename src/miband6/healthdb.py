@@ -17,6 +17,8 @@ from . import health as H
 from . import personal as PS
 from . import telemetry as T
 
+RECOVERY_MIN_HR_COVERAGE = 0.70  # phần số phút ngủ có số đo nhịp tim hợp lệ
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS activity (ts INTEGER PRIMARY KEY, kind INTEGER, intensity INTEGER, steps INTEGER,
                                      hr INTEGER, sleep INTEGER, deep INTEGER, rem INTEGER);
@@ -298,14 +300,18 @@ class HealthDB:
         sessions = self.sleep_sessions(t0, t1, rem=rem, samples=samples)
 
         # ---- mỗi đêm: giấc dài nhất kết thúc trong ngày (giấc còn đang ngủ chưa phải một đêm)
-        mains: dict[str, dict] = {}
+        by_day: dict[str, list[dict]] = {}
         for sess in sessions:
-            if sess["ongoing"]:
-                continue
             day = H.local_date(sess["end"])
-            if first.isoformat() <= day <= date and (day not in mains or sess["minutes"] > mains[day]["minutes"]):
-                mains[day] = sess
-        nights = [self._night(mains[day], by_ts, day) for day in sorted(mains)]
+            if not sess["ongoing"] and first.isoformat() <= day <= date:
+                by_day.setdefault(day, []).append(sess)
+        nights = []
+        for day, finished in sorted(by_day.items()):
+            main = max(finished, key=lambda s: s["minutes"])
+            night = self._night(main, by_ts, day)
+            night["rem_estimated"] = main.get("rem_estimated", False)
+            night["naps"] = [(s["end"], s["minutes"]) for s in finished if s is not main]
+            nights.append(night)
 
         # ---- hồ sơ: tuổi, giới tính (nhịp tim tối đa, nhu cầu ngủ) và nhật ký chu kỳ (nhịp tim nghỉ pha hoàng thể)
         age, sex = PS.age_of(profile, d0), PS.sex_of(profile)
@@ -314,7 +320,7 @@ class HealthDB:
         PS.adjust_luteal_hr(nights, period_days)
 
         # ---- mỗi ngày
-        hrmax = I.hr_max(age, sex)
+        hrmax = PS.max_hr_override((profile or {}).get("max_hr_override")) or I.hr_max(age, sex)
         rests = [n["hr"] for n in nights[-14:] if n.get("hr")]
         rest = sorted(rests)[len(rests) // 2] if rests else 60
         workouts = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM workouts WHERE start >= ? AND start < ?", (t0, t1))]
@@ -416,10 +422,10 @@ class HealthDB:
                             if sex == PS.SEX_MALE else None),
             "intensity": I.activity_intensity([d for d in day_list if d["date"] <= date]),
             "circadian": circ,
-            "rem_estimated": any(s.get("rem_estimated") for s in mains.values()),
+            "rem_estimated": any(n.get("rem_estimated") for n in nights),
             "sampling": {"load_method": "time_weighted", "hr_hold_seconds": I.HR_HOLD,
                          "load_min_wear_minutes": I.LOAD_MIN_WEAR, "load_min_hr_coverage": I.LOAD_MIN_COVERAGE,
-                         "recovery_window_seconds": 300},
+                         "recovery_min_hr_coverage": RECOVERY_MIN_HR_COVERAGE, "recovery_window_seconds": 300},
         }
 
     @staticmethod
@@ -444,14 +450,14 @@ class HealthDB:
     def _night(sess: dict, by_ts: dict, day: str) -> dict:
         """Tóm tắt một đêm: thời lượng, các giai đoạn, nhịp tim khi ngủ, lúc nhịp tim thấp nhất, giờ giữa giấc."""
         asleep = [t for a, b, k in sess["stages"] if k != "awake" for t in range(a, b, 60)]
-        hrs = [by_ts[t][4] for t in asleep if t in by_ts and H.valid_hr(by_ts[t][4])]
+        pts = [(t, by_ts[t][4]) for t in asleep if t in by_ts and H.valid_hr(by_ts[t][4])]
+        hrs = sorted(hr for _, hr in pts)
         night = {"date": day, "minutes": sess["minutes"], "deep": sess["deep"], "rem": sess["rem"],
                  "awake": sess["awake"], "start": sess["start"], "end": sess["end"],
-                 "hr": sorted(hrs)[len(hrs) // 2] if hrs else None, "hr_low_at": None,
+                 "hr": hrs[len(hrs) // 2] if hrs else None, "hr_low_at": None,
                  "mid": ((sess["start"] + sess["end"]) / 2 - H.day_bounds(day)[0]) / 60}
-        if len(hrs) >= 0.5 * len(asleep) and len(hrs) >= 30:
+        if len(pts) >= 30 and len(pts) / len(asleep) >= RECOVERY_MIN_HR_COVERAGE:
             # chỉ số hồi phục (như Oura): lúc trung bình 5 phút của nhịp tim xuống thấp nhất, tính theo phần đêm đã qua
-            pts = [(t, by_ts[t][4]) for t in asleep if t in by_ts and H.valid_hr(by_ts[t][4])]
             best = None
             for i in range(len(pts) - 4):
                 window = pts[i:i + 5]

@@ -45,6 +45,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Mi Band 6 dùng quyền Tự động hóa để điều khiển ứng dụng nhạc bạn đã chọn từ vòng tay.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Mi Band 6 dùng Bluetooth để kết nối và giữ kết nối với vòng tay Xiaomi Mi Smart Band 6.</string>
 	<key>NSAppTransportSecurity</key>

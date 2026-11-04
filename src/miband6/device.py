@@ -468,7 +468,9 @@ class MiBand6:
             return
         code = data[0]
         self._emit("device_event", code)
-        if code == P.EVENT_FIND_PHONE_START:
+        if code == P.EVENT_MUSIC and len(data) >= 2 and data[1] in P.MUSIC_ACTIONS:
+            self._emit("music", P.MUSIC_ACTIONS[data[1]])
+        elif code == P.EVENT_FIND_PHONE_START:
             asyncio.ensure_future(self._quiet(self.write_config(P.ACK_FIND_PHONE)))
         elif code in (P.EVENT_CALL_REJECT, P.EVENT_CALL_IGNORE) and self._find_task:
             asyncio.ensure_future(self._quiet(self.find_band(False)))

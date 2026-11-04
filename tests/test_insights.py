@@ -171,3 +171,50 @@ def test_mental_state():
     assert tense["state"] == "overloaded" and tense["strain"] > 60
     assert tense["factors"][0]["level"] >= tense["factors"][-1]["level"]   # yếu tố nặng nhất lên đầu
     assert I.mental_state([], [], None) is None
+
+
+def test_sleep_balance_counts_completed_naps_once_without_changing_main_sleep(tmp_path):
+    from miband6.healthdb import HealthDB
+
+    db = HealthDB(tmp_path / "health.sqlite3")
+    dates = ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"]
+
+    def add_sleep(day, hour, minutes, finished=True):
+        start = H.day_bounds(day)[0] + hour * 3600
+        rows = [(start + i * 60, H.KIND_LIGHT_SLEEP, 0, 0, 58, 0, 0, 0) for i in range(minutes)]
+        if finished:
+            rows.append((start + minutes * 60, H.KIND_ACTIVITY, 0, 0, 70, 0, 0, 0))
+        db.add_activity(rows)
+
+    for day in dates:
+        add_sleep(day, 0, 360)
+
+    def balance(result):
+        return next(p for p in result["readiness"]["parts"] if p["key"] == "sleep_balance")
+
+    baseline = db.insights(dates[-1])
+    add_sleep(dates[2], 13, 30)
+    add_sleep(dates[2], 16, 19)
+    add_sleep(dates[3], 7, 40, finished=False)
+    result = db.insights(dates[-1])
+    # Only the third day's finished 30-minute nap counts. The morning snapshot predates afternoon sleep.
+    assert balance(baseline)["value"] == "80% nhu cầu"
+    assert balance(result)["value"] == "82% nhu cầu"
+    assert "5 giờ 30 phút" in balance(result)["detail"]
+    assert balance(db.insights(dates[2]))["value"] == "80% nhu cầu"
+    assert result["last_night"] == baseline["last_night"]
+    db.close()
+
+
+def test_weekly_debt_excludes_old_nights_and_does_not_invent_missing_sleep():
+    nights = [{"date": "2026-01-01", "minutes": 280},
+              {"date": "2026-01-03", "minutes": 400, "naps": [(1, 30)]},
+              {"date": "2026-01-09", "minutes": 440, "naps": [(2, 90)]}]
+    assert I._weekly_sleep_debt(nights, 450, "2026-01-09") == 20
+    assert I._weekly_sleep_debt(nights, 450, "2026-01-10") == 0
+
+
+def test_edwards_trimp_includes_the_exact_lower_edge_of_each_zone():
+    for zone, boundary in enumerate((100, 120, 140, 160, 180), start=1):
+        assert I.edwards_trimp(boundary - 1, 200) == zone - 1
+        assert I.edwards_trimp(boundary, 200) == zone

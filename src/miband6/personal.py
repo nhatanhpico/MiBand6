@@ -50,6 +50,11 @@ PREDICT_DAYS = 70         # dự đoán kỳ kinh, cửa sổ dễ thụ thai ch
 SEX_MALE, SEX_FEMALE = "male", "female"
 
 
+def max_hr_override(value: object) -> int | None:
+    """Chỉ nhận số nguyên trong khoảng nhịp tim ứng dụng hỗ trợ."""
+    return value if type(value) is int and H.valid_hr(value) else None
+
+
 def sex_of(profile: dict | None) -> str | None:
     """Giới tính trong hồ sơ (0 nam, 1 nữ như ô Giới tính của Cài đặt vòng tay → Hồ sơ); "Khác" hay chưa chọn: None."""
     g = (profile or {}).get("gender")

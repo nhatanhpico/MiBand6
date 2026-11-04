@@ -9,7 +9,7 @@ Phương pháp
   Điều chỉnh cho Mi Band 6: không có HRV thô và nhiệt độ da, nên "cân bằng HRV" dùng chỉ số căng thẳng của vòng tay
   (vòng tay tính nó từ HRV), không có thành phần nhiệt độ.
 - Tải vận động: TRIMP theo vùng nhịp tim của Edwards (phút ở 50-60/60-70/70-80/80-90/90-100% nhịp tim tối đa nhân
-  1..5), nhịp tim tối đa 208 - 0,7 x tuổi (Tanaka 2001); tỉ lệ tải cấp 7 ngày / tải mạn 28 ngày (ACWR, Gabbett 2016).
+  1..5), nhịp tim tối đa nhập tay hoặc ước tính theo tuổi và giới tính; tỉ lệ tải cấp 7 ngày / tải mạn 28 ngày (ACWR, Gabbett 2016).
   Mỗi số đo nhịp tim tính cho khoảng tới số đo kế tiếp (tối đa HR_HOLD), để tải không phụ thuộc chu kỳ đo; mức nền
   tải chỉ dùng ngày đeo đủ lâu và có nhịp tim gần hết thời gian đeo (_load_day).
 - Cường độ: nhịp bước CADENCE-Adults (>= 100 bước/phút ~ vừa, >= 130 ~ mạnh); trong buổi tập dùng nhịp tim dự trữ
@@ -92,8 +92,8 @@ def sleep_need(age: float | None) -> int:
 
 def edwards_trimp(hr: float, hrmax: float) -> int:
     """Hệ số vùng nhịp tim của Edwards cho một phút (0 nếu dưới 50% nhịp tim tối đa)."""
-    pct = hr / hrmax
-    return 0 if pct < 0.5 else min(5, int((pct - 0.5) * 10) + 1)
+    decile = int(10 * hr / hrmax)
+    return min(5, max(0, decile - 4))
 
 
 # ---------------------------------------------------------------- mức sẵn sàng
@@ -170,18 +170,32 @@ def _sleep_part(night: dict, chronotype: float | None, need: int = SLEEP_NEED) -
     return _part("sleep", tr('Giấc ngủ đêm qua'), score, _hm(night["minutes"]), detail)
 
 
-def _sleep_balance_part(nights: list[dict], need: int = SLEEP_NEED) -> dict | None:
-    recent = nights[-14:]
+def _sleep_totals(nights: list[dict], days: int, end_day: str, as_of: float | None = None) -> list[int]:
+    """Tổng phút thực ngủ theo ngày thức dậy có dữ liệu, chỉ gồm những giấc đã kết thúc lúc tính."""
+    first = (dt.date.fromisoformat(end_day) - dt.timedelta(days=days - 1)).isoformat()
+    return [n["minutes"] + sum(minutes for end, minutes in n.get("naps", []) if as_of is None or end <= as_of)
+            for n in nights if first <= n["date"] <= end_day]
+
+
+def _weekly_sleep_debt(nights: list[dict], need: int, end_day: str, as_of: float | None = None) -> int:
+    return sum(max(0, need - minutes) for minutes in _sleep_totals(nights, 7, end_day, as_of))
+
+
+def _sleep_balance_part(nights: list[dict], need: int = SLEEP_NEED, as_of: float | None = None) -> dict | None:
+    if not nights:
+        return None
+    end_day = nights[-1]["date"]
+    recent = _sleep_totals(nights, 14, end_day, as_of)
     if len(recent) < 3:
         return None
     weights = [i + 1 for i in range(len(recent))]   # đêm gần đây nặng hơn
-    ratio = sum(min(1.1, n["minutes"] / need) * w for n, w in zip(recent, weights)) / sum(weights)
-    debt = sum(max(0, need - n["minutes"]) for n in recent[-7:])
+    ratio = sum(min(1.1, minutes / need) * w for minutes, w in zip(recent, weights)) / sum(weights)
+    debt = _weekly_sleep_debt(nights, need, end_day, as_of)
     score = _interp(ratio, [(0.6, 20), (0.75, 50), (0.85, 70), (0.95, 90), (1.0, 100)])
-    detail = tr('Ngủ {n} đêm gần đây so với nhu cầu khoảng {t} mỗi đêm ở tuổi của bạn (đêm gần nặng hơn).',
+    detail = tr('Tổng thời gian ngủ, kể cả ngủ ngắn, trong {n} ngày có dữ liệu so với nhu cầu {t} mỗi ngày. Ngày gần đây có trọng số cao hơn.',
                 n=len(recent), t=_hm(need))
     if debt >= 60:
-        detail += " " + tr('Nợ ngủ 7 đêm qua: {t}.', t=_hm(debt))
+        detail += " " + tr('Thiếu {t} trong các ngày có dữ liệu của 7 ngày qua.', t=_hm(debt))
     return _part("sleep_balance", tr('Cân bằng giấc ngủ'), score, tr('{p}% nhu cầu', p=int(round(ratio * 100))), detail)
 
 
@@ -278,7 +292,7 @@ def readiness(nights: list[dict], days: list[dict], chronotype: float | None = N
         return None
     night = nights[-1]
     parts = [p for p in (_rhr_part(nights, night), _recovery_part(night), _sleep_part(night, chronotype, need),
-                         _sleep_balance_part(nights, need), _stress_part(days)) if p]
+                         _sleep_balance_part(nights, need, (fatigue or {}).get("now")), _stress_part(days)) if p]
     parts += _load_parts(days, fatigue)
     have = {p["key"] for p in parts}
     if len(parts) < 3 or not ({"rhr", "sleep"} & have):
@@ -461,10 +475,10 @@ def mental_state(nights: list[dict], days: list[dict], circ: dict | None, need: 
     recent = nights[-3:]
     if recent:
         avg = _mean([n["minutes"] for n in recent])
-        debt = sum(max(0, need - n["minutes"]) for n in nights[-7:])
+        debt = _weekly_sleep_debt(nights, need, days[-1]["date"] if days else recent[-1]["date"])
         risk = min(1.0, max(0.0, (need - avg) / 150) + min(0.4, debt / 900))
         factors.append(("sleep", risk, 0.25, "fatigue",
-                        tr('ngủ trung bình {t} mỗi đêm ({n} đêm), nợ ngủ 7 ngày {d}', t=_hm(avg), n=len(recent), d=_hm(debt))))
+                        tr('ngủ trung bình {t} mỗi đêm ({n} đêm), còn thiếu {d} trong 7 ngày sau khi tính cả giấc ngủ ngắn', t=_hm(avg), n=len(recent), d=_hm(debt))))
     if circ and (circ.get("cpd") is not None or circ.get("sjl") is not None):
         cpd = circ.get("cpd") or 0
         sjl = (circ.get("sjl") or 0) / 60
