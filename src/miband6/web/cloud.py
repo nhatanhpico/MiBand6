@@ -207,6 +207,7 @@ class CloudSync:
                 raw, trail = await asyncio.to_thread(self._download, login)
             except SessionExpired:
                 self.factory.forget()
+                self.service.push_state()   # Cài đặt ứng dụng hiện "Chưa đăng nhập"
                 login = self.factory()
             else:
                 return self._checked(raw, trail)
@@ -218,6 +219,8 @@ class CloudSync:
                   url=q["login_url"], expires=int(time.time() + q["timeout"]))
         await asyncio.to_thread(login.wait_qr, q, None, self._cancel)
         await asyncio.to_thread(login.save)
+        # trạng thái tài khoản nằm trong state(): đẩy ngay, không thì Cài đặt ứng dụng vẫn hiện "Chưa đăng nhập"
+        self.service.push_state()
         self._set(state="fetching")
         raw, trail = await asyncio.to_thread(self._download, login)
         return self._checked(raw, trail)

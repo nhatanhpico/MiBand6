@@ -166,6 +166,16 @@ def open_file(path: Path) -> None:
         pass
 
 
+LP_MARGIN = 5   # giây chờ thêm sau hạn của mã QR trước khi bỏ yêu cầu chờ đăng nhập
+
+
+def _pause(cancel: threading.Event | None, seconds: float) -> None:
+    if cancel is None:
+        time.sleep(seconds)
+    elif cancel.wait(seconds):
+        raise LoginError(tr('Đã hủy đăng nhập.'))
+
+
 def cache_path() -> Path:
     base = Path.home() / ("Library/Caches" if sys.platform == "darwin" else ".cache")
     return base / "MiBand6Manager" / "xiaomi-session.json"
@@ -346,21 +356,51 @@ class XiaomiLogin:
                 "lp": q["lp"], "timeout": float(q.get("timeout") or 300)}
 
     def wait_qr(self, q: dict, timeout: float | None = None, cancel: threading.Event | None = None) -> None:
-        """Chờ người dùng quét mã QR và đăng nhập, rồi lấy serviceToken."""
+        """Chờ người dùng quét mã QR và đăng nhập, rồi lấy serviceToken.
+
+        Máy chủ giữ yêu cầu chờ (lp) tới khi đăng nhập xong (hơn 90 giây nếu chưa ai quét), nên giữ một yêu cầu tới
+        hạn của mã như trang đăng nhập của Xiaomi, không bỏ ngang rồi gửi lại mỗi 10 giây: làm vậy thì đăng nhập
+        xong trên điện thoại mà ứng dụng có khi cả phút sau mới biết. Chỉ gửi lại khi máy chủ tự trả lời hoặc ngắt."""
         deadline = time.time() + (timeout or q["timeout"])
         while True:
             if cancel is not None and cancel.is_set():
                 raise LoginError(tr('Đã hủy đăng nhập.'))
-            if time.time() > deadline:
+            left = deadline - time.time()
+            if left <= 0:
                 raise LoginError(tr('Hết thời gian chờ quét mã QR.'))
             try:
-                r = self.s.get(q["lp"], timeout=min(10, max(1, deadline - time.time())))
+                r = self._hold(q["lp"], left, cancel)
             except self.requests.exceptions.Timeout:
+                continue
+            except self.requests.exceptions.RequestException:
+                _pause(cancel, 1)   # máy chủ hoặc mạng ngắt kết nối: gửi lại
                 continue
             if r.status_code == 200:
                 break
-            time.sleep(1)
+            _pause(cancel, 1)
         self._finish(parse_json(r.text))
+
+    def _hold(self, url: str, wait: float, cancel: threading.Event | None):
+        """GET url, chờ trả lời tối đa wait giây, trên luồng riêng để bấm Hủy có tác dụng ngay (yêu cầu bị bỏ
+        lại tự kết thúc khi mã QR hết hạn)."""
+        done = threading.Event()
+        out: dict = {}
+
+        def run() -> None:
+            try:
+                out["r"] = self.s.get(url, timeout=(10, wait + LP_MARGIN))
+            except Exception as e:  # noqa: BLE001 - chuyển lỗi về luồng đang chờ
+                out["e"] = e
+            finally:
+                done.set()
+
+        threading.Thread(target=run, name="xiaomi-qr-wait", daemon=True).start()
+        while not done.wait(0.2):
+            if cancel is not None and cancel.is_set():
+                raise LoginError(tr('Đã hủy đăng nhập.'))
+        if "e" in out:
+            raise out["e"]
+        return out["r"]
 
     def login_qr(self, timeout: float | None = None) -> None:
         q = self.start_qr()

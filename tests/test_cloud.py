@@ -4,6 +4,7 @@ import asyncio
 import datetime as dt
 import json
 import threading
+import time
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -174,6 +175,58 @@ async def test_qr_login_then_profile_written_on_connect(client):
     assert P.user_info("Nhật Anh", dt.date(1999, 5, 24), 0, 168, 58.4) in written
     assert P.fitness_goal(10000) in written
     assert "pending_sync" not in client.service.profile
+
+
+async def test_qr_login_updates_account_status_at_once(client, monkeypatch):
+    """Quét QR xong: Cài đặt ứng dụng thấy "Đã đăng nhập" ngay, không đợi tải xong hồ sơ hay một lần đẩy state khác."""
+    pushed = []
+    real = client.service.push_state
+    monkeypatch.setattr(client.service, "push_state", lambda: (pushed.append(FakeLogin.saved), real()))
+    gate = threading.Event()
+    monkeypatch.setattr("miband6.web.cloud.fetch_profile",
+                        lambda login, regions=None: (gate.wait(3), (dict(RAW), ["ok"]))[1])
+    await post(client, "/api/cloud/sync", {})
+    await wait_state(client, "login")
+    assert True not in pushed
+    FakeLogin.scanned.set()
+    await wait_state(client, "fetching")
+    assert True in pushed   # đã đẩy state sau khi lưu phiên, trong lúc hồ sơ còn đang tải
+    gate.set()
+    await wait_state(client, "done")
+
+
+def test_wait_qr_keeps_one_request_open():
+    """Máy chủ giữ yêu cầu chờ tới khi đăng nhập xong: giữ một yêu cầu tới hạn của mã (không bỏ ngang mỗi 10 giây),
+    mạng ngắt thì gửi lại, bấm Hủy thì thôi chờ ngay."""
+    scanned = threading.Event()
+    calls = []
+
+    class Session:
+        def get(self, url, timeout=None):
+            calls.append(timeout)
+            if len(calls) == 1:
+                raise ConnectionResetError
+            if scanned.wait(timeout[1]):
+                return FakeResp(200, '&&&START&&&{"ssecurity": "s", "location": "https://sts/x"}')
+            raise TimeoutError
+
+    login = X.XiaomiLogin.__new__(X.XiaomiLogin)
+    login.s, login.requests = Session(), FakeRequests
+    finished = []
+    login._finish = finished.append
+    threading.Timer(1.3, scanned.set).start()
+    login.wait_qr({"lp": "lp", "timeout": 60})
+    assert len(calls) == 2 and calls[1][1] > 55
+    assert finished == [{"ssecurity": "s", "location": "https://sts/x"}]
+
+    scanned.clear()
+    cancel = threading.Event()
+    threading.Timer(0.2, cancel.set).start()
+    start = time.monotonic()
+    with pytest.raises(X.LoginError):
+        login.wait_qr({"lp": "lp", "timeout": 60}, cancel=cancel)
+    assert time.monotonic() - start < 1.5
+    scanned.set()   # cho luồng chờ còn lại kết thúc
 
 
 async def test_saved_session_and_connected_band(client):
